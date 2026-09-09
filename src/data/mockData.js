@@ -1910,7 +1910,7 @@ export const SELLERS = [
     "rating": 4.8,
     "totalProducts": 45,
     "totalSales": 845000,
-    "commissionRate": 12,
+    "commissionRate": 10,
     "payoutBalance": 48200,
     "bankDetails": {
       "bank": "HDFC Bank",
@@ -1994,7 +1994,7 @@ export const SELLERS = [
     "rating": 4.8,
     "totalProducts": 32,
     "totalSales": 289000,
-    "commissionRate": 12,
+    "commissionRate": 18,
     "payoutBalance": 15200,
     "bankDetails": {
       "bank": "Punjab National Bank",
