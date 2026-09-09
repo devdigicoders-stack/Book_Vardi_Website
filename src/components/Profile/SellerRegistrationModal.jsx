@@ -148,14 +148,44 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
   const [mobileOtp, setMobileOtp] = useState('4829');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Step 3 PAN & Aadhaar Verification States
+  const [isPanVerified, setIsPanVerified] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_seller_reg_data');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Boolean(parsed.isPanVerified);
+      }
+    } catch {}
+    return true; // Default true for initial seed state (ABCDE1234F), resets if edited
+  });
+  const [isAadhaarVerified, setIsAadhaarVerified] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_seller_reg_data');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Boolean(parsed.isAadhaarVerified);
+      }
+    } catch {}
+    return true; // Default true for initial seed state (8942), resets if edited
+  });
+  const [isVerifyingPan, setIsVerifyingPan] = useState(false);
+  const [isVerifyingAadhaar, setIsVerifyingAadhaar] = useState(false);
+  const [panError, setPanError] = useState('');
+  const [aadhaarError, setAadhaarError] = useState('');
+
   useEffect(() => {
     try {
-      localStorage.setItem('bv_seller_reg_data', JSON.stringify(formData));
+      localStorage.setItem('bv_seller_reg_data', JSON.stringify({
+        ...formData,
+        isPanVerified,
+        isAadhaarVerified
+      }));
       localStorage.setItem('bv_seller_reg_step', step.toString());
     } catch (e) {
       console.error(e);
     }
-  }, [formData, step]);
+  }, [formData, step, isPanVerified, isAadhaarVerified]);
 
   if (!isOpen) return null;
 
@@ -165,9 +195,87 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       [field]: value,
       highestStepReached: Math.max(prev.highestStepReached, step)
     }));
+
+    // Invalidate verification when user alters PAN or Aadhaar
+    if (field === 'ownerPan') {
+      setIsPanVerified(false);
+      setPanError('');
+    }
+    if (field === 'ownerAadhaarLast4') {
+      setIsAadhaarVerified(false);
+      setAadhaarError('');
+    }
+  };
+
+  const handleVerifyPan = () => {
+    const pan = (formData.ownerPan || '').trim().toUpperCase();
+    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+
+    if (!pan) {
+      setPanError('Please enter a PAN card number');
+      showToast('⚠️ Please enter a 10-digit PAN card number.');
+      return;
+    }
+
+    if (!panRegex.test(pan)) {
+      setPanError('Invalid PAN format. Example: ABCDE1234F');
+      showToast('⚠️ Invalid PAN format. Must be 10 characters (e.g. ABCDE1234F).');
+      return;
+    }
+
+    setPanError('');
+    setIsVerifyingPan(true);
+
+    setTimeout(() => {
+      setIsVerifyingPan(false);
+      setIsPanVerified(true);
+      setFormData(prev => ({ ...prev, kycVerified: true }));
+      showToast('✅ PAN Card verified successfully with NSDL / Income Tax records!');
+    }, 700);
+  };
+
+  const handleVerifyAadhaar = () => {
+    const aadhaar = (formData.ownerAadhaarLast4 || '').trim();
+    // Allow either last 4 digits (4 digits) or full 12 digits
+    const aadhaarRegex = /^(\d{4}|\d{12})$/;
+
+    if (!aadhaar) {
+      setAadhaarError('Please enter Aadhaar number (4 or 12 digits)');
+      showToast('⚠️ Please enter Aadhaar number (last 4 digits or full 12 digits).');
+      return;
+    }
+
+    if (!aadhaarRegex.test(aadhaar)) {
+      setAadhaarError('Aadhaar must be either 4 digits or 12 digits');
+      showToast('⚠️ Invalid Aadhaar number. Must contain 4 or 12 numeric digits.');
+      return;
+    }
+
+    setAadhaarError('');
+    setIsVerifyingAadhaar(true);
+
+    setTimeout(() => {
+      setIsVerifyingAadhaar(false);
+      setIsAadhaarVerified(true);
+      showToast('✅ Aadhaar Card verified successfully via DigiLocker / UIDAI OTP!');
+    }, 700);
   };
 
   const nextStep = () => {
+    // Strict enforcement for Step 3: PAN and Aadhaar must be verified
+    if (step === 3) {
+      if (!formData.ownerPan || !isPanVerified) {
+        setPanError(!formData.ownerPan ? 'PAN card number is required' : 'Verification required before moving forward');
+        showToast('⚠️ Please click "Verify PAN" and verify your PAN Card to move to the next step.');
+        return;
+      }
+      if (!formData.ownerAadhaarLast4 || !isAadhaarVerified) {
+        setAadhaarError(!formData.ownerAadhaarLast4 ? 'Aadhaar number is required' : 'Verification required before moving forward');
+        showToast('⚠️ Please click "Verify Aadhaar" and verify your Aadhaar Card to move to the next step.');
+        return;
+      }
+    }
+
     if (step < 12) {
       const newStep = step + 1;
       setStep(newStep);
@@ -465,13 +573,13 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   <UserCheck className="text-teal-700" size={18} /> Step 3: Owner & Key Management Personnel (KYC)
                 </h3>
                 <p className="text-gray-500 text-xs mt-0.5">
-                  Provide primary signatory identification for compliance and contract execution.
+                  Provide primary signatory identification. <span className="text-brand-teal font-semibold">Government verification of PAN and Aadhaar is required to continue.</span>
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Owner / Authorized Representative Name *</label>
+                  <label className="font-bold text-gray-700 text-xs">Owner / Authorized Representative Name *</label>
                   <input
                     type="text"
                     value={formData.ownerFullName}
@@ -481,7 +589,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Designation / Role *</label>
+                  <label className="font-bold text-gray-700 text-xs">Designation / Role *</label>
                   <input
                     type="text"
                     value={formData.ownerDesignation}
@@ -490,34 +598,170 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   />
                 </div>
 
+                {/* Individual PAN Card with Verify Button */}
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Individual PAN Card Number *</label>
-                  <input
-                    type="text"
-                    value={formData.ownerPan}
-                    onChange={(e) => handleChange('ownerPan', e.target.value.toUpperCase())}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono uppercase"
-                    maxLength={10}
-                  />
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-gray-700 text-xs">Individual PAN Card Number *</label>
+                    {isPanVerified ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        <CheckCircle2 size={12} /> Verified
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                        Verification Required
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData.ownerPan}
+                      onChange={(e) => handleChange('ownerPan', e.target.value.toUpperCase())}
+                      className={`flex-1 px-3.5 py-2.5 rounded-xl border text-xs font-mono uppercase outline-hidden ${
+                        isPanVerified 
+                          ? 'border-emerald-300 bg-emerald-50/30 text-emerald-950 focus:ring-2 focus:ring-emerald-400' 
+                          : panError 
+                            ? 'border-rose-300 bg-rose-50/30 focus:ring-2 focus:ring-rose-400'
+                            : 'border-gray-200 focus:ring-2 focus:ring-brand-yellow'
+                      }`}
+                      placeholder="ABCDE1234F"
+                      maxLength={10}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleVerifyPan}
+                      disabled={isVerifyingPan || isPanVerified}
+                      className={`px-3.5 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                        isPanVerified
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 cursor-default'
+                          : isVerifyingPan
+                            ? 'bg-gray-200 text-gray-500 cursor-wait'
+                            : 'bg-brand-teal text-white hover:bg-brand-teal-light shadow-xs active:scale-95'
+                      }`}
+                    >
+                      {isVerifyingPan ? (
+                        <>
+                          <RefreshCw size={13} className="animate-spin" />
+                          <span>Verifying...</span>
+                        </>
+                      ) : isPanVerified ? (
+                        <>
+                          <CheckCircle2 size={13} className="text-emerald-700" />
+                          <span>Verified</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck size={13} />
+                          <span>Verify PAN</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {panError && (
+                    <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 pt-0.5">
+                      <AlertCircle size={12} /> {panError}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-gray-500">10-character alphanumeric PAN issued by Income Tax Dept.</p>
                 </div>
 
+                {/* Aadhaar Card with Verify Button */}
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Aadhaar (Last 4 Digits) *</label>
-                  <input
-                    type="text"
-                    value={formData.ownerAadhaarLast4}
-                    onChange={(e) => handleChange('ownerAadhaarLast4', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
-                    maxLength={4}
-                  />
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-gray-700 text-xs">Aadhaar Card (12 or Last 4 Digits) *</label>
+                    {isAadhaarVerified ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        <CheckCircle2 size={12} /> Verified
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                        Verification Required
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData.ownerAadhaarLast4}
+                      onChange={(e) => handleChange('ownerAadhaarLast4', e.target.value.replace(/\D/g, ''))}
+                      className={`flex-1 px-3.5 py-2.5 rounded-xl border text-xs font-mono outline-hidden ${
+                        isAadhaarVerified 
+                          ? 'border-emerald-300 bg-emerald-50/30 text-emerald-950 focus:ring-2 focus:ring-emerald-400' 
+                          : aadhaarError 
+                            ? 'border-rose-300 bg-rose-50/30 focus:ring-2 focus:ring-rose-400'
+                            : 'border-gray-200 focus:ring-2 focus:ring-brand-yellow'
+                      }`}
+                      placeholder="e.g. 8942 or 12-digit number"
+                      maxLength={12}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleVerifyAadhaar}
+                      disabled={isVerifyingAadhaar || isAadhaarVerified}
+                      className={`px-3.5 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                        isAadhaarVerified
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 cursor-default'
+                          : isVerifyingAadhaar
+                            ? 'bg-gray-200 text-gray-500 cursor-wait'
+                            : 'bg-brand-teal text-white hover:bg-brand-teal-light shadow-xs active:scale-95'
+                      }`}
+                    >
+                      {isVerifyingAadhaar ? (
+                        <>
+                          <RefreshCw size={13} className="animate-spin" />
+                          <span>Verifying...</span>
+                        </>
+                      ) : isAadhaarVerified ? (
+                        <>
+                          <CheckCircle2 size={13} className="text-emerald-700" />
+                          <span>Verified</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck size={13} />
+                          <span>Verify Aadhaar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {aadhaarError && (
+                    <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 pt-0.5">
+                      <AlertCircle size={12} /> {aadhaarError}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-gray-500">Enter your 12-digit Aadhaar number or last 4 digits for instant verification.</p>
                 </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-900 font-bold">
-                  <CheckCircle2 size={16} /> Instant DigiLocker / NSDL PAN Verified
+              {/* Status summary banner */}
+              <div className={`p-3.5 rounded-xl border transition-all ${
+                isPanVerified && isAadhaarVerified
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-amber-50/80 border-amber-200 text-amber-900'
+              }`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 font-bold text-xs">
+                    {isPanVerified && isAadhaarVerified ? (
+                      <>
+                        <CheckCircle2 size={17} className="text-emerald-600 shrink-0" />
+                        <span>Instant DigiLocker & NSDL Verification Complete</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle size={17} className="text-amber-600 shrink-0" />
+                        <span>KYC Verification Pending: Please verify both PAN and Aadhaar above to continue</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className={`px-2 py-0.5 rounded font-semibold ${isPanVerified ? 'bg-emerald-200/80 text-emerald-800' : 'bg-amber-200/80 text-amber-800'}`}>
+                      PAN: {isPanVerified ? 'Verified ✓' : 'Unverified'}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded font-semibold ${isAadhaarVerified ? 'bg-emerald-200/80 text-emerald-800' : 'bg-amber-200/80 text-amber-800'}`}>
+                      Aadhaar: {isAadhaarVerified ? 'Verified ✓' : 'Unverified'}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[11px] text-emerald-800 font-semibold">Matched: {formData.ownerFullName}</span>
               </div>
             </div>
           )}
@@ -1019,9 +1263,14 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
               <button
                 type="button"
                 onClick={nextStep}
-                className="px-5 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
+                title={step === 3 && (!isPanVerified || !isAadhaarVerified) ? "Verify both PAN and Aadhaar before continuing" : "Proceed to next step"}
+                className={`px-5 py-2.5 font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all ${
+                  step === 3 && (!isPanVerified || !isAadhaarVerified)
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white animate-pulse'
+                    : 'bg-brand-teal hover:bg-brand-teal-light text-white'
+                }`}
               >
-                <span>Continue</span>
+                <span>{step === 3 && (!isPanVerified || !isAadhaarVerified) ? 'Verify to Continue' : 'Continue'}</span>
                 <ArrowRight size={14} />
               </button>
             )}

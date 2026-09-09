@@ -1,5 +1,128 @@
 // Mock data for Book Vardi frontend matching the design layout with INR (₹ / Rs) pricing
 
+export const SCHOOLS = [
+  {
+    id: "SCH-001",
+    name: "Delhi Public School, R.K. Puram",
+    shortName: "Delhi Public School",
+    board: "CBSE",
+    city: "New Delhi",
+    address: "Sector 12, R.K. Puram, New Delhi",
+    pincode: "110022",
+    lat: 28.5684,
+    lng: 77.1834,
+    classes: "Nursery to 12th",
+    studentCount: 4200,
+    contactPerson: "Mrs. Sunita Chawla",
+    email: "admin@dpsrkp.net",
+    phone: "+91 11 2617 1267",
+    status: "Partner Active",
+    partnerSince: "2024",
+    commissionShare: "5%",
+    exclusiveKit: true
+  },
+  {
+    id: "SCH-002",
+    name: "The Mother’s International School",
+    shortName: "The Mother’s International School",
+    board: "CBSE",
+    city: "New Delhi",
+    address: "Sri Aurobindo Marg, Vijay Mandal Enclave, New Delhi",
+    pincode: "110016",
+    lat: 28.5398,
+    lng: 77.1994,
+    classes: "Class 1 to 12th",
+    studentCount: 2600,
+    contactPerson: "Dr. Arvind Menon",
+    email: "principal@mis.org.in",
+    phone: "+91 11 2652 4810",
+    status: "Partner Active",
+    partnerSince: "2023",
+    commissionShare: "6%",
+    exclusiveKit: true
+  },
+  {
+    id: "SCH-003",
+    name: "St. Xavier Senior Secondary School",
+    shortName: "St. Xavier Senior Secondary",
+    board: "ICSE",
+    city: "Gurugram, Haryana",
+    address: "Sector 49, Rosewood City, Gurugram, Haryana",
+    pincode: "122018",
+    lat: 28.4195,
+    lng: 77.0566,
+    classes: "KG to 12th",
+    studentCount: 3100,
+    contactPerson: "Fr. Matthew D’Souza",
+    email: "contact@stxaviersgurugram.in",
+    phone: "+91 124 405 9182",
+    status: "Partner Active",
+    partnerSince: "2024",
+    commissionShare: "5%",
+    exclusiveKit: false
+  },
+  {
+    id: "SCH-004",
+    name: "Kendriya Vidyalaya No. 1",
+    shortName: "Kendriya Vidyalaya",
+    board: "CBSE",
+    city: "Pune, Maharashtra",
+    address: "Ganeshkhind Road, Armament Colony, Pune, Maharashtra",
+    pincode: "411007",
+    lat: 18.5402,
+    lng: 73.8340,
+    classes: "Class 1 to 12th",
+    studentCount: 1850,
+    contactPerson: "Mr. Satish Waghmare",
+    email: "kv1pune@kvsedu.gov.in",
+    phone: "+91 20 2634 1190",
+    status: "Partner Active",
+    partnerSince: "2025",
+    commissionShare: "3%",
+    exclusiveKit: true
+  },
+  {
+    id: "SCH-005",
+    name: "Modern School, Barakhamba Road",
+    shortName: "Modern School, Barakhamba",
+    board: "CBSE",
+    city: "New Delhi",
+    address: "Barakhamba Road, Connaught Place, New Delhi",
+    pincode: "110001",
+    lat: 28.6304,
+    lng: 77.2285,
+    classes: "Class 6 to 12th",
+    studentCount: 2900,
+    contactPerson: "Col. Rajesh Verma",
+    email: "admin@modernschool.net",
+    phone: "+91 11 2331 1618",
+    status: "Partner Active",
+    partnerSince: "2026",
+    commissionShare: "5%",
+    exclusiveKit: false
+  },
+  {
+    id: "SCH-006",
+    name: "Ryan International School",
+    shortName: "Ryan International",
+    board: "CBSE",
+    city: "New Delhi",
+    address: "Mayur Vihar Phase 3, Delhi NCR",
+    pincode: "110096",
+    lat: 28.6094,
+    lng: 77.2982,
+    classes: "Montessori to 12th",
+    studentCount: 3400,
+    contactPerson: "Mrs. Kavita Saxena",
+    email: "info@ryanmayurvihar.edu",
+    phone: "+91 11 2261 4455",
+    status: "Partner Active",
+    partnerSince: "2024",
+    commissionShare: "5%",
+    exclusiveKit: true
+  }
+];
+
 export const ANNOUNCEMENTS = [
   { icon: 'Truck', text: 'Free Shipping on Orders Over ₹499' },
   { icon: 'Tag', text: '10% OFF Your First Order | Use Code: SCHOOL10' },
@@ -403,7 +526,7 @@ export const ALL_PRODUCTS = [
     "category": "uniforms",
     "badge": "BESTSELLER",
     "schoolSpecific": false,
-    "stockQuantity": 10,
+    "stockQuantity": 85,
     "inStock": true
   },
   {
@@ -559,7 +682,24 @@ export const ALL_PRODUCTS = [
     "rating": 4.9,
     "reviews": 410,
     "image": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=500&auto=format&fit=crop&q=80",
-    "category": "drawing_books"
+    "category": "drawing_books",
+    "discountBadge": "",
+    "stockQuantity": 200,
+    "sizes": [
+      "S",
+      "M",
+      "L"
+    ],
+    "colors": [
+      "Navy Blue"
+    ],
+    "gender": "Unisex",
+    "images": [
+      "https://images.unsplash.com/photo-1544816155-12df9643f363?w=500&auto=format&fit=crop&q=80"
+    ],
+    "description": "",
+    "sku": "SKU-14",
+    "inStock": true
   },
   {
     "id": 15,
@@ -612,7 +752,7 @@ export const ALL_PRODUCTS = [
     "image": "https://images.unsplash.com/photo-1585336261022-680e295ce3fe?w=500&auto=format&fit=crop&q=80",
     "category": "supplies",
     "badge": "BESTSELLER",
-    "inStock": true,
+    "inStock": false,
     "stockQuantity": 1,
     "discountBadge": "",
     "sizes": [
@@ -1091,6 +1231,25 @@ export const ORDERS = [
   }
 ];
 export const PROMOTIONS = [
+  {
+    "id": 1788952244472,
+    "code": "SAVEMORE73",
+    "title": "Special Student Discount",
+    "discountType": "percentage",
+    "discountValue": 15,
+    "minOrderValue": 499,
+    "maxDiscount": 250,
+    "validFrom": "2026-09-09",
+    "validUntil": "2026-12-31",
+    "usageLimit": 500,
+    "usageCount": 0,
+    "status": "active",
+    "scope": "specific_product",
+    "specificProductId": 20,
+    "specificProductName": "Ergonomic Student Backpack (24L)",
+    "specificProductSku": "SKU-20",
+    "specificProductImage": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=500&auto=format&fit=crop&q=80"
+  },
   {
     "id": 1788946464338,
     "code": "SAVEMORE91",
@@ -1653,12 +1812,12 @@ export const PLATFORM_USERS = USERS;
 
 export const SELLERS = [
   {
-    "id": "SEL-226",
-    "name": "loveni5299",
+    "id": "SEL-282",
+    "name": "Priya Sundaram",
     "businessName": "New Store",
     "storeName": "New's Vardi Store",
-    "email": "loveni5299@airhemp.com",
-    "phone": "+91 98765 43210",
+    "email": "priya.sundaram@gmail.com",
+    "phone": "+91 99887 76655",
     "status": "Pending",
     "rating": 5,
     "totalOrders": 0,
@@ -1733,9 +1892,136 @@ export const SELLERS = [
       "applicationDate": "2026-09-09T06:57:32.864Z",
       "currentStep": 1,
       "highestStepReached": 10,
-      "submissionStatus": "draft",
+      "submissionStatus": "approved",
       "status": "Pending Approval",
       "submittedAt": "9/9/2026"
     }
+  },
+  {
+    "id": "SEL-101",
+    "storeName": "Vardi Uniforms Pvt Ltd",
+    "ownerName": "Dinesh Yadav",
+    "email": "dinesh@vardiuniforms.com",
+    "phone": "+91 98765 12340",
+    "gstin": "07AAAAA0000A1Z5",
+    "pan": "ABCDE1234F",
+    "city": "Gurugram, Haryana",
+    "status": "Verified",
+    "rating": 4.8,
+    "totalProducts": 45,
+    "totalSales": 845000,
+    "commissionRate": 12,
+    "payoutBalance": 48200,
+    "bankDetails": {
+      "bank": "HDFC Bank",
+      "account": "•••• 9182",
+      "ifsc": "HDFC0001245"
+    }
+  },
+  {
+    "id": "SEL-102",
+    "storeName": "Apex School Sportswear",
+    "ownerName": "Vikramjeet Rathore",
+    "email": "sales@apexsportswear.in",
+    "phone": "+91 98112 88441",
+    "gstin": "08BBBBB1111B2Z6",
+    "pan": "BCDEF2345G",
+    "city": "Jaipur, Rajasthan",
+    "status": "Verified",
+    "rating": 4.7,
+    "totalProducts": 28,
+    "totalSales": 412000,
+    "commissionRate": 10,
+    "payoutBalance": 24500,
+    "bankDetails": {
+      "bank": "ICICI Bank",
+      "account": "•••• 4421",
+      "ifsc": "ICIC0000451"
+    }
+  },
+  {
+    "id": "SEL-103",
+    "storeName": "Stride Footwear Hub",
+    "ownerName": "Kunal Agarwal",
+    "email": "contact@stridefootwear.com",
+    "phone": "+91 99230 77112",
+    "gstin": "27CCCCC2222C3Z7",
+    "pan": "CDEFG3456H",
+    "city": "Pune, Maharashtra",
+    "status": "Verified",
+    "rating": 4.6,
+    "totalProducts": 18,
+    "totalSales": 310500,
+    "commissionRate": 12,
+    "payoutBalance": 18400,
+    "bankDetails": {
+      "bank": "State Bank of India",
+      "account": "•••• 8820",
+      "ifsc": "SBIN0004120"
+    }
+  },
+  {
+    "id": "SEL-104",
+    "storeName": "Vidya Book Distributors",
+    "ownerName": "Manish Chaurasia",
+    "email": "vidyabooks@gmail.com",
+    "phone": "+91 94150 33991",
+    "gstin": "09DDDDD3333D4Z8",
+    "pan": "DEFGH4567I",
+    "city": "Varanasi, UP",
+    "status": "Verified",
+    "rating": 4.9,
+    "totalProducts": 64,
+    "totalSales": 1240000,
+    "commissionRate": 8,
+    "payoutBalance": 62100,
+    "bankDetails": {
+      "bank": "Axis Bank",
+      "account": "•••• 3319",
+      "ifsc": "UTIB0001090"
+    }
+  },
+  {
+    "id": "SEL-105",
+    "storeName": "Creative Kiddo Stationers",
+    "ownerName": "Neha Bajaj",
+    "email": "support@creativekiddo.in",
+    "phone": "+91 98721 55667",
+    "gstin": "03EEEEE4444E5Z9",
+    "pan": "EFGHI5678J",
+    "city": "Chandigarh",
+    "status": "Verified",
+    "rating": 4.8,
+    "totalProducts": 32,
+    "totalSales": 289000,
+    "commissionRate": 12,
+    "payoutBalance": 15200,
+    "bankDetails": {
+      "bank": "Punjab National Bank",
+      "account": "•••• 6541",
+      "ifsc": "PUNB0124000"
+    }
+  },
+  {
+    "id": "SEL-106",
+    "storeName": "Delhi Uniform Crafters",
+    "ownerName": "Praveen Solanki",
+    "email": "praveen@delhiuniforms.com",
+    "phone": "+91 99100 44321",
+    "gstin": "07FFFFF5555F6Z0",
+    "pan": "FGHIJ6789K",
+    "city": "New Delhi",
+    "status": "Verified",
+    "rating": 0,
+    "totalProducts": 5,
+    "totalSales": 0,
+    "commissionRate": 12,
+    "payoutBalance": 0,
+    "bankDetails": {
+      "bank": "Kotak Mahindra Bank",
+      "account": "•••• 7701",
+      "ifsc": "KKBK0000214"
+    },
+    "rejectionReason": null
   }
 ];

@@ -19,6 +19,7 @@ import {
   Ticket
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { useLocation } from '../../context/LocationContext';
 import { ALL_PRODUCTS, KIT_BUNDLES } from '../../data/mockData';
 import GrabKitSection from './GrabKitSection';
 
@@ -181,8 +182,10 @@ export default function ProductDetailPage({ onNavigate }) {
     (p) => p.id !== selectedProduct.id && p.rating >= 4.8
   ).slice(0, 6);
 
+  const { isSchoolWithinRadius } = useLocation();
+
   const recommendedKits = KIT_BUNDLES
-    .filter((kit) => kit.id !== selectedProduct.id)
+    .filter((kit) => kit.id !== selectedProduct.id && (kit.school === 'Any School' || isSchoolWithinRadius(kit.school)))
     .sort((firstKit, secondKit) => {
       const firstMatch = firstKit.school === selectedProduct.school || firstKit.className === selectedProduct.className;
       const secondMatch = secondKit.school === selectedProduct.school || secondKit.className === selectedProduct.className;

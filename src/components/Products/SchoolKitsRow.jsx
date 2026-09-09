@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ProductCarouselRow from './ProductCarouselRow';
 import KitCard from './KitCard';
 import { KIT_BUNDLES } from '../../data/mockData';
+import { useLocation } from '../../context/LocationContext';
 
 export default function SchoolKitsRow({ onNavigate }) {
+  const { isSchoolWithinRadius, schoolRadiusKm } = useLocation();
   const [filterSchool, setFilterSchool] = useState('');
   const [filterClass, setFilterClass] = useState('all');
 
@@ -25,11 +27,16 @@ export default function SchoolKitsRow({ onNavigate }) {
 
   const filteredKits = useMemo(() => {
     return KIT_BUNDLES.filter((kit) => {
+      // 1. Must be within the admin-defined radius (or generic Any School)
+      const withinRadius = kit.school === 'Any School' || isSchoolWithinRadius(kit.school);
+      if (!withinRadius) return false;
+
+      // 2. Query filter
       const matchSchool = filterSchool === '' || kit.school.toLowerCase().includes(filterSchool.toLowerCase()) || kit.name.toLowerCase().includes(filterSchool.toLowerCase());
       const matchClass = filterClass === 'all' || kit.className === filterClass;
       return matchSchool && matchClass;
     });
-  }, [filterSchool, filterClass]);
+  }, [filterSchool, filterClass, isSchoolWithinRadius]);
 
   const hasFilter = filterSchool !== '' || filterClass !== 'all';
 

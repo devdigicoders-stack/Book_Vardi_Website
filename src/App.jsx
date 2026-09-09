@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { CartProvider, useCart } from './context/CartContext';
+import { LocationProvider } from './context/LocationContext';
 import TopAnnouncementBar from './components/Header/TopAnnouncementBar';
 import Navbar from './components/Header/Navbar';
+import LocationPermissionModal from './components/Common/LocationPermissionModal';
 import HeroSection from './components/Hero/HeroSection';
 import FeaturesBar from './components/Features/FeaturesBar';
 import CategorySection from './components/Categories/CategorySection';
@@ -140,11 +142,11 @@ function MainStore() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal">
-      {/* Top Banner with announcements */}
+    <div className="min-h-screen flex flex-col pt-[108px] text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal">
+      {/* Top Banner with announcements pinned to the viewport */}
       <TopAnnouncementBar onNavigate={navigateTo} />
 
-      {/* Main sticky navigation */}
+      {/* Main sticky navigation (sticks to top-0 when scrolled) */}
       <Navbar
         currentPage={activePage}
         onNavigate={navigateTo}
@@ -264,14 +266,19 @@ function MainStore() {
 
       {/* Global Authentication Modal (Login / Register) */}
       <AuthModal />
+
+      {/* Location Permission & Discovery Radius Modal */}
+      <LocationPermissionModal />
     </div>
   );
 }
 
 export default function App() {
   return (
-    <CartProvider>
-      <MainStore />
-    </CartProvider>
+    <LocationProvider>
+      <CartProvider>
+        <MainStore />
+      </CartProvider>
+    </LocationProvider>
   );
 }

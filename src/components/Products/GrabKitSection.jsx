@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, School, GraduationCap, ArrowRight, Package, ChevronDown, Check, ShoppingCart } from 'lucide-react';
 import { KIT_BUNDLES } from '../../data/mockData';
 import { useCart } from '../../context/CartContext';
+import { useLocation } from '../../context/LocationContext';
 import KitCard from './KitCard';
 
 export default function GrabKitSection({ onNavigate }) {
@@ -46,7 +47,12 @@ export default function GrabKitSection({ onNavigate }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  const availableSchools = [...new Set(KIT_BUNDLES.map((kit) => kit.school))].sort();
+
+  const { isSchoolWithinRadius, schoolRadiusKm } = useLocation();
+
+  const availableSchools = [...new Set(KIT_BUNDLES.map((kit) => kit.school))]
+    .filter((s) => s === 'Any School' || isSchoolWithinRadius(s))
+    .sort();
   const availableClasses = [...new Set(KIT_BUNDLES.map((kit) => kit.className))].sort();
 
   const filteredSchools = availableSchools.filter((s) =>

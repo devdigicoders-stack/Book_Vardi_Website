@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck, MapPin } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { useLocation } from '../../context/LocationContext';
 import { NAV_LINKS, CATEGORIES } from '../../data/mockData';
 import GlobalSearch from './GlobalSearch';
 
@@ -187,6 +188,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
     isAdmin,
     isSeller,
   } = useCart();
+  const { locationLabel, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Profile dropdown
@@ -201,6 +203,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
   const [categoryClickCount, setCategoryClickCount] = useState(0);
 
   const [activeHomeSection, setActiveHomeSection] = useState('home');
+  const [isScrolled, setIsScrolled] = useState(false);
 
   const handleActionProfileEnter = () => {
     if (profileTimerRef.current) clearTimeout(profileTimerRef.current);
@@ -240,10 +243,13 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Track active section on home page
+  // Track scroll position for sticky header elevation & active home section
   useEffect(() => {
-    if (currentPage !== 'home') return;
     const handleScroll = () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      setIsScrolled(scrollY > 20);
+
+      if (currentPage !== 'home') return;
       const categoriesEl = document.getElementById('categories');
       const bestsellersEl = document.getElementById('bestsellers');
       if (!categoriesEl || !bestsellersEl) return;
@@ -254,6 +260,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
       else if (catRect.top <= triggerY && bestRect.top > triggerY) setActiveHomeSection('categories');
       else if (bestRect.top <= triggerY) setActiveHomeSection('bestsellers');
     };
+
     window.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
@@ -389,8 +396,13 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
   };
 
   return (
-    <header ref={headerRef} className="sticky top-0 z-50 bg-white border-b border-gray-200/80 shadow-xs transition-all">
-      <div className="container mx-auto px-4 flex items-center justify-between h-[76px] gap-6 relative">
+    <header 
+      ref={headerRef} 
+      className={`fixed left-0 right-0 top-[28px] z-50 w-full bg-white/95 backdrop-blur-md border-b border-gray-200/80 transition-all duration-200 ${
+        isScrolled ? 'shadow-md bg-white/98' : 'shadow-xs'
+      }`}
+    >
+      <div className="container mx-auto px-4 flex items-center justify-between h-[76px] gap-6">
         {/* Brand Logo */}
         <button
           onClick={() => {
@@ -463,8 +475,10 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
           })}
         </nav>
 
-        {/* Actions (Wishlist, User, Cart) */}
+        {/* Actions (Location, Wishlist, User, Cart) */}
         <div className="flex items-center gap-2 sm:gap-3">
+          
+
           {isAuthenticated && (
             <button
               className={`relative p-2 rounded-full transition-all duration-200 active:scale-75 cursor-pointer ${
