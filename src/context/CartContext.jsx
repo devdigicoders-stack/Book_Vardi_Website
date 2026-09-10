@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { USERS, MOCK_USER_PROFILE, ALL_PRODUCTS, PROMOTIONS, ORDERS as MOCK_ORDERS } from '../data/mockData';
 import { pushPlatformSync, usePlatformSyncListener } from '../utils/syncBridge';
+import {
+  backendEnabled,
+  loginWithBackend,
+  loginWithPhoneOtpBackend,
+  registerWithBackend
+} from '../utils/api';
 
 const INITIAL_MOCK_REVIEWS = {
   1: [
@@ -656,9 +662,78 @@ export function CartProvider({ children }) {
     setIsAuthModalOpen(false);
   };
 
-  const login = (userData = {}) => {
-    setIsAuthenticated(true);
+  const login = async (userData = {}) => {
     const email = (userData?.email || '').trim().toLowerCase();
+    const password = String(userData?.password || '').trim();
+    const phone = String(userData?.phone || '').replace(/\D/g, '');
+    const otp = String(userData?.otp || '').trim();
+    const verifiedUser = userData?.verifiedUser || null;
+
+    if (backendEnabled && phone && (otp || verifiedUser)) {
+      try {
+        const response = otp ? await loginWithPhoneOtpBackend({ phone, otp }) : { user: verifiedUser };
+        const apiUser = response?.user || verifiedUser || { ...userData, phone };
+        const resolvedProfile = {
+          ...MOCK_USER_PROFILE,
+          id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
+          name: apiUser.name || 'Student User',
+          email: apiUser.email || email || `student${phone.slice(-4)}@bookvardi.local`,
+          phone: apiUser.phone || phone,
+          role: apiUser.role === 'admin' ? 'Admin' : 'Student',
+          roles: apiUser.role === 'admin' ? ['Admin', 'Customer'] : ['Student', 'Customer'],
+          isAdmin: apiUser.role === 'admin',
+          adminStatus: apiUser.role === 'admin' ? 'approved' : 'none',
+          adminRole: apiUser.role === 'admin' ? 'Admin' : null,
+          isSeller: Boolean(apiUser.isSeller),
+          sellerStatus: apiUser.sellerStatus || 'none',
+          sellerRole: apiUser.sellerRole || null,
+          addresses: Array.isArray(apiUser.addresses) ? apiUser.addresses : []
+        };
+
+        setIsAuthenticated(true);
+        setUserProfile(resolvedProfile);
+        closeAuthModal();
+        showToast(`Welcome back, ${resolvedProfile.name}! ✨`);
+        return true;
+      } catch (error) {
+        showToast(error.message || 'Unable to log in right now.');
+        return false;
+      }
+    }
+
+    if (backendEnabled && ((email && password) || (phone && password))) {
+      try {
+        const response = await loginWithBackend({ email, password, phone });
+        const apiUser = response?.user || { ...userData, email: email || `student${phone.slice(-4)}@bookvardi.local` };
+        const resolvedProfile = {
+          ...MOCK_USER_PROFILE,
+          id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
+          name: apiUser.name || email.split('@')[0].replace('.', ' '),
+          email: apiUser.email || email,
+          phone: apiUser.phone || userData.phone || '',
+          role: apiUser.role === 'admin' ? 'Admin' : 'Student',
+          roles: apiUser.role === 'admin' ? ['Admin', 'Customer'] : ['Student', 'Customer'],
+          isAdmin: apiUser.role === 'admin',
+          adminStatus: apiUser.role === 'admin' ? 'approved' : 'none',
+          adminRole: apiUser.role === 'admin' ? 'Admin' : null,
+          isSeller: Boolean(apiUser.isSeller),
+          sellerStatus: apiUser.sellerStatus || 'none',
+          sellerRole: apiUser.sellerRole || null,
+          addresses: Array.isArray(apiUser.addresses) ? apiUser.addresses : []
+        };
+
+        setIsAuthenticated(true);
+        setUserProfile(resolvedProfile);
+        closeAuthModal();
+        showToast(`Welcome back, ${resolvedProfile.name}! ✨`);
+        return true;
+      } catch (error) {
+        showToast(error.message || 'Unable to log in right now.');
+        return false;
+      }
+    }
+
+    setIsAuthenticated(true);
     const matched = USERS.find((u) => u.email.toLowerCase() === email);
 
     let resolvedProfile;
@@ -684,6 +759,7 @@ export function CartProvider({ children }) {
     setUserProfile(resolvedProfile);
     closeAuthModal();
     showToast(`Welcome back, ${resolvedProfile.name}! ✨`);
+    return true;
   };
 
   const switchUser = (userIdOrEmail) => {
@@ -699,7 +775,57 @@ export function CartProvider({ children }) {
     return false;
   };
 
-  const register = (newUserData = {}) => {
+  const register = async (newUserData = {}) => {
+    const email = (newUserData?.email || '').trim().toLowerCase();
+    const password = String(newUserData?.password || '').trim();
+
+    if (backendEnabled && email && password) {
+      try {
+        const response = await registerWithBackend({
+          name: newUserData.name || 'Student User',
+          email,
+          password,
+          phone: newUserData.phone || ''
+        });
+
+        const apiUser = response?.user || {
+          id: `USR-${Date.now().toString().slice(-4)}`,
+          name: newUserData.name || 'Student User',
+          email,
+          phone: newUserData.phone || '',
+          role: 'user'
+        };
+
+        const freshProfile = {
+          ...MOCK_USER_PROFILE,
+          id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
+          name: apiUser.name || newUserData.name || 'Student User',
+          email: apiUser.email || email,
+          phone: apiUser.phone || newUserData.phone || '',
+          role: apiUser.role === 'admin' ? 'Admin' : 'Student',
+          roles: apiUser.role === 'admin' ? ['Admin', 'Customer'] : ['Student', 'Customer'],
+          isAdmin: apiUser.role === 'admin',
+          adminStatus: apiUser.role === 'admin' ? 'approved' : 'none',
+          adminRole: apiUser.role === 'admin' ? 'Admin' : null,
+          isSeller: false,
+          sellerStatus: 'none',
+          sellerRole: null,
+          memberSince: 'September 2026',
+          rewardPoints: 100,
+          orders: []
+        };
+
+        setUserProfile(freshProfile);
+        setIsAuthenticated(true);
+        closeAuthModal();
+        showToast(`🎉 Welcome to Book Vardi, ${freshProfile.name}! Account created.`);
+        return true;
+      } catch (error) {
+        showToast(error.message || 'Unable to create account right now.');
+        return false;
+      }
+    }
+
     const freshProfile = {
       ...MOCK_USER_PROFILE,
       id: `USR-${Date.now().toString().slice(-4)}`,
@@ -720,6 +846,7 @@ export function CartProvider({ children }) {
     setIsAuthenticated(true);
     closeAuthModal();
     showToast(`🎉 Welcome to Book Vardi, ${newUserData.name}! Account created.`);
+    return true;
   };
 
   const logout = () => {

@@ -20,6 +20,7 @@ import {
   Store
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { sendOtpToBackend, verifyOtpWithBackend } from '../../utils/api';
 
 export default function AuthModal() {
   const {
@@ -35,9 +36,12 @@ export default function AuthModal() {
   } = useCart();
 
   // Login Form State
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [loginPhone, setLoginPhone] = useState('');
+  const [loginOtp, setLoginOtp] = useState('');
+  const [loginOtpSent, setLoginOtpSent] = useState(false);
+  const [loginOtpTimer, setLoginOtpTimer] = useState(0);
+  const canResendLoginOtp = loginOtpTimer === 0;
+  const [showLoginOtp, setShowLoginOtp] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
   // Register Form State
@@ -49,15 +53,21 @@ export default function AuthModal() {
     studentId: '',
     password: ''
   });
+  const [registerStep, setRegisterStep] = useState('otp');
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [registerOtp, setRegisterOtp] = useState('');
+  const [registerOtpSent, setRegisterOtpSent] = useState(false);
+  const [registerOtpTimer, setRegisterOtpTimer] = useState(0);
+  const canResendRegisterOtp = registerOtpTimer === 0;
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  // const [showRegisterPassword, setShowRegisterPassword] = useState(false);
 
   // Forgot Password / OTP Flow State
   const [forgotMethod, setForgotMethod] = useState('email'); // 'email' | 'phone'
   const [forgotEmail, setForgotEmail] = useState('ritesh.yadav@example.com');
-  const [forgotPhone, setForgotPhone] = useState('+91 98765 43210');
+  const [forgotPhone, setForgotPhone] = useState('');
   const [forgotStep, setForgotStep] = useState('request'); // 'request' | 'otp' | 'new_password' | 'success'
   const [otpDigits, setOtpDigits] = useState(['', '', '', '']);
-  const [demoOtp, setDemoOtp] = useState('4829');
   const [otpTimer, setOtpTimer] = useState(30);
   const canResendOtp = otpTimer === 0;
   const [newPassword, setNewPassword] = useState('');
@@ -102,11 +112,50 @@ export default function AuthModal() {
     setOtpTimer(30);
   };
 
+  const resetLoginState = () => {
+    setLoginPhone('');
+    setLoginOtp('');
+    setLoginOtpSent(false);
+    setLoginOtpTimer(0);
+    setShowLoginOtp(false);
+    setGeneratedOtp('');
+    setRememberMe(true);
+  };
+
+  const resetRegisterState = () => {
+    setRegisterData({
+      name: '',
+      email: '',
+      phone: '',
+      institution: '',
+      studentId: '',
+      password: ''
+    });
+    setRegisterStep('otp');
+    setRegisterOtp('');
+    setRegisterOtpSent(false);
+    setRegisterOtpTimer(0);
+    setGeneratedOtp('');
+    setShowRegisterPassword(false);
+  };
+
+  const resetAuthForms = () => {
+    resetLoginState();
+    resetRegisterState();
+    resetForgotState();
+    setAuthMode('login');
+  };
+
+  const handleCloseModal = () => {
+    resetAuthForms();
+    closeAuthModal();
+  };
+
   // Close modal on Escape key
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isAuthModalOpen) {
-        closeAuthModal();
+        handleCloseModal();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -124,78 +173,247 @@ export default function AuthModal() {
     return () => clearInterval(interval);
   }, [authMode, forgotStep, otpTimer]);
 
+  useEffect(() => {
+    if (!registerOtpSent || registerOtpTimer <= 0) return;
+
+    const interval = setInterval(() => {
+      setRegisterOtpTimer((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [registerOtpSent, registerOtpTimer]);
+
+  useEffect(() => {
+    if (!loginOtpSent || loginOtpTimer <= 0) return;
+
+    const interval = setInterval(() => {
+      setLoginOtpTimer((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [loginOtpSent, loginOtpTimer]);
+
   if (!isAuthModalOpen) return null;
 
   // ===== LOGIN HANDLER =====
-  const handleLoginSubmit = (e) => {
-    e.preventDefault();
-    const email = loginEmail.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      showToast('⚠️ Please enter a valid email address');
-      return;
-    }
-    if (!loginPassword) {
-      showToast('⚠️ Please enter your password');
+  const handleSendLoginOtp = async () => {
+    const phone = loginPhone.trim();
+    if (!phone || phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+      showToast('⚠️ Please enter a valid 10-digit phone number');
       return;
     }
 
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      const response = await sendOtpToBackend(phone, 'login');
+      const otpValue = response?.otp;
+      setGeneratedOtp(otpValue || '');
+      setLoginOtpSent(true);
+      setLoginOtp('');
+      setLoginOtpTimer(30);
+      showToast(`📲 OTP sent successfully to ${phone}${otpValue ? ` • OTP: ${otpValue}` : ''}`);
+    } catch (error) {
+      showToast(error.message || 'This number is not registered. Please register yourself first.');
+    } finally {
       setIsLoading(false);
-      login({
-        email,
-        name: email.split('@')[0].replace('.', ' ')
+    }
+  };
+
+  const handleResendLoginOtp = async () => {
+    if (!canResendLoginOtp) return;
+    setIsLoading(true);
+    try {
+      const response = await sendOtpToBackend(loginPhone.trim(), 'login');
+      const otpValue = response?.otp;
+      setGeneratedOtp(otpValue || '');
+      setLoginOtpTimer(30);
+      setLoginOtp('');
+      showToast(`📩 OTP resent successfully to ${loginPhone.trim()}${otpValue ? ` • OTP: ${otpValue}` : ''}`);
+    } catch (error) {
+      showToast(error.message || 'This number is not registered. Please register yourself first.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    const phone = loginPhone.trim();
+    if (!phone || phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+      showToast('⚠️ Please enter a valid 10-digit phone number');
+      return;
+    }
+    if (!loginOtpSent) {
+      await handleSendLoginOtp();
+      return;
+    }
+    if (!loginOtp.trim()) {
+      showToast('⚠️ Please enter your OTP');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const verificationResponse = await verifyOtpWithBackend(phone, loginOtp.trim());
+      const verifiedUser = verificationResponse?.user;
+
+      if (!verifiedUser || !verifiedUser.phone || verifiedUser.phone.replace(/\D/g, '') !== phone) {
+        throw new Error('This phone number is not registered. Please register yourself first.');
+      }
+
+      const success = await login({
+        phone,
+        name: verifiedUser.name || `Student ${phone.slice(-4)}`,
+        email: verifiedUser.email || `student${phone.slice(-4)}@bookvardi.local`,
+        verifiedUser
       });
-    }, 450);
+
+      if (success) {
+        resetLoginState();
+      } else {
+        showToast('Unable to complete login.');
+      }
+    } catch (error) {
+      showToast(error.message || '⚠️ Invalid OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDemoLogin = () => {
     setIsLoading(true);
-    setLoginEmail('ritesh.yadav@example.com');
-    setLoginPassword('DemoPassword123');
+    setLoginPhone('9876543210');
+    setLoginOtp('3123');
 
     setTimeout(() => {
       setIsLoading(false);
       login({
-        name: 'Ritesh Yadav',
-        email: 'ritesh.yadav@example.com'
+        phone: '9876543210',
+        name: 'Ritesh Yadav'
       });
     }, 400);
   };
 
   // ===== REGISTER HANDLER =====
-  const handleRegisterSubmit = (e) => {
-    e.preventDefault();
-    const { name, email, phone, institution, password } = registerData;
-
-    if (!name.trim()) {
-      showToast('⚠️ Please enter your full name');
-      return;
-    }
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      showToast('⚠️ Please enter a valid student email');
-      return;
-    }
-    if (!phone.trim()) {
-      showToast('⚠️ Please enter your phone number');
-      return;
-    }
-    if (!password || password.length < 6) {
-      showToast('⚠️ Password must be at least 6 characters');
+  const handleSendRegisterOtp = async () => {
+    const phone = registerData.phone.trim();
+    if (!phone || phone.length < 10) {
+      showToast('⚠️ Please enter a valid 10-digit phone number');
       return;
     }
 
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      const response = await sendOtpToBackend(phone, 'register');
+      const otpValue = response?.otp;
+      setGeneratedOtp(otpValue || '');
+      setRegisterStep('otp');
+      setRegisterOtpSent(true);
+      setRegisterOtp('');
+      setRegisterOtpTimer(30);
+      showToast(`📲 OTP sent successfully to ${phone}${otpValue ? ` • OTP: ${otpValue}` : ''}`);
+    } catch (error) {
+      showToast(error.message || 'This phone number is already registered. Please log in instead.');
+    } finally {
       setIsLoading(false);
-      register({
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        institution: institution.trim() || 'School / College',
+    }
+  };
+
+  const handleResendRegisterOtp = async () => {
+    if (!canResendRegisterOtp) return;
+    setIsLoading(true);
+    try {
+      const response = await sendOtpToBackend(registerData.phone.trim(), 'register');
+      const otpValue = response?.otp;
+      setGeneratedOtp(otpValue || '');
+      setRegisterOtpTimer(30);
+      setRegisterOtp('');
+      showToast(`📩 OTP resent successfully to ${registerData.phone.trim()}${otpValue ? ` • OTP: ${otpValue}` : ''}`);
+    } catch (error) {
+      showToast(error.message || 'This phone number is already registered. Please log in instead.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault();
+    const phone = registerData.phone.trim();
+
+    if (!phone || phone.length < 10) {
+      showToast('⚠️ Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    if (!registerOtpSent) {
+      await handleSendRegisterOtp();
+      return;
+    }
+
+    if (!registerOtp.trim()) {
+      showToast('⚠️ Please enter the OTP sent to your phone');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const otpVerified = await verifyOtpWithBackend(phone, registerOtp.trim());
+      if (!otpVerified) {
+        throw new Error('OTP verification failed');
+      }
+
+      if (registerStep !== 'details') {
+        setRegisterStep('details');
+        showToast('✓ OTP verified. Please add your details or skip.');
+        setIsLoading(false);
+        return;
+      }
+
+      const email = registerData.email.trim();
+      const password = registerData.password.trim();
+
+      const backendPayload = {
+        name: registerData.name.trim() || 'Student User',
+        email: email || `student${phone.slice(-4)}@bookvardi.local`,
+        phone,
+        password: password || 'BookVardi@123',
+        institution: registerData.institution.trim() || 'School / College',
         studentId: registerData.studentId.trim() || `SC-${Math.floor(1000 + Math.random() * 9000)}`
-      });
-    }, 550);
+      };
+
+      const success = await register(backendPayload);
+      if (success) {
+        resetRegisterState();
+        closeAuthModal();
+      }
+    } catch (error) {
+      showToast(error.message || '⚠️ Invalid OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegisterSkipDetails = async () => {
+    const phone = registerData.phone.trim();
+    const defaultPayload = {
+      name: registerData.name.trim() || 'Student User',
+      email: registerData.email.trim() || `student${phone.slice(-4)}@bookvardi.app`,
+      phone,
+      password: registerData.password.trim() || 'BookVardi@123',
+      institution: registerData.institution.trim() || 'School / College',
+      studentId: registerData.studentId.trim() || `SC-${Math.floor(1000 + Math.random() * 9000)}`
+    };
+
+    setIsLoading(true);
+    try {
+      const success = await register(defaultPayload);
+      if (success) {
+        resetRegisterState();
+        closeAuthModal();
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // ===== OTP FLOW HANDLERS =====
@@ -218,14 +436,11 @@ export default function AuthModal() {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      const generatedCode = '4829';
-      setDemoOtp(generatedCode);
       setForgotStep('otp');
       setOtpDigits(['', '', '', '']);
       setOtpTimer(30);
-      setCanResendOtp(false);
       const targetDisplay = forgotMethod === 'email' ? getMaskedEmail(forgotEmail) : getMaskedPhone(forgotPhone);
-      showToast(`📲 OTP sent to ${targetDisplay.masked} (Last 4 digits: ${targetDisplay.last4}). Demo: ${generatedCode}`);
+      showToast(`📲 OTP sent to ${targetDisplay.masked}`);
     }, 450);
   };
 
@@ -235,10 +450,9 @@ export default function AuthModal() {
     setTimeout(() => {
       setIsLoading(false);
       setOtpTimer(30);
-      setCanResendOtp(false);
       setOtpDigits(['', '', '', '']);
       const targetDisplay = forgotMethod === 'email' ? getMaskedEmail(forgotEmail) : getMaskedPhone(forgotPhone);
-      showToast(`📩 New OTP sent to ${targetDisplay.masked} (Last 4 digits: ${targetDisplay.last4}). Demo: 4829`);
+      showToast(`📩 New OTP sent to ${targetDisplay.masked}`);
     }, 350);
   };
 
@@ -275,11 +489,6 @@ export default function AuthModal() {
     }
   };
 
-  const handleFillDemoOtp = () => {
-    setOtpDigits(['4', '8', '2', '9']);
-    showToast('🔑 Demo code 4829 filled! Click "Verify Code" to continue.');
-  };
-
   const handleVerifyOtp = (e) => {
     e?.preventDefault();
     const enteredOtp = otpDigits.join('');
@@ -291,12 +500,8 @@ export default function AuthModal() {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      if (enteredOtp === demoOtp || enteredOtp === '4829' || enteredOtp === '1234') {
-        setForgotStep('new_password');
-        showToast('✓ Identity verified! Please enter your new password.');
-      } else {
-        showToast(`⚠️ Incorrect OTP code. Enter the 4-digit code (Demo code: ${demoOtp})`);
-      }
+      setForgotStep('new_password');
+      showToast('✓ Identity verified! Please enter your new password.');
     }, 400);
   };
 
@@ -334,7 +539,7 @@ export default function AuthModal() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn"
-      onClick={closeAuthModal}
+      onClick={handleCloseModal}
     >
       <div
         className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]"
@@ -347,21 +552,14 @@ export default function AuthModal() {
 
           {/* Close Button */}
           <button
-            onClick={closeAuthModal}
+            onClick={handleCloseModal}
             className="absolute top-4 right-4 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
             aria-label="Close dialog"
           >
             <X size={18} />
           </button>
 
-          <div className="flex items-center gap-2 mb-2">
-            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-widest bg-brand-yellow text-brand-teal-dark px-2 py-0.5 rounded-full shadow-2xs">
-              <Sparkles size={11} />
-              <span>
-                {authMode === 'forgot' ? 'ACCOUNT SECURITY' : 'STUDENT REWARDS'}
-              </span>
-            </span>
-          </div>
+          
 
           <h3 className="font-display text-2xl font-extrabold tracking-tight">
             {authMode === 'login'
@@ -427,42 +625,22 @@ export default function AuthModal() {
           )}
         </div>
 
-        {/* Form Body - Scrollable */}
-        <div className="p-6 overflow-y-auto">
+        {/* Form Body */}
+        <div className="p-6 overflow-y-visible">
           {authMode === 'login' && (
             /* ===== LOGIN FORM ===== */
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Email or Student ID
-                </label>
-                <div className="relative">
-                  <Mail
-                    size={16}
-                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                  />
-                  <input
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="name@school.edu or your email"
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                  />
-                </div>
-              </div>
-
-              <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                    Password
+                    Mobile Phone
                   </label>
                   <button
                     type="button"
                     onClick={() => {
                       setAuthMode('forgot');
                       setForgotStep('request');
-                      if (loginEmail) setForgotEmail(loginEmail);
+                      if (loginPhone) setForgotPhone(loginPhone);
                     }}
                     className="text-[11px] font-bold text-brand-teal hover:underline cursor-pointer"
                   >
@@ -470,27 +648,71 @@ export default function AuthModal() {
                   </button>
                 </div>
                 <div className="relative">
-                  <Lock
+                  <Phone
                     size={16}
                     className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
                   />
                   <input
-                    type={showLoginPassword ? 'text' : 'password'}
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Enter your password"
+                    type="tel"
+                    value={loginPhone}
+                    onChange={(e) => setLoginPhone(e.target.value)}
+                    placeholder="Enter your phone number"
                     required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                  >
-                    {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
                 </div>
               </div>
+
+              {loginOtpSent && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    OTP
+                  </label>
+                  {generatedOtp && (
+                    <div className="mb-2 flex items-center justify-between rounded-lg border border-brand-yellow/60 bg-brand-yellow/15 px-3 py-2 text-[11px] font-bold text-brand-teal-dark">
+                      <span>Generated OTP</span>
+                      <span className="tracking-[0.2em]">{generatedOtp}</span>
+                    </div>
+                  )}
+                  <div className="relative">
+                    <Lock
+                      size={16}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                    />
+                    <input
+                      type="text"
+                      value={loginOtp}
+                      onChange={(e) => setLoginOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="Enter your OTP"
+                      maxLength={4}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginOtp(!showLoginOtp)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                    >
+                      {showLoginOtp ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {loginOtpSent && (
+                <div className="text-center text-xs text-gray-500">
+                  {canResendLoginOtp ? (
+                    <button
+                      type="button"
+                      onClick={handleResendLoginOtp}
+                      className="font-bold text-brand-teal hover:underline cursor-pointer"
+                    >
+                      Resend OTP
+                    </button>
+                  ) : (
+                    <span>Resend OTP in <strong>{loginOtpTimer}s</strong></span>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-between text-xs pt-1">
                 <label className="flex items-center gap-2 cursor-pointer text-gray-600 select-none">
@@ -505,25 +727,30 @@ export default function AuthModal() {
               </div>
 
               <button
-                type="submit"
+                type={loginOtpSent ? 'button' : 'submit'}
                 disabled={isLoading}
+                onClick={(e) => {
+                  if (loginOtpSent) {
+                    handleLoginSubmit(e);
+                  }
+                }}
                 className="w-full mt-2 inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light active:scale-[0.99] disabled:opacity-75 text-white font-extrabold py-3 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition-all shadow-xs cursor-pointer hover:shadow-md"
               >
                 {isLoading ? (
                   <>
                     <Loader2 size={16} className="animate-spin" />
-                    <span>Signing In...</span>
+                    <span>{loginOtpSent ? 'Submitting...' : 'Sending OTP...'}</span>
                   </>
                 ) : (
                   <>
                     <LogIn size={16} />
-                    <span>Sign In</span>
+                    <span>{loginOtpSent ? 'Submit' : 'Send OTP'}</span>
                   </>
                 )}
               </button>
 
               {/* Quick Select from mockData USERS */}
-              <div className="pt-3 border-t border-gray-100 space-y-2">
+              {/* <div className="pt-3 border-t border-gray-100 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">
                     Switch Mock Account (RBAC Roles)
@@ -582,7 +809,7 @@ export default function AuthModal() {
                     );
                   })}
                 </div>
-              </div>
+              </div> */}
 
               <div className="text-center pt-2 text-xs text-gray-500">
                 Don't have a student account?{' '}
@@ -600,47 +827,7 @@ export default function AuthModal() {
           {authMode === 'register' && (
             /* ===== REGISTER FORM ===== */
             <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                  Full Name <span className="text-brand-pink">*</span>
-                </label>
-                <div className="relative">
-                  <User
-                    size={16}
-                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                  />
-                  <input
-                    type="text"
-                    value={registerData.name}
-                    onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
-                    placeholder="e.g. Ritesh Yadav"
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    Email Address <span className="text-brand-pink">*</span>
-                  </label>
-                  <div className="relative">
-                    <Mail
-                      size={16}
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                    />
-                    <input
-                      type="email"
-                      value={registerData.email}
-                      onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
-                      placeholder="name@school.edu"
-                      required
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                    />
-                  </div>
-                </div>
-
+              {!registerOtpSent && (
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
                     Mobile Phone <span className="text-brand-pink">*</span>
@@ -654,68 +841,157 @@ export default function AuthModal() {
                       type="tel"
                       value={registerData.phone}
                       onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
-                      placeholder="+91 98765..."
+                      placeholder="+91 9876554321"
                       required
                       className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
                     />
                   </div>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                  School / College / University
-                </label>
-                <div className="relative">
-                  <GraduationCap
-                    size={16}
-                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                  />
-                  <input
-                    type="text"
-                    value={registerData.institution}
-                    onChange={(e) =>
-                      setRegisterData({ ...registerData, institution: e.target.value })
-                    }
-                    placeholder="e.g. Delhi Technological University"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                  />
+              {registerOtpSent && registerStep === 'otp' && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                    Enter OTP <span className="text-brand-pink">*</span>
+                  </label>
+                  {generatedOtp && (
+                    <div className="mb-2 flex items-center justify-between rounded-lg border border-brand-yellow/60 bg-brand-yellow/15 px-3 py-2 text-[11px] font-bold text-brand-teal-dark">
+                      <span>Generated OTP</span>
+                      <span className="tracking-[0.2em]">{generatedOtp}</span>
+                    </div>
+                  )}
+                  <div className="relative">
+                    <Lock
+                      size={16}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                    />
+                    <input
+                      type="text"
+                      value={registerOtp}
+                      onChange={(e) => setRegisterOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="Enter 4-digit OTP"
+                      maxLength={4}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                  Create Password <span className="text-brand-pink">*</span>
-                </label>
-                <div className="relative">
-                  <Lock
-                    size={16}
-                    className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                  />
-                  <input
-                    type={showRegisterPassword ? 'text' : 'password'}
-                    value={registerData.password}
-                    onChange={(e) =>
-                      setRegisterData({ ...registerData, password: e.target.value })
-                    }
-                    placeholder="Minimum 6 characters"
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegisterPassword(!showRegisterPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                  >
-                    {showRegisterPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+              {registerStep === 'details' && (
+                <div className="space-y-3.5 border border-brand-yellow/30 bg-brand-yellow/5 rounded-2xl p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-brand-teal-dark">
+                      Profile Details
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRegisterSkipDetails}
+                      className="text-[10px] font-bold text-brand-teal hover:underline cursor-pointer"
+                    >
+                      Skip
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      Full Name
+                    </label>
+                    <div className="relative">
+                      <User
+                        size={16}
+                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                      />
+                      <input
+                        type="text"
+                        value={registerData.name}
+                        onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
+                        placeholder="e.g. Ritesh Yadav"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail
+                        size={16}
+                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                      />
+                      <input
+                        type="email"
+                        value={registerData.email}
+                        onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
+                        placeholder="name@school.edu"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock
+                        size={16}
+                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                      />
+                      <input
+                        type={showRegisterPassword ? 'text' : 'password'}
+                        value={registerData.password}
+                        onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
+                        placeholder="Create a password"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterPassword((prev) => !prev)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      >
+                        {showRegisterPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      School
+                    </label>
+                    <div className="relative">
+                      <GraduationCap
+                        size={16}
+                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                      />
+                      <input
+                        type="text"
+                        value={registerData.institution}
+                        onChange={(e) => setRegisterData({ ...registerData, institution: e.target.value })}
+                        placeholder="e.g. Delhi public School"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="p-2.5 rounded-xl bg-green-50 border border-green-200 text-green-800 text-[11px] flex items-center gap-2">
-                <CheckCircle2 size={15} className="shrink-0 text-green-600" />
-                <span>Earn <strong>100 Free Reward Points</strong> upon registration!</span>
-              </div>
+              {registerOtpSent && registerStep === 'otp' && (
+                <div className="text-center text-xs text-gray-500">
+                  {canResendRegisterOtp ? (
+                    <button
+                      type="button"
+                      onClick={handleResendRegisterOtp}
+                      className="font-bold text-brand-teal hover:underline cursor-pointer"
+                    >
+                      Resend OTP
+                    </button>
+                  ) : (
+                    <span>Resend OTP in <strong>{registerOtpTimer}s</strong></span>
+                  )}
+                </div>
+              )}
 
               <button
                 type="submit"
@@ -725,12 +1001,12 @@ export default function AuthModal() {
                 {isLoading ? (
                   <>
                     <Loader2 size={16} className="animate-spin" />
-                    <span>Creating Account...</span>
+                    <span>{registerOtpSent ? (registerStep === 'details' ? 'Creating account...' : 'Submitting...') : 'Sending OTP...'}</span>
                   </>
                 ) : (
                   <>
                     <UserPlus size={16} />
-                    <span>Create Student Account</span>
+                    <span>{!registerOtpSent ? 'Send OTP' : registerStep === 'details' ? 'Create Account' : 'Submit'}</span>
                   </>
                 )}
               </button>
@@ -754,7 +1030,7 @@ export default function AuthModal() {
               {/* STEP 1: REQUEST OTP (CHOOSE EMAIL OR PHONE) */}
               {forgotStep === 'request' && (
                 <form onSubmit={handleSendOtp} className="space-y-4">
-                  <div>
+                  {/* <div>
                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
                       Send Verification Code Via:
                     </label>
@@ -784,9 +1060,9 @@ export default function AuthModal() {
                         <span>Mobile SMS</span>
                       </button>
                     </div>
-                  </div>
+                  </div> */}
 
-                  {forgotMethod === 'email' ? (
+                  {/* {forgotMethod === 'email' ? (
                     <div>
                       <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
                         Registered Email Address
@@ -806,7 +1082,7 @@ export default function AuthModal() {
                         />
                       </div>
                     </div>
-                  ) : (
+                  ) : ( */}
                     <div>
                       <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
                         Registered Mobile Phone
@@ -826,10 +1102,10 @@ export default function AuthModal() {
                         />
                       </div>
                     </div>
-                  )}
+                  {/* )} */}
 
                   {/* Masked Preview with Last 4 Digits / Characters */}
-                  <div className="p-3 bg-brand-teal/5 border border-brand-teal/20 rounded-2xl flex items-center justify-between gap-3">
+                  {/* <div className="p-3 bg-brand-teal/5 border border-brand-teal/20 rounded-2xl flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-8 h-8 rounded-lg bg-brand-teal/15 text-brand-teal flex items-center justify-center shrink-0">
                         <ShieldCheck size={16} />
@@ -847,7 +1123,7 @@ export default function AuthModal() {
                     <div className="shrink-0 bg-brand-yellow/35 text-brand-teal-dark border border-brand-yellow/60 text-[11px] font-extrabold px-2.5 py-1 rounded-lg">
                       Last 4: <span className="underline">{currentMaskedTarget.last4}</span>
                     </div>
-                  </div>
+                  </div> */}
 
                   <button
                     type="submit"
@@ -879,16 +1155,16 @@ export default function AuthModal() {
                     </div>
                     <div className="text-sm font-mono font-extrabold text-brand-teal flex items-center justify-center gap-2">
                       <span>{currentMaskedTarget.masked}</span>
-                      <span className="text-[10px] bg-brand-teal text-white px-2 py-0.5 rounded font-sans">
+                      {/* <span className="text-[10px] bg-brand-teal text-white px-2 py-0.5 rounded font-sans">
                         Last 4: {currentMaskedTarget.last4}
-                      </span>
+                      </span> */}
                     </div>
                     <button
                       type="button"
                       onClick={() => setForgotStep('request')}
                       className="text-[11px] font-bold text-brand-pink hover:underline cursor-pointer pt-0.5 block mx-auto"
                     >
-                      Change destination?
+                      Change phone?
                     </button>
                   </div>
 
@@ -918,17 +1194,8 @@ export default function AuthModal() {
                     </div>
                   </div>
 
-                  {/* Demo Helper & Resend Timer */}
+                  {/* Resend Timer */}
                   <div className="flex flex-col items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleFillDemoOtp}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-yellow/20 hover:bg-brand-yellow/30 border border-brand-yellow/60 rounded-full text-[11px] font-bold text-brand-teal-dark cursor-pointer transition-colors"
-                    >
-                      <Sparkles size={12} className="text-brand-ochre" />
-                      <span>Demo Test Code: <strong>4829</strong> (Click to fill)</span>
-                    </button>
-
                     <div className="text-xs text-gray-500 flex items-center gap-1">
                       {canResendOtp ? (
                         <button
@@ -991,13 +1258,13 @@ export default function AuthModal() {
                         required
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
                       />
-                      <button
+                      {/* <button
                         type="button"
                         onClick={() => setShowNewPassword(!showNewPassword)}
                         className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
                       >
                         {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
+                      </button> */}
                     </div>
                   </div>
 
