@@ -187,6 +187,56 @@ body {
 .scrollbar-none::-webkit-scrollbar,
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+  width: 0px;
+  height: 0px;
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-brand-teal, #233835) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-brand-teal, #233835);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-teal-light, #2e4945);
+}
+
+/* Global Custom Scrollbar for entire window & html root */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-brand-teal, #233835) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-brand-teal, #233835);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-teal-light, #2e4945);
 }
 
 body {

@@ -16,7 +16,9 @@ import {
   Tag,
   Loader2,
   Package,
-  Clock
+  Clock,
+  AlertTriangle,
+  Pencil
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 
@@ -33,8 +35,11 @@ export default function CheckoutPage({ onNavigate }) {
     subtotal,
     freeShippingThreshold,
     userProfile,
+    profileCompleteness,
+    isProfileIncomplete,
     isAuthenticated,
     addAddress,
+    editAddress,
     appliedCoupon,
     applyCoupon,
     removeCoupon,
@@ -66,12 +71,45 @@ export default function CheckoutPage({ onNavigate }) {
   const [newAddrForm, setNewAddrForm] = useState({
     name: userProfile?.name || '',
     phone: userProfile?.phone || '',
+    addressLine: '',
     street: '',
-    city: 'New Delhi',
-    state: 'Delhi',
-    pincode: '110007',
-    type: 'Campus Hostel'
+    city: '',
+    state: '',
+    pincode: '',
+    landmark: '',
+    type: 'Home',
+    addressType: 'Home',
+    isDefault: false
   });
+
+  // Edit Address Modal state
+  const [editingAddressId, setEditingAddressId] = useState(null);
+  const [editingAddrForm, setEditingAddrForm] = useState(null);
+
+  const handleOpenEditAddress = (addr) => {
+    setEditingAddressId(addr.id || addr._id);
+    setEditingAddrForm({
+      name: addr.name || userProfile?.name || '',
+      phone: addr.phone || userProfile?.phone || '',
+      addressLine: addr.addressLine || addr.street || '',
+      street: addr.street || addr.addressLine || '',
+      city: addr.city || '',
+      state: addr.state || '',
+      pincode: addr.pincode || '',
+      landmark: addr.landmark || '',
+      type: addr.type || addr.addressType || 'Home',
+      addressType: addr.addressType || addr.type || 'Home',
+      isDefault: Boolean(addr.isDefault)
+    });
+  };
+
+  const handleSaveEditAddress = (e) => {
+    e.preventDefault();
+    if (!editingAddressId || (!editingAddrForm.addressLine && !editingAddrForm.street)) return;
+    editAddress(editingAddressId, editingAddrForm);
+    setEditingAddressId(null);
+    setEditingAddrForm(null);
+  };
 
   // Shipping Speed
   const [deliverySpeed, setDeliverySpeed] = useState('standard'); // 'standard' | 'express'
@@ -146,15 +184,23 @@ export default function CheckoutPage({ onNavigate }) {
   // Handle adding a new address for authenticated user
   const handleAddNewAddress = (e) => {
     e.preventDefault();
-    if (!newAddrForm.street || !newAddrForm.city || !newAddrForm.pincode) {
-      showToast('Please fill in all address fields.');
+    if ((!newAddrForm.addressLine && !newAddrForm.street) || !newAddrForm.city || !newAddrForm.pincode) {
+      showToast('Please fill in required address fields.');
       return;
     }
     const createdId = Date.now();
-    addAddress({
+    const addressToSave = {
       ...newAddrForm,
-      isDefault: false
-    });
+      id: createdId,
+      name: newAddrForm.name || userProfile?.name || '',
+      phone: newAddrForm.phone || userProfile?.phone || '',
+      addressLine: newAddrForm.addressLine || newAddrForm.street || '',
+      street: newAddrForm.street || newAddrForm.addressLine || '',
+      type: newAddrForm.type || newAddrForm.addressType || 'Home',
+      addressType: newAddrForm.addressType || newAddrForm.type || 'Home',
+      isDefault: Boolean(newAddrForm.isDefault)
+    };
+    addAddress(addressToSave);
     setSelectedAddressId(createdId);
     setIsAddAddressOpen(false);
     showToast('Delivery address added successfully!');
@@ -180,6 +226,13 @@ export default function CheckoutPage({ onNavigate }) {
 
   // Place Order submission
   const handlePlaceOrder = () => {
+    if (isAuthenticated && isProfileIncomplete) {
+      const missingLabels = profileCompleteness?.missing?.map((m) => m.label).join(', ') || 'required details';
+      showToast(`⚠️ Please complete your profile (${missingLabels}) before checking out.`);
+      onNavigate('profile', null, 'profile');
+      return;
+    }
+
     // Validate address
     let activeShippingAddress = null;
     if (isAuthenticated) {
@@ -263,6 +316,38 @@ export default function CheckoutPage({ onNavigate }) {
       </div>
 
       <div className="container mx-auto px-4 mt-8">
+        {/* PROFILE INCOMPLETE WARNING CARD IN CHECKOUT */}
+        {isAuthenticated && isProfileIncomplete && (
+          <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-sm text-amber-950">
+                    Action Required: Complete Your Profile Before Checkout
+                  </h3>
+                  <span className="bg-amber-200 text-amber-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase">
+                    {profileCompleteness?.percentage}% Done
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 mt-1">
+                  The following required details must be completed before placing an order: <strong className="text-amber-950">{profileCompleteness?.missing?.map((m) => m.label).join(', ')}</strong>.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('profile', null, 'profile')}
+              className="shrink-0 w-full sm:w-auto bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Pencil size={14} />
+              <span>Complete Profile Now</span>
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-8 items-start">
           {/* Left Column: Checkout Steps */}
           <div className="w-full lg:w-7/12 space-y-6">
@@ -315,11 +400,24 @@ export default function CheckoutPage({ onNavigate }) {
                             <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-md bg-white border border-gray-200 text-brand-teal">
                               {addr.type || 'Address'}
                             </span>
-                            {isSelected && (
-                              <span className="w-5 h-5 rounded-full bg-brand-teal text-white flex items-center justify-center">
-                                <Check size={12} strokeWidth={3} />
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEditAddress(addr);
+                                }}
+                                className="p-1 rounded-md text-gray-400 hover:text-brand-teal hover:bg-white transition-colors cursor-pointer"
+                                title="Edit Address"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              {isSelected && (
+                                <span className="w-5 h-5 rounded-full bg-brand-teal text-white flex items-center justify-center">
+                                  <Check size={12} strokeWidth={3} />
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <p className="text-xs font-bold text-gray-900">
                             {addr.name || userProfile.name}
@@ -950,12 +1048,13 @@ export default function CheckoutPage({ onNavigate }) {
               </button>
             </div>
 
-            <form onSubmit={handleAddNewAddress} className="space-y-3">
+            <form onSubmit={handleAddNewAddress} className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">Contact Name</label>
                 <input
                   type="text"
                   required
+                  placeholder="e.g. Rahul Sharma"
                   value={newAddrForm.name}
                   onChange={(e) => setNewAddrForm({ ...newAddrForm, name: e.target.value })}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
@@ -967,6 +1066,7 @@ export default function CheckoutPage({ onNavigate }) {
                 <input
                   type="tel"
                   required
+                  placeholder="e.g. +91 9876543210"
                   value={newAddrForm.phone}
                   onChange={(e) => setNewAddrForm({ ...newAddrForm, phone: e.target.value })}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
@@ -974,10 +1074,48 @@ export default function CheckoutPage({ onNavigate }) {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Street / Hostel & Room No.</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Address Label / Type</label>
+                <select
+                  value={newAddrForm.type}
+                  onChange={(e) => setNewAddrForm({ ...newAddrForm, type: e.target.value, addressType: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-teal"
+                >
+                  <option value="Home">Home</option>
+                  <option value="Campus Hostel">Campus Hostel</option>
+                  <option value="Department Lab">Department / Lab</option>
+                  <option value="Work">Work / Office</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Landmark (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Near Library / Gate 2"
+                  value={newAddrForm.landmark}
+                  onChange={(e) => setNewAddrForm({ ...newAddrForm, landmark: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Flat / Room / House No. / Building (Address Line)</label>
                 <input
                   type="text"
                   required
+                  placeholder="e.g. Room 204, Ganga Hostel"
+                  value={newAddrForm.addressLine}
+                  onChange={(e) => setNewAddrForm({ ...newAddrForm, addressLine: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Street / Area / Sector</label>
+                <input
+                  type="text"
+                  placeholder="e.g. DTU Main Campus, Bawana Road"
                   value={newAddrForm.street}
                   onChange={(e) => setNewAddrForm({ ...newAddrForm, street: e.target.value })}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
@@ -990,35 +1128,48 @@ export default function CheckoutPage({ onNavigate }) {
                   <input
                     type="text"
                     required
+                    placeholder="e.g. New Delhi"
                     value={newAddrForm.city}
                     onChange={(e) => setNewAddrForm({ ...newAddrForm, city: e.target.value })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">Pincode</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">State</label>
                   <input
                     type="text"
                     required
-                    value={newAddrForm.pincode}
-                    onChange={(e) => setNewAddrForm({ ...newAddrForm, pincode: e.target.value })}
+                    placeholder="e.g. Delhi"
+                    value={newAddrForm.state}
+                    onChange={(e) => setNewAddrForm({ ...newAddrForm, state: e.target.value })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Address Label</label>
-                <select
-                  value={newAddrForm.type}
-                  onChange={(e) => setNewAddrForm({ ...newAddrForm, type: e.target.value })}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-teal"
-                >
-                  <option value="Campus Hostel">Campus Hostel</option>
-                  <option value="Department Lab">Department / Lab</option>
-                  <option value="Home">Home</option>
-                  <option value="Other">Other</option>
-                </select>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Pincode</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 110042"
+                  value={newAddrForm.pincode}
+                  onChange={(e) => setNewAddrForm({ ...newAddrForm, pincode: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="checkoutIsDefault"
+                  checked={newAddrForm.isDefault}
+                  onChange={(e) => setNewAddrForm({ ...newAddrForm, isDefault: e.target.checked })}
+                  className="rounded border-gray-300 text-brand-teal focus:ring-brand-teal cursor-pointer"
+                />
+                <label htmlFor="checkoutIsDefault" className="text-xs font-bold text-gray-700 cursor-pointer">
+                  Set as default shipping address
+                </label>
               </div>
 
               <div className="pt-3 flex gap-2">
@@ -1034,6 +1185,173 @@ export default function CheckoutPage({ onNavigate }) {
                   className="flex-1 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
                 >
                   Save Address
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Address Modal */}
+      {editingAddressId && editingAddrForm && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full border border-gray-200 shadow-2xl space-y-4 relative animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="font-display font-bold text-base text-gray-900">
+                Edit Delivery Address
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAddressId(null);
+                  setEditingAddrForm(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditAddress} className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Contact Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Rahul Sharma"
+                  value={editingAddrForm.name}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, name: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. +91 9876543210"
+                  value={editingAddrForm.phone}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, phone: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Address Label / Type</label>
+                <select
+                  value={editingAddrForm.type}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, type: e.target.value, addressType: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-teal"
+                >
+                  <option value="Home">Home</option>
+                  <option value="Campus Hostel">Campus Hostel</option>
+                  <option value="Department Lab">Department / Lab</option>
+                  <option value="Work">Work / Office</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Landmark (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Near Library / Gate 2"
+                  value={editingAddrForm.landmark}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, landmark: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Flat / Room / House No. / Building (Address Line)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Room 204, Ganga Hostel"
+                  value={editingAddrForm.addressLine}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, addressLine: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Street / Area / Sector</label>
+                <input
+                  type="text"
+                  placeholder="e.g. DTU Main Campus, Bawana Road"
+                  value={editingAddrForm.street}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, street: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">City</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. New Delhi"
+                    value={editingAddrForm.city}
+                    onChange={(e) => setEditingAddrForm({ ...editingAddrForm, city: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">State</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Delhi"
+                    value={editingAddrForm.state}
+                    onChange={(e) => setEditingAddrForm({ ...editingAddrForm, state: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Pincode</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 110042"
+                  value={editingAddrForm.pincode}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, pincode: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="checkoutEditIsDefault"
+                  checked={editingAddrForm.isDefault}
+                  onChange={(e) => setEditingAddrForm({ ...editingAddrForm, isDefault: e.target.checked })}
+                  className="rounded border-gray-300 text-brand-teal focus:ring-brand-teal cursor-pointer"
+                />
+                <label htmlFor="checkoutEditIsDefault" className="text-xs font-bold text-gray-700 cursor-pointer">
+                  Set as default shipping address
+                </label>
+              </div>
+
+              <div className="pt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingAddressId(null);
+                    setEditingAddrForm(null);
+                  }}
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  Update Address
                 </button>
               </div>
             </form>

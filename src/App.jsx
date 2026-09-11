@@ -86,7 +86,20 @@ function MainStore() {
   // If user is logged out, active profile page falls back to home
   const activePage = (currentPage === 'profile' && !isAuthenticated) ? 'home' : currentPage;
 
+  const [orderSuccessOptions, setOrderSuccessOptions] = useState(null);
+
   const navigateTo = (page, category = null, tab = 'profile') => {
+    if (page === 'order-details' || page === 'order-success') {
+      if (category && typeof category === 'object') {
+        setOrderSuccessOptions(category);
+      } else if (page === 'order-success' && typeof category !== 'object') {
+        setOrderSuccessOptions(null);
+      }
+      setCurrentPage('order-success');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     if (page === 'seller-registration') {
       setCurrentPage('seller-registration');
       try {
@@ -227,7 +240,11 @@ function MainStore() {
         )}
 
         {activePage === 'order-success' && (
-          <OrderSuccessPage onNavigate={navigateTo} />
+          <OrderSuccessPage
+            onNavigate={navigateTo}
+            isDetailsOnly={Boolean(orderSuccessOptions?.isDetailsOnly)}
+            selectedOrder={orderSuccessOptions?.order || null}
+          />
         )}
 
         {activePage === 'school-directory' && (

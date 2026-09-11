@@ -1,9 +1,9 @@
 import axios from 'axios';
 
-const fallbackBaseUrl = 'http://localhost:5000/';
+const fallbackBaseUrl = 'http://localhost:5000/api';
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || fallbackBaseUrl;
 const apiBaseUrl = (configuredBaseUrl || fallbackBaseUrl).replace(/\/+$/, '');
-export const backendEnabled = import.meta.env.VITE_USE_BACKEND === 'true';
+export const backendEnabled = import.meta.env.VITE_USE_BACKEND !== 'false';
 
 export const apiClient = axios.create({
   baseURL: apiBaseUrl,
@@ -33,17 +33,15 @@ export async function fetchJson(endpoint, options = {}) {
 
   if (!response.ok) {
     const message = typeof payload === 'string' ? payload : payload?.message || 'Request failed';
-    throw new Error(message);
+    const err = new Error(message);
+    err.response = { data: payload, status: response.status };
+    throw err;
   }
 
   return payload;
 }
 
 export async function requestApi(endpoint, options = {}) {
-  if (!backendEnabled) {
-    return null;
-  }
-
   try {
     const response = await apiClient.request({
       url: endpoint,
@@ -55,12 +53,16 @@ export async function requestApi(endpoint, options = {}) {
     });
     return response.data;
   } catch (error) {
-    const message = error?.response?.data?.message || error?.message || 'API request failed';
+    const responseData = error?.response?.data;
+    const message = responseData?.message || error?.message || 'API request failed';
     if (options.fallback !== undefined) {
       return options.fallback;
     }
 
-    throw new Error(message);
+    const err = new Error(message);
+    err.response = error?.response;
+    err.data = responseData;
+    throw err;
   }
 }
 
@@ -116,3 +118,111 @@ export async function registerWithBackend(payload = {}) {
     data: { name, email, password, phone }
   });
 }
+
+export async function fetchUserProfileFromBackend(phoneOrId) {
+  if (!phoneOrId) return null;
+  const digitsOnly = String(phoneOrId).replace(/\D/g, '');
+  if (digitsOnly.length >= 10) {
+    return requestApi(`/users/by-phone/${digitsOnly.slice(-10)}`, { method: 'GET' });
+  }
+  return requestApi('/users/profile', { method: 'GET' });
+}
+
+export async function fetchWishlistFromBackend(phone) {
+  return requestApi('/wishlist', {
+    method: 'GET',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+export async function toggleWishlistInBackend(productId, phone) {
+  return requestApi('/wishlist/toggle', {
+    method: 'POST',
+    data: { productId, phone },
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+export async function fetchCartFromBackend(phone) {
+  return requestApi('/cart', {
+    method: 'GET',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+export async function addToCartInBackend(product, quantity = 1, phone = '') {
+  return requestApi('/cart/add', {
+    method: 'POST',
+    data: { product, productId: product?.id, quantity, phone },
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+export async function updateCartItemInBackend(itemId, delta, phone = '') {
+  return requestApi(`/cart/item/${itemId}`, {
+    method: 'PUT',
+    data: { delta, phone },
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+export async function removeFromCartInBackend(itemId, phone = '') {
+  return requestApi(`/cart/item/${itemId}`, {
+    method: 'DELETE',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+export async function clearCartInBackend(phone = '') {
+  return requestApi('/cart/clear', {
+    method: 'DELETE',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+export async function updateUserProfileInBackend(profileData) {
+  const phone = profileData?.phone || '';
+  console.log('🌐 [FRONTEND API] PUT /api/users/profile payload:', profileData);
+  const res = await requestApi('/users/profile', {
+    method: 'PUT',
+    data: profileData,
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+  console.log('🌐 [FRONTEND API] PUT /api/users/profile response:', res);
+  return res;
+}
+
+export async function addAddressToBackend(addressData, phone = '') {
+  const userPhone = phone || addressData?.phone || '';
+  console.log('🌐 [FRONTEND API] POST /api/users/addresses payload:', addressData);
+  const res = await requestApi('/users/addresses', {
+    method: 'POST',
+    data: { ...addressData, phone: userPhone },
+    headers: userPhone ? { 'x-user-phone': userPhone } : {}
+  });
+  console.log('🌐 [FRONTEND API] POST /api/users/addresses response:', res);
+  return res;
+}
+
+export async function deleteAddressInBackend(addressId, phone = '') {
+  console.log('🌐 [FRONTEND API] DELETE /api/users/addresses/' + addressId);
+  const res = await requestApi(`/users/addresses/${addressId}`, {
+    method: 'DELETE',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+  console.log('🌐 [FRONTEND API] DELETE /api/users/addresses/' + addressId + ' response:', res);
+  return res;
+}
+
+export async function updateAddressInBackend(addressId, addressData, phone = '') {
+  const userPhone = phone || addressData?.phone || '';
+  console.log(`🌐 [FRONTEND API] PUT /api/users/addresses/${addressId} payload:`, addressData);
+  const res = await requestApi(`/users/addresses/${addressId}`, {
+    method: 'PUT',
+    data: { ...addressData, phone: userPhone },
+    headers: userPhone ? { 'x-user-phone': userPhone } : {}
+  });
+  console.log(`🌐 [FRONTEND API] PUT /api/users/addresses/${addressId} response:`, res);
+  return res;
+}
+

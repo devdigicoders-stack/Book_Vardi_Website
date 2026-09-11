@@ -27,7 +27,8 @@ import {
   Lock,
   Pencil,
   Check,
-  Store
+  Store,
+  AlertTriangle
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
@@ -38,7 +39,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const {
     userProfile,
     updateProfile,
+    profileCompleteness,
+    isProfileIncomplete,
     addAddress,
+    editAddress,
     removeAddress,
     wishlistProducts,
     totalItemsCount,
@@ -58,6 +62,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     isSellerModalOpen,
     setIsSellerModalOpen,
     isAdmin,
+    setLastPlacedOrder,
     USERS,
     switchUser
   } = useCart();
@@ -98,12 +103,12 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const avatarInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
-    name: userProfile?.name || 'Ritesh Yadav',
-    email: userProfile?.email || 'ritesh.yadav@example.com',
-    phone: userProfile?.phone || '+91 98765 43210',
-    studentId: userProfile?.studentId || 'SC-2026-8941',
-    institution: userProfile?.institution || 'Delhi Technological University',
-    standard: userProfile?.standard || 'Computer Science, 3rd Year',
+    name: userProfile?.name === 'Student Account' ? '' : (userProfile?.name || ''),
+    email: userProfile?.email?.includes('@bookvardi.local') ? '' : (userProfile?.email || ''),
+    phone: userProfile?.phone || '',
+    studentId: userProfile?.studentId || '',
+    institution: userProfile?.institution || '',
+    standard: userProfile?.standard || '',
     avatar: userProfile?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'
   });
 
@@ -111,12 +116,12 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   useEffect(() => {
     if (userProfile) {
       setFormData({
-        name: userProfile.name || 'Ritesh Yadav',
-        email: userProfile.email || 'ritesh.yadav@example.com',
-        phone: userProfile.phone || '+91 98765 43210',
-        studentId: userProfile.studentId || 'SC-2026-8941',
-        institution: userProfile.institution || 'Delhi Technological University',
-        standard: userProfile.standard || 'Computer Science, 3rd Year',
+        name: userProfile.name === 'Student Account' ? '' : (userProfile.name || ''),
+        email: userProfile.email?.includes('@bookvardi.local') ? '' : (userProfile.email || ''),
+        phone: userProfile.phone || '',
+        studentId: userProfile.studentId || '',
+        institution: userProfile.institution || '',
+        standard: userProfile.standard || '',
         avatar: userProfile.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'
       });
     }
@@ -131,12 +136,16 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [newAddress, setNewAddress] = useState({
     type: 'Home',
-    name: userProfile?.name || 'Ritesh Yadav',
-    phone: userProfile?.phone || '+91 98765 43210',
+    addressType: 'Home',
+    name: userProfile?.name || '',
+    phone: userProfile?.phone || '',
     addressLine: '',
+    street: '',
     city: '',
     state: '',
-    pincode: ''
+    pincode: '',
+    landmark: '',
+    isDefault: false
   });
 
   // Editable vs Readable profile mode toggle
@@ -151,13 +160,13 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const handleCancelEdit = () => {
     if (userProfile) {
       setFormData({
-        name: userProfile.name || 'Ritesh Yadav',
-        email: userProfile.email || 'ritesh.yadav@example.com',
-        phone: userProfile.phone || '+91 98765 43210',
-        studentId: userProfile.studentId || 'SC-2026-8941',
-        institution: userProfile.institution || 'Delhi Technological University',
-        standard: userProfile.standard || 'Computer Science, 3rd Year',
-        avatar: userProfile.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'
+        name: userProfile.name || '',
+        email: userProfile.email || '',
+        phone: userProfile.phone || '',
+        studentId: userProfile.studentId || '',
+        institution: userProfile.institution || '',
+        standard: userProfile.standard || '',
+        avatar: userProfile.avatar || ''
       });
     }
     setIsEditingProfile(false);
@@ -181,18 +190,67 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
   const handleAddressSubmit = (e) => {
     e.preventDefault();
-    if (!newAddress.addressLine || !newAddress.city || !newAddress.pincode) return;
-    addAddress(newAddress);
+    if (!newAddress.addressLine && !newAddress.street) return;
+    const addressToSave = {
+      ...newAddress,
+      id: Date.now(),
+      name: newAddress.name || formData.name || userProfile?.name || '',
+      phone: newAddress.phone || formData.phone || userProfile?.phone || '',
+      addressLine: newAddress.addressLine || newAddress.street || '',
+      street: newAddress.street || newAddress.addressLine || '',
+      city: newAddress.city || '',
+      state: newAddress.state || '',
+      pincode: newAddress.pincode || '',
+      landmark: newAddress.landmark || '',
+      type: newAddress.type || newAddress.addressType || 'Home',
+      addressType: newAddress.addressType || newAddress.type || 'Home',
+      isDefault: Boolean(newAddress.isDefault)
+    };
+    addAddress(addressToSave);
     setNewAddress({
       type: 'Home',
-      name: formData.name,
-      phone: formData.phone,
+      addressType: 'Home',
+      name: formData.name || userProfile?.name || '',
+      phone: formData.phone || userProfile?.phone || '',
       addressLine: '',
+      street: '',
       city: '',
       state: '',
-      pincode: ''
+      pincode: '',
+      landmark: '',
+      isDefault: false
     });
     setShowAddressForm(false);
+  };
+
+  // Edit Address state
+  const [editingAddressId, setEditingAddressId] = useState(null);
+  const [editingAddressData, setEditingAddressData] = useState(null);
+
+  const handleStartEditAddress = (addr) => {
+    setEditingAddressId(addr.id || addr._id);
+    setEditingAddressData({
+      name: addr.name || '',
+      phone: addr.phone || '',
+      addressLine: addr.addressLine || addr.street || '',
+      street: addr.street || addr.addressLine || '',
+      city: addr.city || '',
+      state: addr.state || '',
+      pincode: addr.pincode || '',
+      landmark: addr.landmark || '',
+      type: addr.type || addr.addressType || 'Home',
+      addressType: addr.addressType || addr.type || 'Home',
+      isDefault: Boolean(addr.isDefault)
+    });
+    setShowAddressForm(false);
+  };
+
+  const handleEditAddressSubmit = (e) => {
+    e.preventDefault();
+    if (!editingAddressId || (!editingAddressData.addressLine && !editingAddressData.street)) return;
+    editAddress(editingAddressId, editingAddressData);
+    setEditingAddressId(null);
+    setEditingAddressData(null);
   };
 
   // Compute filtered & sorted orders
@@ -334,22 +392,23 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="flex items-center gap-4 sm:gap-5">
               <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="group relative w-18 h-18 sm:w-22 sm:h-22 rounded-2xl overflow-hidden border-2 border-brand-yellow p-1 bg-white/10 shadow-lg cursor-pointer transition-transform hover:scale-[1.02]"
-                  aria-label="Change profile image"
-                  title="Change profile image"
-                >
+                <div className="group relative w-18 h-18 sm:w-22 sm:h-22 rounded-2xl border-2 border-brand-yellow p-1 bg-white/10 shadow-lg">
                   <img
                     src={formData.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
-                    alt={formData.name}
+                    alt={formData.name || 'Profile Avatar'}
                     className="w-full h-full object-cover rounded-xl"
                   />
-                  <span className="absolute inset-0 flex items-center justify-center bg-slate-900/20 opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-bold uppercase tracking-wide">
-                    Edit
-                  </span>
-                </button>
+                  {/* Top-Right Corner Pencil Button for Avatar Editing */}
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="absolute -top-2 -right-2 w-7 h-7 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark rounded-full flex items-center justify-center shadow-md border-2 border-brand-teal transition-transform hover:scale-110 cursor-pointer"
+                    aria-label="Edit avatar image"
+                    title="Edit profile photo"
+                  >
+                    <Pencil size={13} className="stroke-[2.5]" />
+                  </button>
+                </div>
                 <input
                   ref={avatarInputRef}
                   type="file"
@@ -657,9 +716,64 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
           {/* Content Area */}
           <div className="lg:col-span-9">
+            {/* COMPLETE PROFILE REQUIRED CARD (Shown iff profile is incomplete) */}
+            {profileCompleteness?.isIncomplete && (
+              <div className="mb-6 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border-2 border-amber-300/80 rounded-2xl p-5 sm:p-6 shadow-sm relative overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                      <AlertTriangle size={24} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-display text-lg font-extrabold text-amber-950">
+                          Action Required: Complete Your Profile
+                        </h3>
+                        <span className="bg-amber-200 text-amber-900 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                          {profileCompleteness.percentage}% Completed
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-800 mt-1 max-w-xl leading-relaxed">
+                        Your <strong>Full Name</strong>, <strong>Email</strong>, <strong>College / Institution</strong>, and <strong>Delivery Address</strong> are required to checkout stationery products.
+                      </p>
+
+                      {/* Missing Checklist */}
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {profileCompleteness.missing.map((item) => (
+                          <span
+                            key={item.key}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-white/90 border border-amber-200 text-amber-900 shadow-2xs"
+                          >
+                            <X size={12} className="text-red-500" />
+                            <span>{item.label}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 w-full md:w-auto flex flex-col sm:flex-row gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('profile');
+                        setIsEditingProfile(true);
+                        const el = document.getElementById('profile-form-container');
+                        if (el) el.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold text-xs px-5 py-3 rounded-xl shadow-sm transition-all cursor-pointer hover:shadow-md"
+                    >
+                      <Pencil size={15} />
+                      <span>Complete Profile Now</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* TAB 1: PERSONAL DETAILS */}
             {activeTab === 'profile' && (
-              <div className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-xs">
+              <div id="profile-form-container" className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-xs">
                 {/* Header with Edit Toggle */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-gray-100 mb-6">
                   <div>
@@ -1078,88 +1192,109 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 {/* Orders List */}
                 {filteredOrders.length > 0 ? (
                   <div className="space-y-4">
-                    {filteredOrders.map((order) => (
-                      <div
-                        key={order.id}
-                        className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/30 hover:shadow-md transition-all"
-                      >
-                        {/* Order Header */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
-                          <div className="flex items-center gap-3">
-                            <span className="font-display font-extrabold text-sm text-brand-teal">
-                              Order #{order.id}
-                            </span>
-                            <span className="text-xs text-gray-400">•</span>
-                            <span className="text-xs text-gray-500">{order.date}</span>
+                    {filteredOrders.map((order) => {
+                      const handleViewOrder = (e) => {
+                        e.stopPropagation();
+                        setLastPlacedOrder(order);
+                        onNavigate('order-success', { isDetailsOnly: true, order });
+                      };
+
+                      return (
+                        <div
+                          key={order.id}
+                          onClick={handleViewOrder}
+                          className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/40 hover:shadow-md transition-all cursor-pointer bg-white group"
+                        >
+                          {/* Order Header */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+                            <div className="flex items-center gap-3">
+                              <span className="font-display font-extrabold text-sm text-brand-teal group-hover:underline">
+                                Order #{order.id}
+                              </span>
+                              <span className="text-xs text-gray-400">•</span>
+                              <span className="text-xs text-gray-500">{order.date}</span>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <span
+                                className={`inline-flex items-center gap-1 text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider ${
+                                  order.status === 'Delivered'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {order.status === 'Delivered' ? (
+                                  <CheckCircle2 size={12} />
+                                ) : (
+                                  <Truck size={12} />
+                                )}
+                                <span>{order.status}</span>
+                              </span>
+
+                              <span className="font-display text-sm font-extrabold text-brand-teal">
+                                ₹{order.total}
+                              </span>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`inline-flex items-center gap-1 text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider ${
-                                order.status === 'Delivered'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-amber-100 text-amber-800'
-                              }`}
-                            >
-                              {order.status === 'Delivered' ? (
-                                <CheckCircle2 size={12} />
-                              ) : (
-                                <Truck size={12} />
-                              )}
-                              <span>{order.status}</span>
-                            </span>
-
-                            <span className="font-display text-sm font-extrabold text-brand-teal">
-                              ₹{order.total}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Order Items */}
-                        <div className="py-4 space-y-3">
-                          {order.items.map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-3">
-                                <img
-                                  src={item.image}
-                                  alt={item.name}
-                                  className="w-12 h-12 rounded-lg object-cover border border-gray-100 shrink-0"
-                                  onError={(e) => {
-                                    e.currentTarget.onerror = null;
-                                    e.currentTarget.src = '/images/gel-pen-set.jpg';
-                                  }}
-                                />
-                                <div>
-                                  <h4 className="text-xs font-bold text-gray-800 line-clamp-1">
-                                    {item.name}
-                                  </h4>
-                                  <span className="text-[11px] text-gray-500">
-                                    Qty: {item.quantity} • ₹{item.price} each
-                                  </span>
+                          {/* Order Items */}
+                          <div className="py-4 space-y-3">
+                            {order.items?.map((item, idx) => (
+                              <div key={idx} className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                  <img
+                                    src={item.image}
+                                    alt={item.name}
+                                    className="w-12 h-12 rounded-lg object-cover border border-gray-100 shrink-0"
+                                    onError={(e) => {
+                                      e.currentTarget.onerror = null;
+                                      e.currentTarget.src = '/images/gel-pen-set.jpg';
+                                    }}
+                                  />
+                                  <div>
+                                    <h4 className="text-xs font-bold text-gray-800 line-clamp-1">
+                                      {item.name}
+                                    </h4>
+                                    <span className="text-[11px] text-gray-500">
+                                      Qty: {item.quantity} • ₹{item.price} each
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
+                            ))}
+                          </div>
+
+                          {/* Order Footer */}
+                          <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 flex-wrap gap-2">
+                            <span className="flex items-center gap-1">
+                              <Clock size={12} />
+                              Tracking: <strong className="text-gray-700 font-mono text-[11px]">{order.trackingNumber}</strong>
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleViewOrder}
+                                className="inline-flex items-center gap-1 text-xs font-bold bg-brand-teal hover:bg-brand-teal-light text-white px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer"
+                              >
+                                <Truck size={13} />
+                                <span>Track & Details</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onNavigate('products');
+                                }}
+                                className="text-xs font-bold text-gray-600 hover:text-brand-teal hover:underline px-2 py-1 cursor-pointer"
+                              >
+                                Order Again
+                              </button>
                             </div>
-                          ))}
-                        </div>
-
-                        {/* Order Footer */}
-                        <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 flex-wrap gap-2">
-                          <span className="flex items-center gap-1">
-                            <Clock size={12} />
-                            Tracking: <strong className="text-gray-700 font-mono text-[11px]">{order.trackingNumber}</strong>
-                          </span>
-
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => onNavigate('products')}
-                              className="text-xs font-bold text-brand-teal hover:underline cursor-pointer"
-                            >
-                              Order Again
-                            </button>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="py-14 text-center bg-gray-50/70 rounded-2xl border border-dashed border-gray-200 p-6">
@@ -1404,39 +1539,88 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                          Address Tag (Home / Hostel / School)
+                          Full Name (Recipient)
                         </label>
                         <input
                           type="text"
-                          value={newAddress.type}
-                          onChange={(e) => setNewAddress({ ...newAddress, type: e.target.value })}
+                          required
+                          value={newAddress.name}
+                          onChange={(e) => setNewAddress({ ...newAddress, name: e.target.value })}
+                          placeholder="e.g. Rahul Sharma"
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
                         />
                       </div>
                       <div>
                         <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                          Contact Phone
+                          Contact Phone Number
                         </label>
                         <input
                           type="tel"
+                          required
                           value={newAddress.phone}
                           onChange={(e) => setNewAddress({ ...newAddress, phone: e.target.value })}
+                          placeholder="e.g. +91 9876543210"
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
                         />
                       </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Address Tag / Type
+                        </label>
+                        <select
+                          value={newAddress.type}
+                          onChange={(e) => setNewAddress({ ...newAddress, type: e.target.value, addressType: e.target.value })}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal font-medium"
+                        >
+                          <option value="Home">Home</option>
+                          <option value="Campus Hostel">Campus Hostel</option>
+                          <option value="Department Lab">Department / Lab</option>
+                          <option value="Work">Work / Office</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Landmark (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={newAddress.landmark}
+                          onChange={(e) => setNewAddress({ ...newAddress, landmark: e.target.value })}
+                          placeholder="e.g. Near Main Library / Opp Gate 2"
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                        />
+                      </div>
+
                       <div className="sm:col-span-2">
                         <label className="block text-[11px] font-bold text-gray-600 mb-1">
-                          Street Address / Hostel Block / Room
+                          Flat / Room / House No. / Building (Address Line)
                         </label>
                         <input
                           type="text"
                           value={newAddress.addressLine}
                           onChange={(e) => setNewAddress({ ...newAddress, addressLine: e.target.value })}
-                          placeholder="e.g. Room 204, Ganga Boys Hostel, Campus"
+                          placeholder="e.g. Room 204, Ganga Boys Hostel, Block B"
                           required
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
                         />
                       </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          Street / Area / Sector
+                        </label>
+                        <input
+                          type="text"
+                          value={newAddress.street}
+                          onChange={(e) => setNewAddress({ ...newAddress, street: e.target.value })}
+                          placeholder="e.g. DTU Main Campus, Bawana Road"
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                        />
+                      </div>
+
                       <div>
                         <label className="block text-[11px] font-bold text-gray-600 mb-1">
                           City
@@ -1445,6 +1629,20 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           type="text"
                           value={newAddress.city}
                           onChange={(e) => setNewAddress({ ...newAddress, city: e.target.value })}
+                          placeholder="e.g. New Delhi"
+                          required
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                          State
+                        </label>
+                        <input
+                          type="text"
+                          value={newAddress.state}
+                          onChange={(e) => setNewAddress({ ...newAddress, state: e.target.value })}
+                          placeholder="e.g. Delhi"
                           required
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
                         />
@@ -1457,16 +1655,29 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           type="text"
                           value={newAddress.pincode}
                           onChange={(e) => setNewAddress({ ...newAddress, pincode: e.target.value })}
+                          placeholder="e.g. 110042"
                           required
                           className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
                         />
+                      </div>
+                      <div className="flex items-center gap-2 pt-4">
+                        <input
+                          type="checkbox"
+                          id="isDefaultCheckbox"
+                          checked={newAddress.isDefault}
+                          onChange={(e) => setNewAddress({ ...newAddress, isDefault: e.target.checked })}
+                          className="rounded border-gray-300 text-brand-teal focus:ring-brand-teal cursor-pointer"
+                        />
+                        <label htmlFor="isDefaultCheckbox" className="text-xs font-bold text-gray-700 cursor-pointer">
+                          Set as default shipping address
+                        </label>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3 pt-2">
                       <button
                         type="submit"
-                        className="bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark text-xs font-bold px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                        className="bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark text-xs font-bold px-5 py-2.5 rounded-lg transition-colors cursor-pointer"
                       >
                         Save Address
                       </button>
@@ -1483,51 +1694,236 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                 {/* Addresses List */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {(userProfile?.addresses || []).map((addr) => (
-                    <div
-                      key={addr.id}
-                      className="border border-gray-200 rounded-2xl p-5 relative hover:border-brand-teal/30 hover:shadow-xs transition-all flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="font-bold text-xs text-brand-teal uppercase tracking-wider bg-brand-teal/10 px-2.5 py-0.5 rounded-md">
-                            {addr.type}
-                          </span>
-                          {addr.isDefault && (
-                            <span className="text-[10px] font-extrabold text-brand-yellow bg-brand-teal-dark px-2 py-0.5 rounded-full">
-                              DEFAULT
+                  {(userProfile?.addresses || []).map((addr) => {
+                    const isEditingThis = String(editingAddressId) === String(addr.id || addr._id);
+
+                    if (isEditingThis && editingAddressData) {
+                      return (
+                        <form
+                          key={addr.id || addr._id}
+                          onSubmit={handleEditAddressSubmit}
+                          className="sm:col-span-2 p-5 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-4"
+                        >
+                          <h3 className="text-xs font-extrabold text-brand-teal uppercase tracking-wider flex items-center justify-between">
+                            <span>Edit Delivery Address</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAddressId(null);
+                                setEditingAddressData(null);
+                              }}
+                              className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                            >
+                              <X size={16} />
+                            </button>
+                          </h3>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                Full Name (Recipient)
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={editingAddressData.name}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, name: e.target.value })}
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                Contact Phone Number
+                              </label>
+                              <input
+                                type="tel"
+                                required
+                                value={editingAddressData.phone}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, phone: e.target.value })}
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                Address Tag / Type
+                              </label>
+                              <select
+                                value={editingAddressData.type}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, type: e.target.value, addressType: e.target.value })}
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal font-medium"
+                              >
+                                <option value="Home">Home</option>
+                                <option value="Campus Hostel">Campus Hostel</option>
+                                <option value="Department Lab">Department / Lab</option>
+                                <option value="Work">Work / Office</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                Landmark (Optional)
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAddressData.landmark}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, landmark: e.target.value })}
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                Flat / Room / House No. / Building (Address Line)
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAddressData.addressLine}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, addressLine: e.target.value })}
+                                required
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                Street / Area / Sector
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAddressData.street}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, street: e.target.value })}
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                City
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAddressData.city}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, city: e.target.value })}
+                                required
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                State
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAddressData.state}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, state: e.target.value })}
+                                required
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-gray-600 mb-1">
+                                PIN Code
+                              </label>
+                              <input
+                                type="text"
+                                value={editingAddressData.pincode}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, pincode: e.target.value })}
+                                required
+                                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2 pt-4">
+                              <input
+                                type="checkbox"
+                                id={`editIsDefault-${addr.id}`}
+                                checked={editingAddressData.isDefault}
+                                onChange={(e) => setEditingAddressData({ ...editingAddressData, isDefault: e.target.checked })}
+                                className="rounded border-gray-300 text-brand-teal focus:ring-brand-teal cursor-pointer"
+                              />
+                              <label htmlFor={`editIsDefault-${addr.id}`} className="text-xs font-bold text-gray-700 cursor-pointer">
+                                Set as default shipping address
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 pt-2">
+                            <button
+                              type="submit"
+                              className="bg-brand-teal hover:bg-brand-teal-light text-white text-xs font-bold px-5 py-2.5 rounded-lg transition-colors cursor-pointer"
+                            >
+                              Update Address
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingAddressId(null);
+                                setEditingAddressData(null);
+                              }}
+                              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-2 cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={addr.id}
+                        className="border border-gray-200 rounded-2xl p-5 relative hover:border-brand-teal/30 hover:shadow-xs transition-all flex flex-col justify-between bg-white"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="font-bold text-xs text-brand-teal uppercase tracking-wider bg-brand-teal/10 px-2.5 py-0.5 rounded-md">
+                              {addr.type}
                             </span>
-                          )}
+                            {addr.isDefault && (
+                              <span className="text-[10px] font-extrabold text-brand-yellow bg-brand-teal-dark px-2 py-0.5 rounded-full">
+                                DEFAULT
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className="text-sm font-bold text-gray-900 mt-2">
+                            {addr.name}
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                            {addr.addressLine || addr.street}, {addr.city} - {addr.pincode}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Phone: {addr.phone}
+                          </p>
                         </div>
 
-                        <h4 className="text-sm font-bold text-gray-900 mt-2">
-                          {addr.name}
-                        </h4>
-                        <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                          {addr.addressLine}, {addr.city} - {addr.pincode}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Phone: {addr.phone}
-                        </p>
+                        <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                          <span className="text-green-700 font-semibold flex items-center gap-1">
+                            <CheckCircle2 size={12} />
+                            Deliverable Area
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleStartEditAddress(addr)}
+                              className="text-gray-400 hover:text-brand-teal transition-colors p-1 cursor-pointer"
+                              title="Edit address"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            {(userProfile?.addresses?.length > 1) && (
+                              <button
+                                onClick={() => removeAddress(addr.id)}
+                                className="text-gray-400 hover:text-brand-pink transition-colors p-1 cursor-pointer"
+                                title="Remove address"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-
-                      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-                        <span className="text-green-700 font-semibold flex items-center gap-1">
-                          <CheckCircle2 size={12} />
-                          Deliverable Area
-                        </span>
-                        {(userProfile?.addresses?.length > 1) && (
-                          <button
-                            onClick={() => removeAddress(addr.id)}
-                            className="text-gray-400 hover:text-brand-pink transition-colors p-1 cursor-pointer"
-                            title="Remove address"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

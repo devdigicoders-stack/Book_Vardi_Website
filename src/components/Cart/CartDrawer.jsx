@@ -8,12 +8,17 @@ export default function CartDrawer({ onNavigate }) {
     setIsCartOpen,
     cartItems,
     removeFromCart,
+    clearCart,
     updateQuantity,
     subtotal,
     totalItemsCount,
     freeShippingThreshold,
     freeShippingProgress,
-    freeShippingRemaining
+    freeShippingRemaining,
+    isAuthenticated,
+    isProfileIncomplete,
+    profileCompleteness,
+    showToast
   } = useCart();
 
   const shippingCost = subtotal >= freeShippingThreshold || subtotal === 0 ? 0 : 49;
@@ -21,6 +26,12 @@ export default function CartDrawer({ onNavigate }) {
 
   const handleCheckout = () => {
     setIsCartOpen(false);
+    if (isAuthenticated && isProfileIncomplete) {
+      const missingLabels = profileCompleteness?.missing?.map((m) => m.label).join(', ') || 'required details';
+      if (showToast) {
+        showToast(`⚠️ Please complete your profile (${missingLabels}) before checking out.`);
+      }
+    }
     if (onNavigate) {
       onNavigate('checkout');
     }
@@ -28,7 +39,7 @@ export default function CartDrawer({ onNavigate }) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-brand-teal-dark/60 backdrop-blur-xs flex justify-end transition-opacity duration-300 ${
+      className={`fixed inset-0 z-999 bg-brand-teal-dark/60 backdrop-blur-xs flex justify-end transition-opacity duration-300 ${
         isCartOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}
       onClick={() => setIsCartOpen(false)}
@@ -43,18 +54,30 @@ export default function CartDrawer({ onNavigate }) {
         <div className="p-5 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-2 text-lg font-bold text-brand-teal">
             <ShoppingBag size={20} />
-            <span>Your Book Vardi</span>
+            <span>Your Cart Items</span>
             <span className="bg-brand-yellow text-brand-teal-dark text-xs font-extrabold px-2 py-0.5 rounded-full">
               {totalItemsCount}
             </span>
           </div>
-          <button
-            className="w-9 h-9 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-brand-teal transition-colors"
-            onClick={() => setIsCartOpen(false)}
-            aria-label="Close Cart"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            {cartItems.length > 0 && (
+              <button
+                className="text-xs font-semibold text-red-500 hover:text-red-700 flex items-center gap-1 hover:bg-red-50 px-2 py-1 rounded border border-red-200 transition-colors cursor-pointer"
+                onClick={clearCart}
+                title="Clear all items from cart"
+              >
+                <Trash2 size={13} />
+                <span>Clear Cart</span>
+              </button>
+            )}
+            <button
+              className="w-9 h-9 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 hover:text-brand-teal transition-colors cursor-pointer"
+              onClick={() => setIsCartOpen(false)}
+              aria-label="Close Cart"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Free Shipping Meter */}
@@ -71,7 +94,7 @@ export default function CartDrawer({ onNavigate }) {
             )}
             <span className="text-gray-400 font-medium">{Math.round(freeShippingProgress)}%</span>
           </div>
-          <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden hide-scrollbar">
             <div
               className={`h-full rounded-full transition-all duration-300 ${
                 freeShippingRemaining === 0 ? 'bg-green-500' : 'bg-brand-yellow'
@@ -83,7 +106,7 @@ export default function CartDrawer({ onNavigate }) {
 
         {/* Items List */}
         {cartItems.length > 0 ? (
-          <div className="flex-grow overflow-y-auto p-5 space-y-4">
+          <div className="flex-grow overflow-y-auto hide-scrollbar p-5 space-y-4">
             {cartItems.map((item) => (
               <div key={item.id} className="flex gap-4 pb-4 border-b border-gray-100 items-center">
                 <img
@@ -153,7 +176,7 @@ export default function CartDrawer({ onNavigate }) {
                 if (onNavigate) onNavigate('products');
               }}
             >
-              Start Shopping
+              Continue Shopping
             </button>
           </div>
         )}
@@ -180,13 +203,24 @@ export default function CartDrawer({ onNavigate }) {
               <span>₹{Math.round(grandTotal)}</span>
             </div>
 
-            <button
-              className="w-full mt-4 py-3 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-bold text-sm rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all transform hover:-translate-y-0.5"
-              onClick={handleCheckout}
-            >
-              <span>PROCEED TO CHECKOUT</span>
-              <ArrowRight size={16} />
-            </button>
+            <div className="flex gap-2.5 mt-4">
+              <button
+                className="flex-1 py-3 border border-brand-teal text-brand-teal hover:bg-brand-teal/5 font-bold text-xs rounded-lg transition-all cursor-pointer text-center"
+                onClick={() => {
+                  setIsCartOpen(false);
+                  if (onNavigate) onNavigate('products');
+                }}
+              >
+                Continue Shopping
+              </button>
+              <button
+                className="flex-[1.5] py-3 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-bold text-xs sm:text-sm rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all transform hover:-translate-y-0.5 cursor-pointer"
+                onClick={handleCheckout}
+              >
+                <span>CHECKOUT</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
 
             <div className="flex items-center justify-center gap-1 text-[11px] text-gray-400 mt-3">
               <ShieldCheck size={14} className="text-brand-teal" />

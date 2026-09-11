@@ -5,8 +5,42 @@ import {
   backendEnabled,
   loginWithBackend,
   loginWithPhoneOtpBackend,
-  registerWithBackend
+  registerWithBackend,
+  fetchUserProfileFromBackend,
+  fetchWishlistFromBackend,
+  toggleWishlistInBackend,
+  fetchCartFromBackend,
+  addToCartInBackend,
+  updateCartItemInBackend,
+  removeFromCartInBackend,
+  clearCartInBackend,
+  updateUserProfileInBackend,
+  addAddressToBackend,
+  updateAddressInBackend,
+  deleteAddressInBackend
 } from '../utils/api';
+
+export const EMPTY_USER_PROFILE = {
+  id: '',
+  name: '',
+  email: '',
+  phone: '',
+  studentId: '',
+  institution: '',
+  standard: '',
+  avatar: '',
+  role: 'Student',
+  roles: ['Student', 'Customer'],
+  isAdmin: false,
+  adminStatus: 'none',
+  adminRole: null,
+  isSeller: false,
+  sellerStatus: 'none',
+  sellerRole: null,
+  memberSince: 'Today',
+  rewardPoints: 0,
+  addresses: []
+};
 
 const INITIAL_MOCK_REVIEWS = {
   1: [
@@ -99,6 +133,38 @@ const INITIAL_MOCK_REVIEWS = {
   ]
 };
 
+export function getProfileCompleteness(profile) {
+  const missing = [];
+  
+  const hasName = Boolean(profile?.name && String(profile.name).trim() !== '' && String(profile.name).trim() !== 'Student Account');
+  if (!hasName) missing.push({ key: 'name', label: 'Full Name' });
+
+  const hasEmail = Boolean(profile?.email && String(profile.email).trim() !== '' && !profile.email.includes('@bookvardi.local'));
+  if (!hasEmail) missing.push({ key: 'email', label: 'Email Address' });
+
+  const hasInstitution = Boolean(profile?.institution && String(profile.institution).trim() !== '');
+  if (!hasInstitution) missing.push({ key: 'institution', label: 'College / Institution' });
+
+  const hasPhone = Boolean(profile?.phone && String(profile.phone).trim() !== '');
+  if (!hasPhone) missing.push({ key: 'phone', label: 'Phone Number' });
+
+  const hasAddress = Array.isArray(profile?.addresses) && profile.addresses.length > 0;
+  if (!hasAddress) missing.push({ key: 'address', label: 'Delivery Address' });
+
+  const totalFields = 5;
+  const completedFields = totalFields - missing.length;
+  const percentage = Math.round((completedFields / totalFields) * 100);
+  const isIncomplete = missing.length > 0;
+
+  return {
+    isIncomplete,
+    percentage,
+    missing,
+    completedFields,
+    totalFields
+  };
+}
+
 const CartContext = createContext(null);
 
 export function CartProvider({ children }) {
@@ -106,26 +172,7 @@ export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState(() => {
     try {
       const saved = localStorage.getItem('book_vardi_items_v2');
-      return saved ? JSON.parse(saved) : [
-        {
-          id: 1,
-          name: 'Minimal Spiral Notebook',
-          subtitle: 'Ruled Pages • 160 Pages',
-          price: 199,
-          originalPrice: 299,
-          quantity: 2,
-          image: 'https://images.unsplash.com/photo-1531346878377-a5be20888e57?w=500&auto=format&fit=crop&q=80'
-        },
-        {
-          id: 3,
-          name: 'Pastel Highlighters Set',
-          subtitle: 'Chisel Tip • 6 Colors',
-          price: 189,
-          originalPrice: 299,
-          quantity: 1,
-          image: 'https://images.unsplash.com/photo-1569683795645-b62e50fbf103?w=500&auto=format&fit=crop&q=80'
-        }
-      ];
+      return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
@@ -136,34 +183,68 @@ export function CartProvider({ children }) {
       const saved = localStorage.getItem('book_vardi_wishlist_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return Array.isArray(parsed) ? parsed.map(Number) : [1, 3, 6];
+        return Array.isArray(parsed) ? parsed.map((item) => (isNaN(item) ? item : Number(item))) : [];
       }
-      return [1, 3, 6];
+      return [];
     } catch {
-      return [1, 3, 6];
+      return [];
     }
   });
+
+  const [registeredUsers, setRegisteredUsers] = useState(() => {
+    try {
+      const saved = localStorage.getItem('book_vardi_registered_users');
+      const customUsers = saved ? JSON.parse(saved) : [];
+      return [...USERS, ...customUsers];
+    } catch {
+      return USERS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const customUsers = registeredUsers.filter(
+        (u) => !USERS.some((orig) => orig.id === u.id || (orig.phone && u.phone && orig.phone === u.phone))
+      );
+      localStorage.setItem('book_vardi_registered_users', JSON.stringify(customUsers));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [registeredUsers]);
+
+  const isUserRegistered = (identifier) => {
+    if (!identifier) return false;
+    const cleaned = String(identifier).trim();
+    const digitsOnly = cleaned.replace(/\D/g, '');
+    if (digitsOnly.length >= 10) {
+      const last10 = digitsOnly.slice(-10);
+      return registeredUsers.some((u) => {
+        const uDigits = String(u.phone || '').replace(/\D/g, '');
+        return uDigits.endsWith(last10);
+      });
+    }
+    const lower = cleaned.toLowerCase();
+    return registeredUsers.some((u) => String(u.email || '').toLowerCase() === lower);
+  };
 
   const [userProfile, setUserProfile] = useState(() => {
     try {
       const saved = localStorage.getItem('book_vardi_user_profile');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        const matched = USERS.find((u) => u.email?.toLowerCase() === parsed?.email?.toLowerCase());
-        return matched ? { ...matched, ...parsed } : parsed;
+        return JSON.parse(saved);
       }
-      return MOCK_USER_PROFILE;
+      return EMPTY_USER_PROFILE;
     } catch {
-      return MOCK_USER_PROFILE;
+      return EMPTY_USER_PROFILE;
     }
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     try {
       const saved = localStorage.getItem('book_vardi_is_authenticated');
-      return saved !== null ? JSON.parse(saved) : true;
+      return saved !== null ? JSON.parse(saved) : false;
     } catch {
-      return true;
+      return false;
     }
   });
 
@@ -283,6 +364,57 @@ export function CartProvider({ children }) {
       }
     }
   }, [userProfile]);
+
+  useEffect(() => {
+    if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
+      const identifier = userProfile?.phone || userProfile?.id;
+      fetchUserProfileFromBackend(identifier)
+        .then((dbUser) => {
+          if (dbUser) {
+            setUserProfile((prev) => ({
+              ...prev,
+              id: dbUser.id || dbUser._id || prev?.id,
+              name: dbUser.name !== undefined && dbUser.name !== null ? dbUser.name : prev?.name,
+              email: dbUser.email !== undefined && dbUser.email !== null ? dbUser.email : prev?.email,
+              phone: dbUser.phone || prev?.phone,
+              avatar: dbUser.avatar || prev?.avatar,
+              role: dbUser.role || prev?.role,
+              institution: dbUser.institution !== undefined ? dbUser.institution : prev?.institution,
+              studentId: dbUser.studentId !== undefined ? dbUser.studentId : prev?.studentId,
+              standard: dbUser.standard !== undefined ? dbUser.standard : prev?.standard,
+              addresses: Array.isArray(dbUser.addresses) && dbUser.addresses.length > 0 ? dbUser.addresses : (prev?.addresses || [])
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated, userProfile?.phone, userProfile?.id]);
+
+  useEffect(() => {
+    if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
+      const phone = userProfile?.phone || '';
+      fetchWishlistFromBackend(phone)
+        .then((res) => {
+          if (res?.productIds && Array.isArray(res.productIds)) {
+            setWishlist(res.productIds);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated, userProfile?.phone, userProfile?.id]);
+
+  useEffect(() => {
+    if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
+      const phone = userProfile?.phone || '';
+      fetchCartFromBackend(phone)
+        .then((res) => {
+          if (res?.cart?.items && Array.isArray(res.cart.items)) {
+            setCartItems(res.cart.items);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated, userProfile?.phone, userProfile?.id]);
 
   useEffect(() => {
     try {
@@ -506,10 +638,10 @@ export function CartProvider({ children }) {
     }
     const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
     setCartItems((prev) => {
-      const existing = prev.find((item) => item.id === product.id);
+      const existing = prev.find((item) => String(item.id) === String(product.id));
       if (existing) {
         return prev.map((item) =>
-          item.id === product.id
+          String(item.id) === String(product.id)
             ? { ...item, quantity: item.quantity + qtyToAdd }
             : item
         );
@@ -517,11 +649,20 @@ export function CartProvider({ children }) {
       return [...prev, { ...product, quantity: qtyToAdd }];
     });
     showToast(`Added ${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}"${product.name}" to your cart!`);
+
+    if (backendEnabled) {
+      const phone = userProfile?.phone || '';
+      addToCartInBackend(product, qtyToAdd, phone).catch(() => {});
+    }
     return true;
   };
 
   const removeFromCart = (id) => {
-    setCartItems((prev) => prev.filter((item) => item.id !== id));
+    setCartItems((prev) => prev.filter((item) => String(item.id) !== String(id)));
+    if (backendEnabled) {
+      const phone = userProfile?.phone || '';
+      removeFromCartInBackend(id, phone).catch(() => {});
+    }
   };
 
   const updateQuantity = (id, delta) => {
@@ -533,7 +674,7 @@ export function CartProvider({ children }) {
     setCartItems((prev) =>
       prev
         .map((item) => {
-          if (item.id === id) {
+          if (String(item.id) === String(id)) {
             const newQty = item.quantity + delta;
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
@@ -541,6 +682,10 @@ export function CartProvider({ children }) {
         })
         .filter(Boolean)
     );
+    if (backendEnabled) {
+      const phone = userProfile?.phone || '';
+      updateCartItemInBackend(id, delta, phone).catch(() => {});
+    }
   };
 
   const toggleWishlist = (id) => {
@@ -549,23 +694,38 @@ export function CartProvider({ children }) {
       showToast('Please log in to save items to your wishlist! ❤️');
       return false;
     }
-    const numId = Number(id);
+    const numId = isNaN(id) ? id : Number(id);
+    const phone = userProfile?.phone || '';
+
     setWishlist((prev) => {
-      const exists = prev.some((item) => Number(item) === numId);
+      const exists = prev.some((item) => String(item) === String(id));
       if (exists) {
         showToast('Removed item from your wishlist');
-        return prev.filter((item) => Number(item) !== numId);
+        return prev.filter((item) => String(item) !== String(id));
       } else {
         showToast('Saved to your wishlist! ❤️');
         return [...prev, numId];
       }
     });
+
+    if (backendEnabled) {
+      toggleWishlistInBackend(id, phone)
+        .then((res) => {
+          if (res?.productIds && Array.isArray(res.productIds)) {
+            setWishlist(res.productIds);
+          }
+        })
+        .catch((err) => {
+          console.error('Wishlist backend sync error:', err);
+        });
+    }
+
     return true;
   };
 
   const isWishlisted = (id) => {
     if (!isAuthenticated) return false;
-    return wishlist.some((item) => Number(item) === Number(id));
+    return wishlist.some((item) => String(item) === String(id));
   };
 
   const handleSetIsCartOpen = (open) => {
@@ -617,34 +777,147 @@ export function CartProvider({ children }) {
     displayedWishlist.some((id) => Number(id) === Number(product.id))
   );
 
-  const updateProfile = (updatedData) => {
-    setUserProfile((prev) => ({
-      ...prev,
-      ...updatedData
-    }));
+  const updateProfile = async (updatedData) => {
+    let nextProfile;
+    setUserProfile((prev) => {
+      nextProfile = { ...prev, ...updatedData };
+      return nextProfile;
+    });
+
+    if (backendEnabled) {
+      try {
+        const payload = {
+          phone: nextProfile?.phone || userProfile?.phone,
+          email: nextProfile?.email || userProfile?.email,
+          ...updatedData
+        };
+        const res = await updateUserProfileInBackend(payload);
+        if (res?.user) {
+          setUserProfile((prev) => ({
+            ...prev,
+            ...res.user,
+            id: res.user.id || res.user._id || prev?.id,
+            addresses: Array.isArray(res.user.addresses) ? res.user.addresses : (prev?.addresses || [])
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to update profile in backend:', err);
+      }
+    }
     showToast('Profile updated successfully! ✨');
   };
 
-  const addAddress = (newAddress) => {
+  const addAddress = async (newAddress) => {
+    const formattedAddr = {
+      id: newAddress.id || Date.now(),
+      name: newAddress.name || userProfile?.name || '',
+      phone: newAddress.phone || userProfile?.phone || '',
+      addressLine: newAddress.addressLine || newAddress.street || '',
+      street: newAddress.street || newAddress.addressLine || '',
+      city: newAddress.city || '',
+      state: newAddress.state || '',
+      pincode: newAddress.pincode || '',
+      landmark: newAddress.landmark || '',
+      type: newAddress.type || newAddress.addressType || 'Home',
+      addressType: newAddress.addressType || newAddress.type || 'Home',
+      isDefault: Boolean(newAddress.isDefault)
+    };
+
     setUserProfile((prev) => ({
       ...prev,
       addresses: [
-        ...prev.addresses,
-        {
-          id: Date.now(),
-          ...newAddress
-        }
+        ...(prev?.addresses || []),
+        formattedAddr
       ]
     }));
+
+    if (backendEnabled) {
+      try {
+        const phone = userProfile?.phone || userProfile?.email || '';
+        const res = await addAddressToBackend(formattedAddr, phone);
+        if (res?.addresses && Array.isArray(res.addresses)) {
+          setUserProfile((prev) => ({
+            ...prev,
+            addresses: res.addresses
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to save address in backend:', err);
+      }
+    }
     showToast('New shipping address saved!');
   };
 
-  const removeAddress = (addressId) => {
+  const removeAddress = async (addressId) => {
     setUserProfile((prev) => ({
       ...prev,
-      addresses: prev.addresses.filter((addr) => addr.id !== addressId)
+      addresses: (prev?.addresses || []).filter(
+        (addr) => addr.id !== addressId && String(addr.id || addr._id) !== String(addressId)
+      )
     }));
+
+    if (backendEnabled) {
+      try {
+        const phone = userProfile?.phone || userProfile?.email || '';
+        const res = await deleteAddressInBackend(addressId, phone);
+        if (res?.addresses && Array.isArray(res.addresses)) {
+          setUserProfile((prev) => ({
+            ...prev,
+            addresses: res.addresses
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to remove address in backend:', err);
+      }
+    }
     showToast('Address removed');
+  };
+
+  const editAddress = async (addressId, updatedAddressData) => {
+    const formattedAddr = {
+      ...updatedAddressData,
+      id: addressId,
+      name: updatedAddressData.name || userProfile?.name || '',
+      phone: updatedAddressData.phone || userProfile?.phone || '',
+      addressLine: updatedAddressData.addressLine || updatedAddressData.street || '',
+      street: updatedAddressData.street || updatedAddressData.addressLine || '',
+      city: updatedAddressData.city || '',
+      state: updatedAddressData.state || '',
+      pincode: updatedAddressData.pincode || '',
+      landmark: updatedAddressData.landmark || '',
+      type: updatedAddressData.type || updatedAddressData.addressType || 'Home',
+      addressType: updatedAddressData.addressType || updatedAddressData.type || 'Home',
+      isDefault: Boolean(updatedAddressData.isDefault)
+    };
+
+    setUserProfile((prev) => ({
+      ...prev,
+      addresses: (prev?.addresses || []).map((addr) => {
+        if (addr.id === addressId || String(addr.id || addr._id) === String(addressId)) {
+          return { ...addr, ...formattedAddr };
+        }
+        if (formattedAddr.isDefault) {
+          return { ...addr, isDefault: false };
+        }
+        return addr;
+      })
+    }));
+
+    if (backendEnabled) {
+      try {
+        const phone = userProfile?.phone || userProfile?.email || '';
+        const res = await updateAddressInBackend(addressId, formattedAddr, phone);
+        if (res?.addresses && Array.isArray(res.addresses)) {
+          setUserProfile((prev) => ({
+            ...prev,
+            addresses: res.addresses
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to update address in backend:', err);
+      }
+    }
+    showToast('Address updated successfully!');
   };
 
   const totalItemsCount = displayedCartItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -674,11 +947,14 @@ export function CartProvider({ children }) {
         const response = otp ? await loginWithPhoneOtpBackend({ phone, otp }) : { user: verifiedUser };
         const apiUser = response?.user || verifiedUser || { ...userData, phone };
         const resolvedProfile = {
-          ...MOCK_USER_PROFILE,
+          ...EMPTY_USER_PROFILE,
           id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
-          name: apiUser.name || 'Student User',
-          email: apiUser.email || email || `student${phone.slice(-4)}@bookvardi.local`,
+          name: apiUser.name || (phone ? `User ${phone.slice(-4)}` : ''),
+          email: apiUser.email || email || '',
           phone: apiUser.phone || phone,
+          institution: apiUser.institution || '',
+          studentId: apiUser.studentId || '',
+          standard: apiUser.standard || '',
           role: apiUser.role === 'admin' ? 'Admin' : 'Student',
           roles: apiUser.role === 'admin' ? ['Admin', 'Customer'] : ['Student', 'Customer'],
           isAdmin: apiUser.role === 'admin',
@@ -693,7 +969,7 @@ export function CartProvider({ children }) {
         setIsAuthenticated(true);
         setUserProfile(resolvedProfile);
         closeAuthModal();
-        showToast(`Welcome back, ${resolvedProfile.name}! ✨`);
+        showToast(`Welcome back${resolvedProfile.name ? `, ${resolvedProfile.name}` : ''}! ✨`);
         return true;
       } catch (error) {
         showToast(error.message || 'Unable to log in right now.');
@@ -704,13 +980,16 @@ export function CartProvider({ children }) {
     if (backendEnabled && ((email && password) || (phone && password))) {
       try {
         const response = await loginWithBackend({ email, password, phone });
-        const apiUser = response?.user || { ...userData, email: email || `student${phone.slice(-4)}@bookvardi.local` };
+        const apiUser = response?.user || { ...userData, email: email || '' };
         const resolvedProfile = {
-          ...MOCK_USER_PROFILE,
+          ...EMPTY_USER_PROFILE,
           id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
-          name: apiUser.name || email.split('@')[0].replace('.', ' '),
+          name: apiUser.name || (email ? email.split('@')[0].replace('.', ' ') : ''),
           email: apiUser.email || email,
           phone: apiUser.phone || userData.phone || '',
+          institution: apiUser.institution || '',
+          studentId: apiUser.studentId || '',
+          standard: apiUser.standard || '',
           role: apiUser.role === 'admin' ? 'Admin' : 'Student',
           roles: apiUser.role === 'admin' ? ['Admin', 'Customer'] : ['Student', 'Customer'],
           isAdmin: apiUser.role === 'admin',
@@ -725,7 +1004,7 @@ export function CartProvider({ children }) {
         setIsAuthenticated(true);
         setUserProfile(resolvedProfile);
         closeAuthModal();
-        showToast(`Welcome back, ${resolvedProfile.name}! ✨`);
+        showToast(`Welcome back${resolvedProfile.name ? `, ${resolvedProfile.name}` : ''}! ✨`);
         return true;
       } catch (error) {
         showToast(error.message || 'Unable to log in right now.');
@@ -738,13 +1017,14 @@ export function CartProvider({ children }) {
 
     let resolvedProfile;
     if (matched) {
-      resolvedProfile = { ...matched, ...userData };
+      resolvedProfile = { ...EMPTY_USER_PROFILE, ...matched, ...userData };
     } else {
       resolvedProfile = {
-        ...MOCK_USER_PROFILE,
+        ...EMPTY_USER_PROFILE,
         id: `USR-${Date.now().toString().slice(-4)}`,
-        name: userData?.name || (email ? email.split('@')[0].replace('.', ' ') : 'Student Customer'),
-        email: email || 'student@bookvardi.in',
+        name: userData?.name || (email ? email.split('@')[0].replace('.', ' ') : ''),
+        email: email || '',
+        phone: userData?.phone || phone || '',
         role: 'Student',
         roles: ['Student', 'Customer'],
         isAdmin: false,
@@ -752,13 +1032,14 @@ export function CartProvider({ children }) {
         adminRole: null,
         isSeller: false,
         sellerStatus: 'none',
-        sellerRole: null
+        sellerRole: null,
+        addresses: []
       };
     }
 
     setUserProfile(resolvedProfile);
     closeAuthModal();
-    showToast(`Welcome back, ${resolvedProfile.name}! ✨`);
+    showToast(`Welcome back${resolvedProfile.name ? `, ${resolvedProfile.name}` : ''}! ✨`);
     return true;
   };
 
@@ -768,7 +1049,7 @@ export function CartProvider({ children }) {
     );
     if (target) {
       setIsAuthenticated(true);
-      setUserProfile({ ...target });
+      setUserProfile({ ...EMPTY_USER_PROFILE, ...target });
       showToast(`Switched account to ${target.name} (${target.role}) 🔄`);
       return true;
     }
@@ -778,30 +1059,34 @@ export function CartProvider({ children }) {
   const register = async (newUserData = {}) => {
     const email = (newUserData?.email || '').trim().toLowerCase();
     const password = String(newUserData?.password || '').trim();
+    const phone = String(newUserData?.phone || '').trim();
 
-    if (backendEnabled && email && password) {
+    if (backendEnabled) {
       try {
         const response = await registerWithBackend({
-          name: newUserData.name || 'Student User',
-          email,
-          password,
-          phone: newUserData.phone || ''
+          name: newUserData.name || '',
+          email: email || '',
+          password: password || 'BookVardi@123',
+          phone: phone || ''
         });
 
         const apiUser = response?.user || {
           id: `USR-${Date.now().toString().slice(-4)}`,
-          name: newUserData.name || 'Student User',
-          email,
-          phone: newUserData.phone || '',
+          name: newUserData.name || '',
+          email: email || '',
+          phone: phone || '',
           role: 'user'
         };
 
         const freshProfile = {
-          ...MOCK_USER_PROFILE,
+          ...EMPTY_USER_PROFILE,
           id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
-          name: apiUser.name || newUserData.name || 'Student User',
-          email: apiUser.email || email,
-          phone: apiUser.phone || newUserData.phone || '',
+          name: apiUser.name || newUserData.name || '',
+          email: apiUser.email || email || '',
+          phone: apiUser.phone || phone || '',
+          institution: apiUser.institution || '',
+          studentId: apiUser.studentId || '',
+          standard: apiUser.standard || '',
           role: apiUser.role === 'admin' ? 'Admin' : 'Student',
           roles: apiUser.role === 'admin' ? ['Admin', 'Customer'] : ['Student', 'Customer'],
           isAdmin: apiUser.role === 'admin',
@@ -811,25 +1096,28 @@ export function CartProvider({ children }) {
           sellerStatus: 'none',
           sellerRole: null,
           memberSince: 'September 2026',
-          rewardPoints: 100,
-          orders: []
+          rewardPoints: 0,
+          orders: [],
+          addresses: Array.isArray(apiUser.addresses) ? apiUser.addresses : []
         };
 
-        setUserProfile(freshProfile);
-        setIsAuthenticated(true);
-        closeAuthModal();
-        showToast(`🎉 Welcome to Book Vardi, ${freshProfile.name}! Account created.`);
-        return true;
+        setRegisteredUsers((prev) => [...prev, freshProfile]);
+        return freshProfile;
       } catch (error) {
-        showToast(error.message || 'Unable to create account right now.');
-        return false;
+        showToast(error.message || 'User already registered. Login please');
+        throw error;
       }
     }
 
     const freshProfile = {
-      ...MOCK_USER_PROFILE,
+      ...EMPTY_USER_PROFILE,
       id: `USR-${Date.now().toString().slice(-4)}`,
-      ...newUserData,
+      name: newUserData.name || '',
+      email: email || '',
+      phone: phone || newUserData.phone || '',
+      institution: '',
+      studentId: '',
+      standard: '',
       role: 'Student',
       roles: ['Student', 'Customer'],
       isAdmin: false,
@@ -839,18 +1127,32 @@ export function CartProvider({ children }) {
       sellerStatus: 'none',
       sellerRole: null,
       memberSince: 'September 2026',
-      rewardPoints: 100,
-      orders: []
+      rewardPoints: 0,
+      orders: [],
+      addresses: []
     };
-    setUserProfile(freshProfile);
-    setIsAuthenticated(true);
-    closeAuthModal();
-    showToast(`🎉 Welcome to Book Vardi, ${newUserData.name}! Account created.`);
-    return true;
+
+    setRegisteredUsers((prev) => [...prev, freshProfile]);
+    setWishlist([]);
+    setCartItems([]);
+    try {
+      localStorage.removeItem('book_vardi_wishlist_v2');
+      localStorage.removeItem('book_vardi_items_v2');
+    } catch (e) {}
+    return freshProfile;
   };
 
   const logout = () => {
     setIsAuthenticated(false);
+    setUserProfile(EMPTY_USER_PROFILE);
+    setWishlist([]);
+    setCartItems([]);
+    try {
+      localStorage.removeItem('book_vardi_user_profile');
+      localStorage.removeItem('book_vardi_is_authenticated');
+      localStorage.removeItem('book_vardi_wishlist_v2');
+      localStorage.removeItem('book_vardi_items_v2');
+    } catch (e) {}
     showToast('Logged out successfully. See you soon! 👋');
   };
 
@@ -933,6 +1235,14 @@ export function CartProvider({ children }) {
 
   const clearCart = () => {
     setCartItems([]);
+    try {
+      localStorage.removeItem('book_vardi_items_v2');
+    } catch (e) {}
+    if (backendEnabled) {
+      const phone = userProfile?.phone || '';
+      clearCartInBackend(phone).catch(() => {});
+    }
+    showToast('Cart cleared! 🛒');
   };
 
   const placeOrder = (orderData) => {
@@ -1040,8 +1350,13 @@ export function CartProvider({ children }) {
         wishlistProducts,
         isWishlisted,
         userProfile,
+        setUserProfile,
         updateProfile,
+        profileCompleteness: getProfileCompleteness(userProfile),
+        isProfileIncomplete: getProfileCompleteness(userProfile).isIncomplete,
+        getProfileCompleteness,
         addAddress,
+        editAddress,
         removeAddress,
         isCartOpen,
         isWishlistOpen,
@@ -1055,6 +1370,7 @@ export function CartProvider({ children }) {
         setIsWishlistOpen,
         addToCart,
         removeFromCart,
+        clearCart,
         updateQuantity,
         toggleWishlist,
         showToast,
@@ -1092,6 +1408,8 @@ export function CartProvider({ children }) {
         adminStatus,
         setAdminStatus,
         USERS,
+        registeredUsers,
+        isUserRegistered,
         switchUser
       }}
     >
