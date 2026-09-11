@@ -17,7 +17,9 @@ import {
   updateUserProfileInBackend,
   addAddressToBackend,
   updateAddressInBackend,
-  deleteAddressInBackend
+  deleteAddressInBackend,
+  createOrderInBackend,
+  fetchMyOrdersFromBackend
 } from '../utils/api';
 
 export const EMPTY_USER_PROFILE = {
@@ -413,6 +415,17 @@ export function CartProvider({ children }) {
           }
         })
         .catch(() => {});
+
+      fetchMyOrdersFromBackend(phone)
+        .then((orders) => {
+          if (Array.isArray(orders) && orders.length > 0) {
+            setUserProfile((prev) => ({
+              ...prev,
+              orders
+            }));
+          }
+        })
+        .catch(() => {});
     }
   }, [isAuthenticated, userProfile?.phone, userProfile?.id]);
 
@@ -590,6 +603,18 @@ export function CartProvider({ children }) {
         });
         return modified ? { ...prev, orders: newOrders } : prev;
       });
+    }
+
+    // Reset cart across tabs if order was placed on another tab
+    if (incoming.cartResetForPhone && userProfile?.phone) {
+      const incDigits = String(incoming.cartResetForPhone).replace(/\D/g, '');
+      const userDigits = String(userProfile.phone).replace(/\D/g, '');
+      if (incDigits && userDigits && (incDigits.endsWith(userDigits.slice(-10)) || userDigits.endsWith(incDigits.slice(-10)))) {
+        setCartItems([]);
+        try {
+          localStorage.removeItem('book_vardi_items_v2');
+        } catch (e) {}
+      }
     }
   });
 
@@ -1330,12 +1355,35 @@ export function CartProvider({ children }) {
     // Push new order and updated inventory to all 3 portals (Admin, Seller, User)
     pushPlatformSync({
       orders: [platformOrder],
-      products: updatedProducts
+      products: updatedProducts,
+      cartResetForPhone: userProfile?.phone || ''
     });
 
     setLastPlacedOrder(newOrder);
     setCartItems([]);
     setAppliedCoupon(null);
+
+    if (backendEnabled) {
+      const userPhone = userProfile?.phone || orderData?.shippingAddress?.phone || '';
+      createOrderInBackend(newOrder, userPhone)
+        .then((res) => {
+          if (res?.order) {
+            console.log('🌐 [FRONTEND API] Order created in backend DB:', res.order);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to save order to backend DB:', err);
+        });
+
+      clearCartInBackend(userPhone)
+        .then((res) => {
+          console.log('🌐 [FRONTEND API] Backend cart cleared successfully:', res);
+        })
+        .catch((err) => {
+          console.error('Failed to clear backend cart:', err);
+        });
+    }
+
     showToast(`🎉 Order ${randomId} placed successfully! +50 Points earned.`);
     return newOrder;
   };

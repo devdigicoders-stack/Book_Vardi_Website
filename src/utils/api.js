@@ -174,8 +174,10 @@ export async function removeFromCartInBackend(itemId, phone = '') {
 }
 
 export async function clearCartInBackend(phone = '') {
+  console.log('🌐 [FRONTEND API] DELETE /api/cart/clear for phone:', phone);
   return requestApi('/cart/clear', {
     method: 'DELETE',
+    data: { phone },
     headers: phone ? { 'x-user-phone': phone } : {}
   });
 }
@@ -223,6 +225,28 @@ export async function updateAddressInBackend(addressId, addressData, phone = '')
     headers: userPhone ? { 'x-user-phone': userPhone } : {}
   });
   console.log(`🌐 [FRONTEND API] PUT /api/users/addresses/${addressId} response:`, res);
+  return res;
+}
+
+export async function createOrderInBackend(orderPayload, phone = '') {
+  const userPhone = phone || orderPayload?.customer?.phone || orderPayload?.shippingAddress?.phone || '';
+  console.log('🌐 [FRONTEND API] POST /api/orders payload:', orderPayload);
+  const res = await requestApi('/orders', {
+    method: 'POST',
+    data: { ...orderPayload, phone: userPhone },
+    headers: userPhone ? { 'x-user-phone': userPhone } : {}
+  });
+  console.log('🌐 [FRONTEND API] POST /api/orders response:', res);
+  return res;
+}
+
+export async function fetchMyOrdersFromBackend(phone = '') {
+  console.log('🌐 [FRONTEND API] GET /api/orders/my-orders for phone:', phone);
+  const res = await requestApi('/orders/my-orders', {
+    method: 'GET',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+  console.log('🌐 [FRONTEND API] GET /api/orders/my-orders response:', res);
   return res;
 }
 
