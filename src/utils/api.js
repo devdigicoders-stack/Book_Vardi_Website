@@ -268,3 +268,28 @@ export async function verifyRazorpayPaymentInBackend(verificationPayload, phone 
   return res;
 }
 
+export function getUpiIntentUrl({ app = 'gpay', amount, vpa = 'bookvardi@upi', orderId = '' }) {
+  const cleanAmount = Number(amount || 0).toFixed(2);
+  const note = orderId ? `Order_${orderId}` : 'Book_Vardi_Stationery_Order';
+  const params = new URLSearchParams({
+    pa: vpa,
+    pn: 'Book Vardi Store',
+    tn: note,
+    am: cleanAmount,
+    cu: 'INR'
+  });
+
+  const queryStr = params.toString();
+
+  switch (String(app).toLowerCase()) {
+    case 'gpay':
+      return `tez://upi/pay?${queryStr}`;
+    case 'phonepe':
+      return `phonepe://pay?${queryStr}`;
+    case 'paytm':
+      return `paytmmp://pay?${queryStr}`;
+    default:
+      return `upi://pay?${queryStr}`;
+  }
+}
+

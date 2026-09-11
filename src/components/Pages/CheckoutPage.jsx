@@ -21,7 +21,7 @@ import {
   Pencil
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
-import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend } from '../../utils/api';
+import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, getUpiIntentUrl } from '../../utils/api';
 
 const POPULAR_BANKS = [
   { id: 'sbi', name: 'State Bank of India', code: 'SBI' },
@@ -274,6 +274,25 @@ export default function CheckoutPage({ onNavigate }) {
       onNavigate('order-success');
     };
 
+    if (paymentMethod === 'upi') {
+      const isMobileDevice = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (isMobileDevice) {
+        const intentUrl = getUpiIntentUrl({
+          app: upiMethod,
+          amount: grandTotal,
+          vpa: upiMethod === 'id' && customUpiId ? customUpiId : 'bookvardi@upi'
+        });
+        showToast(`Redirecting to ${upiMethod === 'gpay' ? 'Google Pay' : upiMethod === 'phonepe' ? 'PhonePe' : upiMethod === 'paytm' ? 'Paytm' : 'UPI App'}... 📲`);
+        window.location.href = intentUrl;
+
+        // Execute background order logging
+        setTimeout(() => {
+          executeDirectOrder(`${paymentLabel} (Direct Mobile Intent)`, activeShippingAddress);
+        }, 1500);
+        return;
+      }
+    }
+
     if (paymentMethod !== 'cod' && typeof window.Razorpay !== 'undefined') {
       createRazorpayOrderInBackend(
         {
@@ -300,6 +319,10 @@ export default function CheckoutPage({ onNavigate }) {
               description: 'Campus Stationery & Study Uniform Order',
               image: '/logo.png',
               order_id: rzpRes.razorpayOrderId,
+              method: 'upi',
+              upi: {
+                flow: 'intent'
+              },
               handler: async function (response) {
                 try {
                   await verifyRazorpayPaymentInBackend(
@@ -770,10 +793,10 @@ export default function CheckoutPage({ onNavigate }) {
                       )}
                     </div>
                   ) : (
-                    <div className="p-3 bg-white rounded-xl border border-gray-200 text-xs text-gray-600 flex items-center gap-2">
-                      <Smartphone size={16} className="text-brand-teal shrink-0" />
+                    <div className="p-3 bg-white rounded-xl border border-gray-200 text-xs text-gray-700 flex items-center gap-2.5">
+                      <Smartphone size={18} className="text-brand-teal shrink-0 animate-bounce" />
                       <span>
-                        Secure Razorpay prompt will launch for <strong>{upiMethod.toUpperCase()}</strong> when you click Place Order.
+                        Tapping <strong>Place Order</strong> will launch <strong>{upiMethod === 'gpay' ? 'Google Pay' : upiMethod === 'phonepe' ? 'PhonePe' : upiMethod === 'paytm' ? 'Paytm' : upiMethod.toUpperCase()}</strong> directly on your device.
                       </span>
                     </div>
                   )}
