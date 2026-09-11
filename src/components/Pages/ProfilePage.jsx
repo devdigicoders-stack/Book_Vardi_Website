@@ -422,29 +422,14 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               </div>
 
               <div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                    {formData.name}
-                  </h1>
-                  <button
-                    onClick={() => {
-                      logout();
-                      onNavigate('home');
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 hover:bg-red-500/20 text-white/80 hover:text-red-200 border border-white/15 text-xs font-bold transition-colors cursor-pointer"
-                    title="Log Out of your account"
-                  >
-                    <LogOut size={13} />
-                    <span>Log Out</span>
-                  </button>
-                </div>
+                <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {formData.name}
+                </h1>
                 <p className="text-xs sm:text-sm text-white/80 mt-0.5">
                   {formData.institution} • {formData.standard}
                 </p>
                 <div className="flex items-center gap-3 mt-2 text-xs text-white/60 flex-wrap">
                   <span>ID: <strong className="text-brand-yellow">{formData.studentId}</strong></span>
-                  <span>•</span>
-                  <span>Member since {userProfile?.memberSince || '2024'}</span>
                 </div>
               </div>
             </div>
@@ -812,21 +797,6 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           <Pencil size={13} />
                           <span>Edit Details</span>
                         </button>
-
-                        {isAuthenticated && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              logout();
-                              onNavigate('home');
-                            }}
-                            className="hidden lg:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 transition-colors cursor-pointer"
-                            title="Log Out of your account"
-                          >
-                            <LogOut size={13} />
-                            <span>Log Out</span>
-                          </button>
-                        )}
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">

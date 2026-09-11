@@ -9,6 +9,7 @@ import {
   fetchUserProfileFromBackend,
   fetchWishlistFromBackend,
   toggleWishlistInBackend,
+  removeFromWishlistInBackend,
   fetchCartFromBackend,
   addToCartInBackend,
   updateCartItemInBackend,
@@ -662,6 +663,9 @@ export function CartProvider({ children }) {
       return false;
     }
     const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
+    const prodId = product?.id !== undefined ? product.id : product?._id;
+    const inWishlist = wishlist.some((item) => String(item) === String(prodId));
+
     setCartItems((prev) => {
       const existing = prev.find((item) => String(item.id) === String(product.id));
       if (existing) {
@@ -673,13 +677,52 @@ export function CartProvider({ children }) {
       }
       return [...prev, { ...product, quantity: qtyToAdd }];
     });
-    showToast(`Added ${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}"${product.name}" to your cart!`);
+
+    if (inWishlist) {
+      setWishlist((prev) => prev.filter((item) => String(item) !== String(prodId)));
+      showToast(`Moved "${product.name}" from wishlist to your cart! 🛍️`);
+    } else {
+      showToast(`Added ${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}"${product.name}" to your cart!`);
+    }
 
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
       addToCartInBackend(product, qtyToAdd, phone).catch(() => {});
+      if (inWishlist && prodId) {
+        removeFromWishlistInBackend(prodId, phone)
+          .then((res) => {
+            if (res?.productIds && Array.isArray(res.productIds)) {
+              setWishlist(res.productIds);
+            }
+          })
+          .catch(() => {});
+      }
     }
     return true;
+  };
+
+  const removeFromWishlist = (id) => {
+    if (!isAuthenticated) return false;
+    const strId = String(id);
+    const phone = userProfile?.phone || '';
+
+    setWishlist((prev) => prev.filter((item) => String(item) !== strId));
+    showToast('Removed item from your wishlist');
+
+    if (backendEnabled) {
+      removeFromWishlistInBackend(id, phone)
+        .then((res) => {
+          if (res?.productIds && Array.isArray(res.productIds)) {
+            setWishlist(res.productIds);
+          }
+        })
+        .catch(() => {});
+    }
+    return true;
+  };
+
+  const moveToCart = (product, quantity = 1) => {
+    return addToCart(product, quantity);
   };
 
   const removeFromCart = (id) => {
@@ -1417,10 +1460,12 @@ export function CartProvider({ children }) {
         setIsCartOpen,
         setIsWishlistOpen,
         addToCart,
+        moveToCart,
         removeFromCart,
         clearCart,
         updateQuantity,
         toggleWishlist,
+        removeFromWishlist,
         showToast,
         isAuthenticated,
         isAuthModalOpen,

@@ -143,6 +143,13 @@ export async function toggleWishlistInBackend(productId, phone) {
   });
 }
 
+export async function removeFromWishlistInBackend(productId, phone) {
+  return requestApi(`/wishlist/remove/${productId}`, {
+    method: 'DELETE',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
 export async function fetchCartFromBackend(phone) {
   return requestApi('/cart', {
     method: 'GET',
@@ -196,35 +203,29 @@ export async function updateUserProfileInBackend(profileData) {
 
 export async function addAddressToBackend(addressData, phone = '') {
   const userPhone = phone || addressData?.phone || '';
-  console.log('🌐 [FRONTEND API] POST /api/users/addresses payload:', addressData);
   const res = await requestApi('/users/addresses', {
     method: 'POST',
     data: { ...addressData, phone: userPhone },
     headers: userPhone ? { 'x-user-phone': userPhone } : {}
   });
-  console.log('🌐 [FRONTEND API] POST /api/users/addresses response:', res);
   return res;
 }
 
 export async function deleteAddressInBackend(addressId, phone = '') {
-  console.log('🌐 [FRONTEND API] DELETE /api/users/addresses/' + addressId);
   const res = await requestApi(`/users/addresses/${addressId}`, {
     method: 'DELETE',
     headers: phone ? { 'x-user-phone': phone } : {}
   });
-  console.log('🌐 [FRONTEND API] DELETE /api/users/addresses/' + addressId + ' response:', res);
   return res;
 }
 
 export async function updateAddressInBackend(addressId, addressData, phone = '') {
   const userPhone = phone || addressData?.phone || '';
-  console.log(`🌐 [FRONTEND API] PUT /api/users/addresses/${addressId} payload:`, addressData);
   const res = await requestApi(`/users/addresses/${addressId}`, {
     method: 'PUT',
     data: { ...addressData, phone: userPhone },
     headers: userPhone ? { 'x-user-phone': userPhone } : {}
   });
-  console.log(`🌐 [FRONTEND API] PUT /api/users/addresses/${addressId} response:`, res);
   return res;
 }
 
