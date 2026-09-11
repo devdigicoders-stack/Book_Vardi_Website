@@ -1109,7 +1109,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                   </div>
 
                   {/* Status Filter Chips */}
-                  <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-200/60 text-xs">
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none whitespace-nowrap flex-nowrap pt-1 pb-1 border-t border-gray-200/60 text-xs">
                     <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1 mr-1">
                       <Filter size={12} />
                       <span>Status:</span>

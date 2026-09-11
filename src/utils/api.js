@@ -242,12 +242,29 @@ export async function createOrderInBackend(orderPayload, phone = '') {
 }
 
 export async function fetchMyOrdersFromBackend(phone = '') {
-  console.log('🌐 [FRONTEND API] GET /api/orders/my-orders for phone:', phone);
   const res = await requestApi('/orders/my-orders', {
     method: 'GET',
     headers: phone ? { 'x-user-phone': phone } : {}
   });
-  console.log('🌐 [FRONTEND API] GET /api/orders/my-orders response:', res);
+  return res;
+}
+
+export async function createRazorpayOrderInBackend(paymentPayload, phone = '') {
+  const userPhone = phone || paymentPayload?.customer?.phone || '';
+  const res = await requestApi('/payments/create-order', {
+    method: 'POST',
+    data: paymentPayload,
+    headers: userPhone ? { 'x-user-phone': userPhone } : {}
+  });
+  return res;
+}
+
+export async function verifyRazorpayPaymentInBackend(verificationPayload, phone = '') {
+  const res = await requestApi('/payments/verify', {
+    method: 'POST',
+    data: verificationPayload,
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
   return res;
 }
 

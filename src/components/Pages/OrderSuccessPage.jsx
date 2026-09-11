@@ -184,52 +184,40 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             </div>
           </div>
 
-          {/* 4-Step Tracker Flow */}
-          <div className="relative pt-2 pb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 relative">
-              {/* Step 1: Confirmed */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2">
-                <div className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-sm ring-4 ring-emerald-50">
-                  <Check size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-900">Order Confirmed</h4>
-                  <p className="text-[11px] text-gray-400">Payment verified</p>
-                </div>
-              </div>
+          {/* Live Order Tracker (Icon Only - Highlighted iff status updated, No line) */}
+          <div className="relative py-3">
+            <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
+              {[
+                { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: Check },
+                { id: 2, full: 'Processing & Packing', sub: 'At Central Warehouse', icon: Package },
+                { id: 3, full: 'Out for Campus Transit', sub: 'BlueDart Logistics', icon: Truck },
+                { id: 4, full: 'Delivered', sub: 'To your hostel desk', icon: MapPin }
+              ].map((step) => {
+                const stepIndex = order.status === 'Delivered' ? 4 : (order.status === 'In Transit' || order.status === 'Shipped' ? 3 : 2);
+                const isUpdated = step.id <= stepIndex;
+                const isCurrent = step.id === stepIndex;
+                const IconComp = step.icon;
 
-              {/* Step 2: Processing (Active) */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2">
-                <div className="w-10 h-10 rounded-full bg-brand-teal text-white flex items-center justify-center font-bold text-sm shadow-sm ring-4 ring-teal-50 animate-pulse">
-                  <Package size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-brand-teal">Processing & Packing</h4>
-                  <p className="text-[11px] text-gray-400">At Central Warehouse</p>
-                </div>
-              </div>
-
-              {/* Step 3: Shipped */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2 opacity-60">
-                <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center font-bold text-sm">
-                  <Truck size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-700">Out for Campus Transit</h4>
-                  <p className="text-[11px] text-gray-400">BlueDart Logistics</p>
-                </div>
-              </div>
-
-              {/* Step 4: Delivered */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2 opacity-60">
-                <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center font-bold text-sm">
-                  <MapPin size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-700">Delivered</h4>
-                  <p className="text-[11px] text-gray-400">To your hostel desk</p>
-                </div>
-              </div>
+                return (
+                  <div
+                    key={step.id}
+                    className="flex flex-col items-center group cursor-pointer shrink-0"
+                    title={`${step.full} • ${step.sub}`}
+                  >
+                    <div
+                      className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${
+                        isCurrent
+                          ? 'bg-brand-teal text-white ring-4 ring-teal-100 scale-110 shadow-lg animate-pulse opacity-100'
+                          : isUpdated
+                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 scale-105 shadow-sm opacity-100'
+                          : 'bg-gray-100 text-gray-600 border border-gray-300 opacity-90 hover:opacity-100'
+                      }`}
+                    >
+                      <IconComp size={22} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

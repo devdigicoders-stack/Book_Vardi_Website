@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Clock, TrendingUp, Sparkles, ArrowRight } from 'lucide-react';
+import { Search, X, Clock, TrendingUp, Sparkles, ArrowRight, Filter } from 'lucide-react';
 import { ALL_PRODUCTS } from '../../data/mockData';
 import { useCart } from '../../context/CartContext';
 
@@ -48,8 +48,21 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
 
   return (
     <div className="relative w-full" ref={wrapperRef}>
-      <form onSubmit={handleSubmit} className="relative group">
-        <div className={`flex items-center bg-gray-100/80 hover:bg-gray-100 transition-colors rounded-full border border-transparent ${isOpen ? 'border-brand-teal/30 bg-white ring-4 ring-brand-teal/5' : ''}`}>
+      <form onSubmit={handleSubmit} className="relative group flex items-center gap-2">
+        {/* Filter icon ahead of search input on small devices */}
+        <button
+          type="button"
+          onClick={() => {
+            onNavigate('products');
+          }}
+          className="lg:hidden p-2.5 rounded-full bg-brand-teal text-white shadow-xs hover:bg-brand-teal-light transition-all shrink-0 cursor-pointer flex items-center justify-center active:scale-95"
+          title="Open product filters"
+          aria-label="Filter products"
+        >
+          <Filter size={15} />
+        </button>
+
+        <div className={`flex-1 flex items-center bg-gray-100/80 hover:bg-gray-100 transition-colors rounded-full border border-transparent ${isOpen ? 'border-brand-teal/30 bg-white ring-4 ring-brand-teal/5' : ''}`}>
           <div className="pl-4 text-gray-400">
             <Search size={16} />
           </div>

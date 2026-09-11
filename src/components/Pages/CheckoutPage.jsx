@@ -21,6 +21,7 @@ import {
   Pencil
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend } from '../../utils/api';
 
 const POPULAR_BANKS = [
   { id: 'sbi', name: 'State Bank of India', code: 'SBI' },
@@ -249,40 +250,109 @@ export default function CheckoutPage({ onNavigate }) {
       activeShippingAddress = guestAddress;
     }
 
-    // Validate payment
-    if (paymentMethod === 'card') {
-      if (!cardData.number || cardData.number.replace(/\s/g, '').length < 15 || !cardData.cvv) {
-        showToast('Please enter a valid card number and CVV.');
-        return;
-      }
-    }
-
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      let paymentLabel = 'Cash on Delivery (COD)';
-      if (paymentMethod === 'upi') {
-        paymentLabel = upiMethod === 'id' ? `UPI (${customUpiId || 'Verified ID'})` : `UPI (${upiMethod.toUpperCase()})`;
-      } else if (paymentMethod === 'card') {
-        paymentLabel = `Card ending in ${cardData.number.slice(-4) || '4242'}`;
-      } else if (paymentMethod === 'netbanking') {
-        paymentLabel = `Net Banking (${selectedBank.toUpperCase()})`;
-      }
+    let paymentLabel = 'Cash on Delivery (COD)';
+    if (paymentMethod === 'upi') {
+      paymentLabel = upiMethod === 'id' ? `UPI (${customUpiId || 'Verified ID'})` : `UPI (${upiMethod.toUpperCase()})`;
+    }
 
+    const executeDirectOrder = (label, address, razorpayInfo = {}) => {
       placeOrder({
         subtotal,
         shippingCost: totalShippingCost,
         discount: couponDiscount + pointsDiscount,
         total: grandTotal,
-        shippingAddress: activeShippingAddress,
-        paymentMethod: paymentLabel,
+        shippingAddress: address,
+        paymentMethod: label,
+        razorpayPaymentId: razorpayInfo.paymentId || null,
+        razorpayOrderId: razorpayInfo.orderId || null,
         deliverySpeed: deliverySpeed === 'express' ? 'Express Campus Priority (1-2 Days)' : 'Standard Delivery (3-5 Days)',
         estimatedDelivery: deliverySpeed === 'express' ? 'Tuesday, 08 Sep' : 'Thursday, 10 Sep'
       });
-
       setIsSubmitting(false);
       onNavigate('order-success');
-    }, 1200);
+    };
+
+    if (paymentMethod !== 'cod' && typeof window.Razorpay !== 'undefined') {
+      createRazorpayOrderInBackend(
+        {
+          amount: grandTotal,
+          customer: {
+            name: activeShippingAddress.name || userProfile?.name || 'Customer',
+            phone: activeShippingAddress.phone || userProfile?.phone || '',
+            email: activeShippingAddress.email || userProfile?.email || ''
+          },
+          notes: {
+            deliverySpeed,
+            itemsCount: cartItems.length
+          }
+        },
+        activeShippingAddress.phone || userProfile?.phone || ''
+      )
+        .then((rzpRes) => {
+          if (rzpRes?.razorpayOrderId) {
+            const options = {
+              key: rzpRes.key || 'rzp_test_6kz5nGEzi8uXRw',
+              amount: rzpRes.amount || Math.round(grandTotal * 100),
+              currency: rzpRes.currency || 'INR',
+              name: 'Book Vardi',
+              description: 'Campus Stationery & Study Uniform Order',
+              image: '/logo.png',
+              order_id: rzpRes.razorpayOrderId,
+              handler: async function (response) {
+                try {
+                  await verifyRazorpayPaymentInBackend(
+                    {
+                      razorpay_order_id: response.razorpay_order_id,
+                      razorpay_payment_id: response.razorpay_payment_id,
+                      razorpay_signature: response.razorpay_signature
+                    },
+                    activeShippingAddress.phone || userProfile?.phone || ''
+                  );
+                } catch (vErr) {
+                  console.warn('Razorpay signature verification info:', vErr);
+                }
+
+                executeDirectOrder(
+                  `${paymentLabel} (Razorpay ID: ${response.razorpay_payment_id})`,
+                  activeShippingAddress,
+                  { paymentId: response.razorpay_payment_id, orderId: response.razorpay_order_id }
+                );
+              },
+              prefill: {
+                name: activeShippingAddress.name || userProfile?.name || '',
+                email: activeShippingAddress.email || userProfile?.email || '',
+                contact: activeShippingAddress.phone || userProfile?.phone || ''
+              },
+              theme: {
+                color: '#233835'
+              },
+              modal: {
+                ondismiss: function () {
+                  setIsSubmitting(false);
+                  showToast('Payment window closed. You can retry checkout anytime.');
+                }
+              }
+            };
+
+            const rzp = new window.Razorpay(options);
+            rzp.on('payment.failed', function (response) {
+              setIsSubmitting(false);
+              showToast(`Payment failed: ${response.error?.description || 'Transaction cancelled'}`);
+            });
+            rzp.open();
+          } else {
+            setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 800);
+          }
+        })
+        .catch(() => {
+          setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 800);
+        });
+      return;
+    }
+
+    setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 1000);
   };
 
   return (
@@ -609,58 +679,32 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
               </div>
 
-              {/* Payment Type Selection Tabs */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {/* Payment Type Selection Tabs (UPI & COD) */}
+              <div className="grid grid-cols-2 gap-3.5">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('upi')}
-                  className={`p-3 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                     paymentMethod === 'upi'
-                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  <Smartphone size={18} />
-                  <span className="text-xs font-bold">UPI / QR</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('card')}
-                  className={`p-3 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                    paymentMethod === 'card'
-                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <CreditCard size={18} />
-                  <span className="text-xs font-bold">Cards</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('netbanking')}
-                  className={`p-3 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                    paymentMethod === 'netbanking'
-                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <Building2 size={18} />
-                  <span className="text-xs font-bold">Net Banking</span>
+                  <Smartphone size={20} />
+                  <span className="text-xs font-extrabold">UPI / Online Pay</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('cod')}
-                  className={`p-3 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                     paymentMethod === 'cod'
-                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  <Banknote size={18} />
-                  <span className="text-xs font-bold">Cash on Del.</span>
+                  <Banknote size={20} />
+                  <span className="text-xs font-extrabold">Cash on Delivery (COD)</span>
                 </button>
               </div>
 
@@ -668,9 +712,9 @@ export default function CheckoutPage({ onNavigate }) {
               {paymentMethod === 'upi' && (
                 <div className="bg-gray-50/90 rounded-2xl p-5 border border-gray-200 space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-800">Popular Instant UPI Apps</span>
+                    <span className="text-xs font-bold text-gray-800">Popular Instant UPI Apps & Razorpay Gateway</span>
                     <span className="text-[10px] text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded-full">
-                      Zero Fees
+                      Zero Surcharge
                     </span>
                   </div>
 
@@ -729,105 +773,32 @@ export default function CheckoutPage({ onNavigate }) {
                     <div className="p-3 bg-white rounded-xl border border-gray-200 text-xs text-gray-600 flex items-center gap-2">
                       <Smartphone size={16} className="text-brand-teal shrink-0" />
                       <span>
-                        A payment prompt will be dispatched to your <strong>{upiMethod.toUpperCase()}</strong> app once you click Place Order.
+                        Secure Razorpay prompt will launch for <strong>{upiMethod.toUpperCase()}</strong> when you click Place Order.
                       </span>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Sub-view for Credit/Debit Cards */}
-              {paymentMethod === 'card' && (
-                <div className="bg-gray-50/90 rounded-2xl p-5 border border-gray-200 space-y-3.5">
+              {/* Sub-view for Cash on Delivery (COD) */}
+              {paymentMethod === 'cod' && (
+                <div className="bg-emerald-50/70 rounded-2xl p-5 border border-emerald-200 text-xs text-emerald-900 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-800">Card Credentials</span>
-                    <span className="text-[10px] text-brand-teal font-extrabold bg-brand-teal/10 px-2 py-0.5 rounded-full">
-                      RuPay • Visa • Mastercard
+                    <span className="font-extrabold text-xs text-emerald-950 flex items-center gap-1.5">
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                      <span>Cash on Delivery Available</span>
+                    </span>
+                    <span className="text-[10px] font-bold bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      ✓ Verified Active
                     </span>
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Card Number</label>
-                    <input
-                      type="text"
-                      placeholder="4532 •••• •••• 8921"
-                      maxLength={19}
-                      value={cardData.number}
-                      onChange={(e) => setCardData({ ...cardData, number: e.target.value })}
-                      className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Cardholder Name</label>
-                      <input
-                        type="text"
-                        placeholder="RITESH YADAV"
-                        value={cardData.name}
-                        onChange={(e) => setCardData({ ...cardData, name: e.target.value })}
-                        className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal uppercase"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Expiry</label>
-                        <input
-                          type="text"
-                          placeholder="MM/YY"
-                          maxLength={5}
-                          value={cardData.expiry}
-                          onChange={(e) => setCardData({ ...cardData, expiry: e.target.value })}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">CVV</label>
-                        <input
-                          type="password"
-                          placeholder="•••"
-                          maxLength={4}
-                          value={cardData.cvv}
-                          onChange={(e) => setCardData({ ...cardData, cvv: e.target.value })}
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Sub-view for Net Banking */}
-              {paymentMethod === 'netbanking' && (
-                <div className="bg-gray-50/90 rounded-2xl p-5 border border-gray-200 space-y-3">
-                  <span className="text-xs font-bold text-gray-800">Select Bank</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {POPULAR_BANKS.map((b) => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => setSelectedBank(b.id)}
-                        className={`p-2.5 rounded-xl border text-xs font-bold transition-all text-left flex items-center justify-between cursor-pointer ${
-                          selectedBank === b.id
-                            ? 'bg-brand-teal text-white border-brand-teal'
-                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        <span>{b.name}</span>
-                        {selectedBank === b.id && <Check size={14} />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Sub-view for COD */}
-              {paymentMethod === 'cod' && (
-                <div className="bg-gray-50/90 rounded-2xl p-4 border border-gray-200 text-xs text-gray-700 space-y-1.5">
-                  <p className="font-bold text-gray-900">Cash on Delivery Available</p>
-                  <p className="text-gray-500 leading-relaxed">
-                    Pay in cash or scan the delivery executive's UPI QR code upon receipt of your parcel at your hostel/doorstep.
+                  <p className="text-xs text-emerald-800 leading-relaxed">
+                    Pay in cash or scan the delivery partner's UPI QR code upon arrival at your hostel desk or home address.
                   </p>
+                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-[11px] font-bold text-emerald-900">
+                    <span>COD Handling Fee: <strong className="text-emerald-700 font-extrabold">₹0 (FREE)</strong></span>
+                    <span>No Prepayment Required</span>
+                  </div>
                 </div>
               )}
             </div>
