@@ -77,8 +77,8 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/60 pt-28 pb-20 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gray-50/60 pt-2 pb-2 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto space-y-4">
         
         {/* Back Navigation Bar if opened in details-only mode */}
         {isDetailsOnly && (
@@ -168,7 +168,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
 
         {/* Live Order Tracker */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2">
             <div>
               <h2 className="font-display text-lg sm:text-xl font-extrabold text-gray-900 flex items-center gap-2">
                 <Truck className="text-brand-teal" size={20} />
@@ -179,13 +179,12 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               </p>
             </div>
             <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3.5 py-1.5 rounded-full text-xs font-bold self-start sm:self-auto">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
               Estimated Delivery: {order.estimatedDelivery || 'Thursday, 10 Sep'}
             </div>
           </div>
 
           {/* Live Order Tracker (Icon Only - Highlighted iff status updated, No line) */}
-          <div className="relative py-3">
+          <div className="relative py-0">
             <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
               {[
                 { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: Check },
@@ -201,7 +200,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                 return (
                   <div
                     key={step.id}
-                    className="flex flex-col items-center group cursor-pointer shrink-0"
+                    className="flex flex-col items-center justify-center h-16 group cursor-pointer shrink-0"
                     title={`${step.full} • ${step.sub}`}
                   >
                     <div

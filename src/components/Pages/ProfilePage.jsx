@@ -102,19 +102,41 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   // Editable profile form state
   const avatarInputRef = useRef(null);
 
+  // Helper to extract primary / home address from profile
+  const getPrimaryAddress = (profile) => {
+    if (!profile?.addresses || !Array.isArray(profile.addresses) || profile.addresses.length === 0) return null;
+    return (
+      profile.addresses.find((a) => a.isDefault) ||
+      profile.addresses.find((a) => {
+        const typeStr = String(a.type || a.addressType || '').toLowerCase();
+        return typeStr.includes('home');
+      }) ||
+      profile.addresses[0]
+    );
+  };
+
+  const primaryAddress = getPrimaryAddress(userProfile);
+
   const [formData, setFormData] = useState({
-    name: userProfile?.name === 'Student Account' ? '' : (userProfile?.name || ''),
+    name: userProfile?.name === 'Student' ? '' : (userProfile?.name || ''),
     email: userProfile?.email?.includes('@bookvardi.local') ? '' : (userProfile?.email || ''),
     phone: userProfile?.phone || '',
     studentId: userProfile?.studentId || '',
     institution: userProfile?.institution || '',
     standard: userProfile?.standard || '',
-    avatar: userProfile?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'
+    avatar: userProfile?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+    street: primaryAddress?.street || primaryAddress?.addressLine || '',
+    city: primaryAddress?.city || '',
+    state: primaryAddress?.state || '',
+    pincode: primaryAddress?.pincode || '',
+    landmark: primaryAddress?.landmark || '',
+    addressType: primaryAddress?.addressType || primaryAddress?.type || 'Home'
   });
 
   // Keep form in sync when userProfile updates
   useEffect(() => {
     if (userProfile) {
+      const primaryAddr = getPrimaryAddress(userProfile);
       setFormData({
         name: userProfile.name === 'Student Account' ? '' : (userProfile.name || ''),
         email: userProfile.email?.includes('@bookvardi.local') ? '' : (userProfile.email || ''),
@@ -122,7 +144,13 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         studentId: userProfile.studentId || '',
         institution: userProfile.institution || '',
         standard: userProfile.standard || '',
-        avatar: userProfile.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'
+        avatar: userProfile.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+        street: primaryAddr?.street || primaryAddr?.addressLine || '',
+        city: primaryAddr?.city || '',
+        state: primaryAddr?.state || '',
+        pincode: primaryAddr?.pincode || '',
+        landmark: primaryAddr?.landmark || '',
+        addressType: primaryAddr?.addressType || primaryAddr?.type || 'Home'
       });
     }
   }, [userProfile]);
@@ -152,21 +180,100 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
   const handleProfileSubmit = (e) => {
-    e.preventDefault();
-    updateProfile(formData);
+    if (e && e.preventDefault) e.preventDefault();
+
+    const hasAddressInput = Boolean(
+      (formData.street && formData.street.trim()) ||
+      (formData.city && formData.city.trim()) ||
+      (formData.state && formData.state.trim()) ||
+      (formData.pincode && formData.pincode.trim()) ||
+      (formData.landmark && formData.landmark.trim())
+    );
+
+    let updatedAddresses = [...(userProfile?.addresses || [])];
+
+    if (hasAddressInput) {
+      const primaryAddr = getPrimaryAddress(userProfile);
+      const targetId = primaryAddr?.id || primaryAddr?._id;
+
+      const addressPayload = {
+        id: targetId || Date.now(),
+        name: formData.name || userProfile?.name || '',
+        phone: formData.phone || userProfile?.phone || '',
+        street: formData.street || '',
+        addressLine: formData.street || '',
+        city: formData.city || '',
+        state: formData.state || '',
+        pincode: formData.pincode || '',
+        landmark: formData.landmark || '',
+        type: formData.addressType || 'Home',
+        addressType: formData.addressType || 'Home',
+        isDefault: true
+      };
+
+      if (primaryAddr) {
+        let found = false;
+        updatedAddresses = updatedAddresses.map((addr) => {
+          if (
+            (targetId && (addr.id === targetId || String(addr.id || addr._id) === String(targetId))) ||
+            addr === primaryAddr
+          ) {
+            found = true;
+            return { ...addr, ...addressPayload };
+          }
+          return { ...addr, isDefault: false };
+        });
+
+        if (!found) {
+          updatedAddresses.unshift(addressPayload);
+        }
+
+        if (targetId) {
+          editAddress(targetId, addressPayload);
+        } else {
+          addAddress(addressPayload);
+        }
+      } else {
+        updatedAddresses = [
+          addressPayload,
+          ...updatedAddresses.map((a) => ({ ...a, isDefault: false }))
+        ];
+        addAddress(addressPayload);
+      }
+    }
+
+    // 1. Update core profile details and addresses together atomically
+    updateProfile({
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      studentId: formData.studentId,
+      institution: formData.institution,
+      standard: formData.standard,
+      avatar: formData.avatar,
+      addresses: updatedAddresses
+    });
+
     setIsEditingProfile(false);
   };
 
   const handleCancelEdit = () => {
     if (userProfile) {
+      const primaryAddr = getPrimaryAddress(userProfile);
       setFormData({
-        name: userProfile.name || '',
-        email: userProfile.email || '',
+        name: userProfile.name === 'Student Account' ? '' : (userProfile.name || ''),
+        email: userProfile.email?.includes('@bookvardi.local') ? '' : (userProfile.email || ''),
         phone: userProfile.phone || '',
         studentId: userProfile.studentId || '',
         institution: userProfile.institution || '',
         standard: userProfile.standard || '',
-        avatar: userProfile.avatar || ''
+        avatar: userProfile.avatar || '',
+        street: primaryAddr?.street || primaryAddr?.addressLine || '',
+        city: primaryAddr?.city || '',
+        state: primaryAddr?.state || '',
+        pincode: primaryAddr?.pincode || '',
+        landmark: primaryAddr?.landmark || '',
+        addressType: primaryAddr?.addressType || primaryAddr?.type || 'Home'
       });
     }
     setIsEditingProfile(false);
@@ -895,7 +1002,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                          Student / Roll ID
+                          Student Roll No.
                         </label>
                         {!isEditingProfile && (
                           <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
@@ -917,7 +1024,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                          School / College / University
+                          School
                         </label>
                         {!isEditingProfile && (
                           <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
@@ -939,7 +1046,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                          Standard / Grade / Major
+                          Class
                         </label>
                         {!isEditingProfile && (
                           <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
@@ -956,6 +1063,183 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
                         }`}
                       />
+                    </div>
+                  </div>
+
+                  {/* Primary Home / Delivery Address Section */}
+                  <div className="pt-6 border-t border-gray-200/80">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-brand-teal/10 text-brand-teal flex items-center justify-center font-bold shrink-0">
+                          <MapPin size={18} />
+                        </div>
+                        <div>
+                          <h3 className="font-display text-base font-extrabold text-brand-teal flex items-center gap-2">
+                            <span>Primary Home / Delivery Address</span>
+                            {Boolean(formData.street || formData.city || formData.pincode) && (
+                              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200 uppercase tracking-wider">
+                                Default Delivery Address
+                              </span>
+                            )}
+                          </h3>
+                          <p className="text-[11px] text-gray-500">
+                            Primary home address used for stationery order deliveries and checkout auto-fill.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* House / Street / Flat Address */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                            House / Flat No, Building, Street Address
+                          </label>
+                          {!isEditingProfile && (
+                            <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={formData.street}
+                          onChange={(e) => setFormData({ ...formData, street: e.target.value })}
+                          placeholder={isEditingProfile ? "e.g. Flat 302, Green Valley Apartments, MG Road" : "No street address provided yet"}
+                          readOnly={!isEditingProfile}
+                          className={`w-full rounded-xl px-4 py-2.5 text-xs sm:text-sm transition-all ${
+                            isEditingProfile
+                              ? 'bg-white border-2 border-brand-teal text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 shadow-2xs'
+                              : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
+                          }`}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        {/* City */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              City / District
+                            </label>
+                            {!isEditingProfile && (
+                              <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={formData.city}
+                            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                            placeholder={isEditingProfile ? "e.g. New Delhi" : "Not specified"}
+                            readOnly={!isEditingProfile}
+                            className={`w-full rounded-xl px-4 py-2.5 text-xs sm:text-sm transition-all ${
+                              isEditingProfile
+                                ? 'bg-white border-2 border-brand-teal text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 shadow-2xs'
+                                : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
+                            }`}
+                          />
+                        </div>
+
+                        {/* State */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              State
+                            </label>
+                            {!isEditingProfile && (
+                              <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={formData.state}
+                            onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                            placeholder={isEditingProfile ? "e.g. Delhi" : "Not specified"}
+                            readOnly={!isEditingProfile}
+                            className={`w-full rounded-xl px-4 py-2.5 text-xs sm:text-sm transition-all ${
+                              isEditingProfile
+                                ? 'bg-white border-2 border-brand-teal text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 shadow-2xs'
+                                : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
+                            }`}
+                          />
+                        </div>
+
+                        {/* PIN Code */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              PIN Code
+                            </label>
+                            {!isEditingProfile && (
+                              <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={formData.pincode}
+                            onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                            placeholder={isEditingProfile ? "e.g. 110001" : "Not specified"}
+                            readOnly={!isEditingProfile}
+                            className={`w-full rounded-xl px-4 py-2.5 text-xs sm:text-sm transition-all ${
+                              isEditingProfile
+                                ? 'bg-white border-2 border-brand-teal text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 shadow-2xs'
+                                : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
+                            }`}
+                          />
+                        </div>
+
+                        {/* Landmark */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              Landmark (Optional)
+                            </label>
+                            {!isEditingProfile && (
+                              <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={formData.landmark}
+                            onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
+                            placeholder={isEditingProfile ? "e.g. Near Metro Station Gate 2" : "None"}
+                            readOnly={!isEditingProfile}
+                            className={`w-full rounded-xl px-4 py-2.5 text-xs sm:text-sm transition-all ${
+                              isEditingProfile
+                                ? 'bg-white border-2 border-brand-teal text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 shadow-2xs'
+                                : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Address Tag Selector */}
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                          Address Tag / Label
+                        </label>
+                        {isEditingProfile ? (
+                          <div className="flex items-center gap-3">
+                            {['Home', 'Hostel', 'Office'].map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => setFormData({ ...formData, addressType: tag })}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                  formData.addressType === tag
+                                    ? 'bg-brand-teal text-white shadow-xs'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="inline-block px-3 py-1.5 rounded-lg bg-gray-100 border border-gray-200 text-xs font-bold text-gray-700">
+                            {formData.addressType || 'Home'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

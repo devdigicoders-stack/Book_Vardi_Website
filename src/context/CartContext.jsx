@@ -852,6 +852,25 @@ export function CartProvider({ children }) {
       return nextProfile;
     });
 
+    if (nextProfile) {
+      setRegisteredUsers((prevUsers) =>
+        prevUsers.map((u) => {
+          const targetPhone = updatedData.phone || nextProfile?.phone || '';
+          const targetEmail = updatedData.email || nextProfile?.email || '';
+          const targetId = updatedData.id || nextProfile?.id || '';
+
+          const phoneMatch = Boolean(targetPhone && u.phone && (u.phone === targetPhone || u.phone.endsWith(targetPhone.slice(-10))));
+          const emailMatch = Boolean(targetEmail && u.email && u.email.toLowerCase() === targetEmail.toLowerCase());
+          const idMatch = Boolean(targetId && (u.id === targetId || String(u.id) === String(targetId)));
+
+          if (idMatch || emailMatch || phoneMatch) {
+            return { ...u, ...updatedData, ...nextProfile };
+          }
+          return u;
+        })
+      );
+    }
+
     if (backendEnabled) {
       try {
         const payload = {
@@ -865,7 +884,9 @@ export function CartProvider({ children }) {
             ...prev,
             ...res.user,
             id: res.user.id || res.user._id || prev?.id,
-            addresses: Array.isArray(res.user.addresses) ? res.user.addresses : (prev?.addresses || [])
+            addresses: (Array.isArray(res.user.addresses) && res.user.addresses.length > 0)
+              ? res.user.addresses
+              : (updatedData.addresses || prev?.addresses || [])
           }));
         }
       } catch (err) {

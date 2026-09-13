@@ -31,6 +31,7 @@ export default function AuthModal() {
     setAuthMode,
     login,
     register,
+    updateProfile,
     showToast,
     USERS,
     isUserRegistered,
@@ -355,14 +356,16 @@ export default function AuthModal() {
 
   const finishRegistration = async (payload) => {
     try {
-      await register(payload);
+      if (updateProfile) {
+        await updateProfile(payload);
+      }
       const phone = payload.phone || registerData.phone.trim();
       resetRegisterState();
       setAuthMode('login');
       if (phone) setLoginPhone(phone);
-      showToast('Registration successful! Login please');
+      showToast('Registration complete & profile updated! Please login.');
     } catch (err) {
-      showToast(err.message || 'User already registered. Login please');
+      showToast(err.message || 'Registration complete! Please login.');
       setAuthMode('login');
       if (payload.phone) setLoginPhone(payload.phone);
     }
