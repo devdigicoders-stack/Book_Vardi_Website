@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck, MapPin } from 'lucide-react';
+import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck, MapPin, RotateCcw } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
-import { NAV_LINKS, CATEGORIES } from '../../data/mockData';
+import { NAV_LINKS } from '../../data/mockData';
 import GlobalSearch from './GlobalSearch';
+import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend } from '../../utils/api';
+
 
 const MEGA_MENU_DATA = {
   uniforms: ['Boys Summer', 'Boys Winter', 'Girls Summer', 'Girls Winter', 'Sports & PT', 'House T-Shirts'],
@@ -34,6 +36,28 @@ function DesktopProfileDropdown({
   onMouseEnter,
   onMouseLeave
 }) {
+  const getDisplayName = (profile) => {
+    if (profile?.name && String(profile.name).trim() !== '' && String(profile.name).trim() !== 'Student Account') {
+      return String(profile.name).trim();
+    }
+    const phone = profile?.phone || '';
+    const digits = String(phone).replace(/\D/g, '');
+    if (digits.length >= 4) {
+      return `User${digits.slice(-4)}`;
+    }
+    return profile?.name?.trim() || 'User';
+  };
+
+  const getDisplayEmail = (profile) => {
+    if (profile?.email && String(profile.email).trim() !== '') {
+      return String(profile.email).trim();
+    }
+    return 'No Email Provided';
+  };
+
+  const displayName = getDisplayName(userProfile);
+  const displayEmail = getDisplayEmail(userProfile);
+
   return (
     <div
       className="absolute top-full right-0 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
@@ -52,14 +76,14 @@ function DesktopProfileDropdown({
             className="w-full flex items-center gap-2.5 px-3 py-2 bg-brand-teal/5 border border-brand-teal/10 rounded-xl hover:bg-brand-teal/10 transition-colors cursor-pointer text-left"
           >
             <div className="w-8 h-8 rounded-full bg-brand-teal text-white flex items-center justify-center font-extrabold text-xs shrink-0 shadow-sm">
-              {userProfile?.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}
+              {displayName.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-gray-900 truncate">
-                {userProfile?.name || 'Ritesh Yadav'}
+                {displayName}
               </p>
               <p className="text-[10px] text-gray-500 truncate">
-                {userProfile?.email || 'Verified Student'}
+                {displayEmail}
               </p>
             </div>
           </button>
@@ -184,12 +208,71 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
     openAuthModal,
     logout,
     userProfile,
+    setUserProfile,
     sellerStatus,
     isAdmin,
     isSeller,
   } = useCart();
-  const { locationLabel, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen } = useLocation();
+  const { locationLabel, userSubdistrict, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen, requestBrowserLocation, isLocating } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [categoriesTree, setCategoriesTree] = useState([]);
+
+  useEffect(() => {
+    fetchCategoryTreeFromBackend()
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCategoriesTree(data);
+        } else {
+          setCategoriesTree([]);
+        }
+      })
+      .catch(() => setCategoriesTree([]));
+  }, []);
+
+  useEffect(() => {
+    if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
+      const identifier = userProfile?.phone || userProfile?.id;
+      fetchUserProfileFromBackend(identifier)
+        .then((dbData) => {
+          if (dbData && setUserProfile) {
+            setUserProfile((prev) => ({
+              ...prev,
+              id: dbData.id || dbData._id || prev?.id,
+              name: dbData.name !== undefined && dbData.name !== null ? dbData.name : prev?.name,
+              email: dbData.email !== undefined && dbData.email !== null ? dbData.email : prev?.email,
+              phone: dbData.phone || prev?.phone,
+              avatar: dbData.avatar || prev?.avatar,
+              role: dbData.role || prev?.role,
+              addresses: Array.isArray(dbData.addresses) && dbData.addresses.length > 0 ? dbData.addresses : (prev?.addresses || [])
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated, userProfile?.phone, userProfile?.id, setUserProfile]);
+
+
+  const getDisplayName = (profile) => {
+    if (profile?.name && String(profile.name).trim() !== '' && String(profile.name).trim() !== 'Student Account') {
+      return String(profile.name).trim();
+    }
+    const phone = profile?.phone || '';
+    const digits = String(phone).replace(/\D/g, '');
+    if (digits.length >= 4) {
+      return `User${digits.slice(-4)}`;
+    }
+    return profile?.name?.trim() || 'User';
+  };
+
+  const getDisplayEmail = (profile) => {
+    if (profile?.email && String(profile.email).trim() !== '') {
+      return String(profile.email).trim();
+    }
+    return 'No Email Provided';
+  };
+
+  const displayName = getDisplayName(userProfile);
+  const displayEmail = getDisplayEmail(userProfile);
   
   // Profile dropdown
   const [actionProfileOpen, setActionProfileOpen] = useState(false);
@@ -343,37 +426,54 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         }`}
       >
         <div className={isMobile ? 'flex flex-col gap-4' : 'container mx-auto px-4 flex flex-wrap gap-8 justify-center'}>
-          {CATEGORIES.map(category => (
-            <div key={category.id} className={isMobile ? 'flex flex-col gap-2' : 'flex flex-col gap-3 min-w-[140px] max-w-[180px]'}>
-              <button 
-                onClick={() => {
-                  setMegaMenuOpen(false);
-                  setMobileMenuOpen(false);
-                  onNavigate('products', category.id);
-                }}
-                className="font-extrabold text-brand-teal hover:text-brand-pink text-sm uppercase tracking-wider text-left transition-colors flex items-center justify-between group cursor-pointer"
-              >
-                <span>{category.name}</span>
-                {!isMobile && <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />}
-              </button>
-              
-              <div className="flex flex-col gap-2">
-                {MEGA_MENU_DATA[category.id]?.map((sub, idx) => (
+          {categoriesTree.length === 0 ? (
+            <div className="py-6 text-center text-xs font-semibold text-gray-500 w-full">
+              No categories related found.
+            </div>
+          ) : (
+            categoriesTree.map((category) => {
+              const catId = category.slug || category._id || category.id || category.name?.toLowerCase().replace(/\s+/g, '_');
+              const subList = Array.isArray(category.subCategories) && category.subCategories.length > 0
+                ? category.subCategories
+                : (MEGA_MENU_DATA[catId] || []);
+
+              return (
+                <div key={category._id || category.id || catId} className={isMobile ? 'flex flex-col gap-2' : 'flex flex-col gap-3 min-w-[140px] max-w-[180px]'}>
                   <button 
-                    key={idx}
                     onClick={() => {
                       setMegaMenuOpen(false);
                       setMobileMenuOpen(false);
-                      onNavigate('products', category.id); // In real app, filter by subcategory
+                      onNavigate('products', catId);
                     }}
-                    className="text-xs font-semibold text-gray-500 hover:text-brand-teal hover:bg-brand-teal/5 py-1 px-2 -ml-2 rounded-lg text-left transition-colors cursor-pointer"
+                    className="font-extrabold text-brand-teal hover:text-brand-pink text-sm uppercase tracking-wider text-left transition-colors flex items-center justify-between group cursor-pointer"
                   >
-                    {sub}
+                    <span>{category.name}</span>
+                    {!isMobile && <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />}
                   </button>
-                ))}
-              </div>
-            </div>
-          ))}
+                  
+                  <div className="flex flex-col gap-2">
+                    {subList.map((sub, idx) => {
+                      const subName = typeof sub === 'string' ? sub : sub?.name;
+                      return (
+                        <button 
+                          key={sub._id || idx}
+                          onClick={() => {
+                            setMegaMenuOpen(false);
+                            setMobileMenuOpen(false);
+                            onNavigate('products', catId);
+                          }}
+                          className="text-xs font-semibold text-gray-500 hover:text-brand-teal hover:bg-brand-teal/5 py-1 px-2 -ml-2 rounded-lg text-left transition-colors cursor-pointer"
+                        >
+                          {subName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          )}
+
           
           {/* Quick View All Link */}
           {!isMobile && (
@@ -403,23 +503,62 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
       }`}
     >
       <div className="container mx-auto px-4 flex items-center justify-between h-[76px] gap-6">
-        {/* Brand Logo */}
-        <button
-          onClick={() => {
-            setActiveHomeSection('home');
-            onNavigate('home');
-          }}
-          className="flex items-center text-left cursor-pointer group focus:outline-none shrink-0"
-        >
-          <img
-            src="/logo.png"
-            alt="Book Vardi"
-            className="h-11 sm:h-12 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
-          />
-          <span className="font-display text-xl font-extrabold text-black tracking-tight">
-                BOOK<span className="text-brand-yellow">VARDI</span>
-              </span>
-        </button>
+        {/* Brand Logo & Location Subdistrict Badge */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Logo Icon */}
+          <button
+            onClick={() => {
+              setActiveHomeSection('home');
+              onNavigate('home');
+            }}
+            className="cursor-pointer group focus:outline-none shrink-0"
+          >
+            <img
+              src="/logo.png"
+              alt="Book Vardi"
+              className="h-11 sm:h-12 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+            />
+          </button>
+
+          {/* Text + Location Badge stacked vertically parallel to logo icon */}
+          <div className="flex flex-col items-start justify-center">
+            <button
+              onClick={() => {
+                setActiveHomeSection('home');
+                onNavigate('home');
+              }}
+              className="font-display text-lg sm:text-xl font-extrabold text-black tracking-tight leading-none cursor-pointer focus:outline-none"
+            >
+              BOOK<span className="text-brand-yellow">VARDI</span>
+            </button>
+
+            {/* Location subdistrict badge directly below text, parallel to brand icon */}
+            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50/90 border border-emerald-200/80 px-2 py-0.5 rounded-full mt-1 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setIsPermissionModalOpen(true)}
+                className="flex items-center gap-1 hover:underline cursor-pointer"
+                title="Click to change delivery subdistrict or city"
+              >
+                <MapPin size={12} className="text-emerald-600 shrink-0" />
+                <span> <span className="text-emerald-800 font-extrabold">{userSubdistrict || locationLabel || 'allow location'}</span></span>
+              </button>
+
+              {/* Sync with Live GPS Location symbol */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  requestBrowserLocation();
+                }}
+                className="p-0.5 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer text-emerald-700 hover:text-emerald-900"
+                title="Click to sync with live GPS location"
+              >
+                <RotateCcw size={11} className={`stroke-[2.5] ${isLocating ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+        </div>
         
 
         {/* Global Search Bar (Desktop) */}
@@ -524,12 +663,12 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                   {userProfile?.avatar ? (
                     <img
                       src={userProfile.avatar}
-                      alt={userProfile.name || 'User profile'}
+                      alt={displayName}
                       className="w-8 h-8 rounded-full object-cover ring-2 ring-white/80"
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-current/10 flex items-center justify-center text-[11px] font-extrabold ring-2 ring-white/80">
-                      {userProfile?.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}
+                      {displayName.charAt(0).toUpperCase()}
                     </div>
                   )}
                   <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-white" />
@@ -537,10 +676,10 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
 
                 <div className="hidden xl:flex flex-col text-left leading-tight min-w-0">
                   <span className="text-[10px] font-extrabold truncate max-w-[120px]">
-                    {userProfile?.name || 'Student Account'}
+                    {displayName}
                   </span>
                   <span className={`text-[9px] truncate max-w-[120px] ${currentPage === 'profile' || actionProfileOpen ? 'text-white/80' : 'text-gray-500'}`}>
-                    {userProfile?.email || 'Verified Student'}
+                    {displayEmail}
                   </span>
                 </div>
 
@@ -666,14 +805,14 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                     className="w-full flex items-center gap-2.5 px-3 py-2 bg-brand-teal/5 border border-brand-teal/10 rounded-xl hover:bg-brand-teal/10 transition-colors cursor-pointer text-left"
                   >
                     <div className="w-8 h-8 rounded-full bg-brand-teal text-white flex items-center justify-center font-extrabold text-xs shrink-0 shadow-sm">
-                      {userProfile?.name ? userProfile.name.charAt(0).toUpperCase() : 'U'}
+                      {displayName.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-gray-900 truncate">
-                        {userProfile?.name || 'Student Account'}
+                        {displayName}
                       </p>
                       <p className="text-[11px] text-gray-500 truncate">
-                        {userProfile?.email || userProfile?.phone || 'Logged In'}
+                        {displayEmail}
                       </p>
                     </div>
                   </button>

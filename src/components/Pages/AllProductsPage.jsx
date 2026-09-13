@@ -9,9 +9,9 @@ import {
   X,
   Filter
 } from 'lucide-react';
-import { ALL_PRODUCTS, CATEGORIES } from '../../data/mockData';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
+import { fetchProductsFromBackend, fetchCategoriesFromBackend } from '../../utils/api';
 
 const CHUNK_SIZE = 8;
 
@@ -22,6 +22,10 @@ export default function AllProductsPage({
   onSearchChange: externalOnSearchChange = null
 }) {
   const { wishlist } = useCart();
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   const [onlyLiked, setOnlyLiked] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [internalSearchQuery, setInternalSearchQuery] = useState(externalSearchQuery);
@@ -41,6 +45,40 @@ export default function AllProductsPage({
 
   const sentinelRef = useRef(null);
 
+  // Fetch categories from backend
+  useEffect(() => {
+    fetchCategoriesFromBackend()
+      .then((data) => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => setCategories([]));
+  }, []);
+
+  // Fetch products from backend
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+
+    fetchProductsFromBackend({
+      category: selectedCategory || undefined,
+      search: (externalOnSearchChange ? externalSearchQuery : internalSearchQuery) || undefined,
+      limit: 100
+    })
+      .then((res) => {
+        if (!isMounted) return;
+        const list = res?.products || res || [];
+        setProducts(Array.isArray(list) ? list : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setProducts([]);
+        setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedCategory, externalSearchQuery, internalSearchQuery, externalOnSearchChange]);
+
   // Sync external search query from navbar if changed
   useEffect(() => {
     setInternalSearchQuery(externalSearchQuery);
@@ -55,17 +93,10 @@ export default function AllProductsPage({
 
   // Filter and sort products
   const filteredProducts = useMemo(() => {
-    return ALL_PRODUCTS.filter((product) => {
+    return products.filter((product) => {
       // Category match
-      const matchesCategory = selectedCategory ? product.category === selectedCategory : true;
-
-      // Search match (name, subtitle, category keywords)
-      const query = activeSearchQuery.toLowerCase().trim();
-      const matchesSearch = query
-        ? product.name.toLowerCase().includes(query) ||
-          product.subtitle.toLowerCase().includes(query) ||
-          product.category.toLowerCase().includes(query)
-        : true;
+      const catSlug = selectedCategory;
+      const matchesCategory = catSlug ? product.category === catSlug : true;
 
       // Price match
       let matchesPrice = true;
@@ -73,39 +104,45 @@ export default function AllProductsPage({
       else if (priceFilter === '250to500') matchesPrice = product.price >= 250 && product.price <= 500;
       else if (priceFilter === 'above500') matchesPrice = product.price > 500;
 
-      // Brand match (mock data doesn't have brand, we'll just skip or match dummy data)
       // Rating match
       let matchesRating = true;
-      if (ratingFilter === '4+') matchesRating = product.rating >= 4.0;
-      else if (ratingFilter === '3+') matchesRating = product.rating >= 3.0;
+      const rating = product.averageRating || product.rating || 0;
+      if (ratingFilter === '4+') matchesRating = rating >= 4.0;
+      else if (ratingFilter === '3+') matchesRating = rating >= 3.0;
 
       // Availability match
       let matchesAvailability = true;
-      if (availabilityFilter === 'in-stock') matchesAvailability = product.inStock === true;
-      else if (availabilityFilter === 'out-of-stock') matchesAvailability = product.inStock === false;
+      const isAvail = product.status === 'available' || product.inStock === true;
+      if (availabilityFilter === 'in-stock') matchesAvailability = isAvail;
+      else if (availabilityFilter === 'out-of-stock') matchesAvailability = !isAvail;
 
       // Offers match
       let matchesOffers = true;
-      if (offersFilter === 'discounted') matchesOffers = product.originalPrice && product.originalPrice > product.price;
+      const hasOff = Boolean(product.offer?.hasOffer || (product.mrp && product.mrp > product.price));
+      if (offersFilter === 'discounted') matchesOffers = hasOff;
 
       // Wishlist / Liked match
+      const prodId = product._id || product.id;
       const matchesWishlist = onlyLiked
-        ? wishlist.some((id) => Number(id) === Number(product.id))
+        ? wishlist.some((id) => String(id) === String(prodId))
         : true;
 
-      return matchesCategory && matchesSearch && matchesPrice && matchesRating && matchesAvailability && matchesOffers && matchesWishlist;
+      return matchesCategory && matchesPrice && matchesRating && matchesAvailability && matchesOffers && matchesWishlist;
     }).sort((a, b) => {
       if (sortBy === 'price-low') return a.price - b.price;
       if (sortBy === 'price-high') return b.price - a.price;
-      if (sortBy === 'rating') return b.rating - a.rating;
+      const ratingA = a.averageRating || a.rating || 0;
+      const ratingB = b.averageRating || b.rating || 0;
+      if (sortBy === 'rating') return ratingB - ratingA;
       if (sortBy === 'discount') {
-        const discA = a.originalPrice ? (a.originalPrice - a.price) / a.originalPrice : 0;
-        const discB = b.originalPrice ? (b.originalPrice - b.price) / b.originalPrice : 0;
+        const discA = a.discountPercentage || (a.mrp ? (a.mrp - a.price) / a.mrp : 0);
+        const discB = b.discountPercentage || (b.mrp ? (b.mrp - b.price) / b.mrp : 0);
         return discB - discA;
       }
       return 0; // 'featured' keeps default
     });
-  }, [selectedCategory, activeSearchQuery, priceFilter, sortBy, onlyLiked, wishlist, ratingFilter, availabilityFilter, offersFilter]);
+  }, [products, selectedCategory, priceFilter, sortBy, onlyLiked, wishlist, ratingFilter, availabilityFilter, offersFilter]);
+
 
   // Load next chunk callback
   const loadNextChunk = useCallback(() => {
@@ -253,30 +290,43 @@ export default function AllProductsPage({
         <div className="container mx-auto space-y-3">
           {/* Top Row: Search, Price filter, Sort, Infinite switch */}
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-            {/* Search Input */}
-            <div className="relative flex-grow max-w-md">
-              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search products by title, category, keywords..."
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-9 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/10 transition-all"
-                value={activeSearchQuery}
-                onChange={(e) => handleSearchInput(e.target.value)}
-              />
-              {activeSearchQuery && (
-                <button
-                  type="button"
-                  onClick={() => handleSearchInput('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full cursor-pointer"
-                  aria-label="Clear Search"
-                >
-                  <X size={14} />
-                </button>
-              )}
+            {/* Search Input with Filter Icon Ahead on Small Devices */}
+            <div className="flex items-center gap-2 flex-grow max-w-md">
+              {/* Filter icon ahead of search bar on small devices */}
+              <button
+                type="button"
+                onClick={() => setFiltersOpen(true)}
+                className="lg:hidden p-2.5 rounded-xl bg-brand-teal text-white shadow-xs hover:bg-brand-teal-light transition-all shrink-0 cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                title="Open filters & sorting popup"
+                aria-label="Filter products"
+              >
+                <Filter size={16} />
+              </button>
+
+              <div className="relative w-full">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search products by title, category, keywords..."
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-9 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/10 transition-all"
+                  value={activeSearchQuery}
+                  onChange={(e) => handleSearchInput(e.target.value)}
+                />
+                {activeSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => handleSearchInput('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full cursor-pointer"
+                    aria-label="Clear Search"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div> 
 
-            {/* Controls Row */}
-            <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Controls Row - Scrollable without wrapping on small devices */}
+            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar scrollbar-none whitespace-nowrap flex-nowrap pb-1">
               <button
                 onClick={() => setFiltersOpen(true)}
                 className="appearance-none bg-white border border-gray-200 text-xs font-semibold text-brand-teal rounded-lg px-4 py-2 hover:bg-gray-50 focus:outline-none focus:border-brand-teal cursor-pointer inline-flex items-center gap-2"
@@ -345,12 +395,15 @@ export default function AllProductsPage({
               </span>
             </button>
 
-            {CATEGORIES.map((cat) => {
-              const isSelected = selectedCategory === cat.id;
+            {categories.map((cat) => {
+              const catId = cat.slug || cat.id || cat._id || cat.name?.toLowerCase().replace(/\s+/g, '_');
+              const isSelected = selectedCategory === catId;
+              const catImg = cat.imageUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=300&auto=format&fit=crop&q=80';
+
               return (
                 <button
-                  key={cat.id}
-                  onClick={() => handleCategorySelect(isSelected ? null : cat.id)}
+                  key={cat._id || cat.id || catId}
+                  onClick={() => handleCategorySelect(isSelected ? null : catId)}
                   className={`flex flex-col items-center gap-1.5 shrink-0 snap-start transition-all cursor-pointer group w-[70px] ${
                     isSelected ? 'scale-105' : 'hover:scale-105'
                   }`}
@@ -361,7 +414,7 @@ export default function AllProductsPage({
                       : 'border-gray-200 bg-gray-50 group-hover:border-brand-yellow'
                   }`}>
                     <img 
-                      src={cat.imageUrl} 
+                      src={catImg} 
                       alt={cat.name} 
                       className="w-full h-full object-cover rounded-full"
                     />
@@ -372,6 +425,7 @@ export default function AllProductsPage({
                 </button>
               );
             })}
+
           </div>
         </div>
       </div>

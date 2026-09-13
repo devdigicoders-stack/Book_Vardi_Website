@@ -1,42 +1,49 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowRight, Loader2 } from 'lucide-react';
-import { BEST_SELLERS, ALL_PRODUCTS } from '../../data/mockData';
 import ProductCard from './ProductCard';
+import { fetchProductsFromBackend } from '../../utils/api';
 
 export default function BestSellers({ activeCategory, searchQuery, onViewAll }) {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(8);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const sentinelRef = useRef(null);
 
-  // Source products (from ALL_PRODUCTS which contains everything)
-  const filteredProducts = ALL_PRODUCTS.filter((product) => {
-    const matchesCategory = activeCategory ? product.category === activeCategory : true;
-    const query = searchQuery ? searchQuery.toLowerCase().trim() : '';
-    const matchesSearch = query
-      ? product.name.toLowerCase().includes(query) ||
-        product.subtitle.toLowerCase().includes(query) ||
-        product.category.toLowerCase().includes(query)
-      : true;
-    return matchesCategory && matchesSearch;
-  });
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
 
-  // Track filter changes to reset visible count cleanly
-  const currentFilterKey = `${activeCategory || ''}_${searchQuery || ''}`;
-  const [prevFilterKey, setPrevFilterKey] = useState(currentFilterKey);
+    fetchProductsFromBackend({
+      category: activeCategory || undefined,
+      search: searchQuery || undefined,
+      limit: 50
+    })
+      .then((res) => {
+        if (!isMounted) return;
+        const list = res?.products || res || [];
+        setProducts(Array.isArray(list) ? list : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setProducts([]);
+        setLoading(false);
+      });
 
-  if (prevFilterKey !== currentFilterKey) {
-    setPrevFilterKey(currentFilterKey);
-    setVisibleCount(8);
-  }
+    return () => {
+      isMounted = false;
+    };
+  }, [activeCategory, searchQuery]);
 
   const loadNextChunk = useCallback(() => {
-    if (visibleCount >= filteredProducts.length || isLoadingMore) return;
+    if (visibleCount >= products.length || isLoadingMore) return;
     setIsLoadingMore(true);
     setTimeout(() => {
-      setVisibleCount((prev) => Math.min(prev + 4, filteredProducts.length));
+      setVisibleCount((prev) => Math.min(prev + 4, products.length));
       setIsLoadingMore(false);
     }, 450);
-  }, [visibleCount, filteredProducts.length, isLoadingMore]);
+  }, [visibleCount, products.length, isLoadingMore]);
 
   // Automatic Infinite Scroll Observer
   useEffect(() => {
@@ -46,7 +53,7 @@ export default function BestSellers({ activeCategory, searchQuery, onViewAll }) 
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
-        if (entry.isIntersecting && visibleCount < filteredProducts.length && !isLoadingMore) {
+        if (entry.isIntersecting && visibleCount < products.length && !isLoadingMore) {
           loadNextChunk();
         }
       },
@@ -55,13 +62,11 @@ export default function BestSellers({ activeCategory, searchQuery, onViewAll }) 
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [visibleCount, filteredProducts.length, isLoadingMore, loadNextChunk]);
+  }, [visibleCount, products.length, isLoadingMore, loadNextChunk]);
 
-  const displayedProducts = searchQuery
-    ? filteredProducts
-    : filteredProducts.slice(0, visibleCount);
+  const displayedProducts = searchQuery ? products : products.slice(0, visibleCount);
+  const hasMore = !searchQuery && visibleCount < products.length;
 
-  const hasMore = !searchQuery && visibleCount < filteredProducts.length;
 
   return (
     <section className="py-14 bg-gray-50/70 border-b border-gray-100" id="bestsellers">

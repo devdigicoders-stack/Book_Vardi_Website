@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Tag, Sparkles } from 'lucide-react';
-import { ALL_PRODUCTS } from '../../data/mockData';
 import ProductCard from '../Products/ProductCard';
+import { fetchSpecialOffersFromBackend } from '../../utils/api';
 
 export default function OffersPage({ onNavigate }) {
-  // Filter products that have an originalPrice (meaning they are discounted)
   const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Just an example of filtering products that have discounts
-    const offers = ALL_PRODUCTS.filter(p => p.originalPrice && p.price < p.originalPrice)
-      .sort((a, b) => {
-        const discA = (a.originalPrice - a.price) / a.originalPrice;
-        const discB = (b.originalPrice - b.price) / b.originalPrice;
-        return discB - discA; // Sort by highest discount %
+    fetchSpecialOffersFromBackend(20)
+      .then((res) => {
+        const list = res?.products || res || [];
+        setProducts(Array.isArray(list) ? list : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setProducts([]);
+        setLoading(false);
       });
-    setProducts(offers);
     window.scrollTo(0, 0);
   }, []);
+
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -45,10 +48,11 @@ export default function OffersPage({ onNavigate }) {
           ))}
         </div>
         {products.length === 0 && (
-          <div className="text-center py-20">
-            <h3 className="text-gray-500 font-bold">No offers available right now.</h3>
+          <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
+            <h3 className="text-gray-500 font-bold text-sm">No special offers related found.</h3>
           </div>
         )}
+
       </div>
     </div>
   );

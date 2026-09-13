@@ -102,8 +102,8 @@ export default function LocationPermissionModal() {
                       : 'bg-gray-50 text-gray-700 border-gray-200/80 hover:bg-brand-teal/5 hover:border-brand-teal/30'
                   }`}
                 >
-                  <span className="truncate">{city.name.split(' ')[0]}</span>
-                  {locationLabel === city.name && <Check size={14} />}
+                  <span className="truncate">{city.name}</span>
+                  {locationLabel === city.name && <Check size={14} className="shrink-0" />}
                 </button>
               ))}
             </div>

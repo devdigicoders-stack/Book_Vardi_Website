@@ -25,7 +25,7 @@ export default function WishlistDrawer({ onNavigate }) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-brand-teal-dark/60 backdrop-blur-xs flex justify-end transition-opacity duration-300 ${
+      className={`fixed inset-0 z-9999 bg-brand-teal-dark/60 backdrop-blur-xs flex justify-end transition-opacity duration-300 ${
         isWishlistOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}
       onClick={() => setIsWishlistOpen(false)}
@@ -73,7 +73,7 @@ export default function WishlistDrawer({ onNavigate }) {
 
         {/* Items List */}
         {wishlistProducts.length > 0 ? (
-          <div className="flex-grow overflow-y-auto p-5 space-y-3.5">
+          <div className="flex-grow overflow-y-auto hide-scrollbar p-5 space-y-3.5">
             {wishlistProducts.map((product) => (
               <div
                 key={product.id}
@@ -180,7 +180,10 @@ export default function WishlistDrawer({ onNavigate }) {
             </button>
 
             <button
-              onClick={() => setIsWishlistOpen(false)}
+              onClick={() => {
+                setIsWishlistOpen(false);
+                if (onNavigate) onNavigate('products');
+              }}
               className="w-full text-xs font-bold text-gray-600 hover:text-brand-teal py-2 text-center transition-colors cursor-pointer"
             >
               Continue Shopping

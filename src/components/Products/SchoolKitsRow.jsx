@@ -1,13 +1,23 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import ProductCarouselRow from './ProductCarouselRow';
 import KitCard from './KitCard';
-import { KIT_BUNDLES } from '../../data/mockData';
 import { useLocation } from '../../context/LocationContext';
+import { fetchKitsFromBackend } from '../../utils/api';
 
 export default function SchoolKitsRow({ onNavigate }) {
-  const { isSchoolWithinRadius, schoolRadiusKm } = useLocation();
+  const { isSchoolWithinRadius } = useLocation();
+  const [kits, setKits] = useState([]);
   const [filterSchool, setFilterSchool] = useState('');
   const [filterClass, setFilterClass] = useState('all');
+
+  useEffect(() => {
+    fetchKitsFromBackend()
+      .then((res) => {
+        const list = res?.kits || res || [];
+        setKits(Array.isArray(list) ? list : []);
+      })
+      .catch(() => setKits([]));
+  }, []);
 
   useEffect(() => {
     // Check local storage on initial load
@@ -26,17 +36,20 @@ export default function SchoolKitsRow({ onNavigate }) {
   }, []);
 
   const filteredKits = useMemo(() => {
-    return KIT_BUNDLES.filter((kit) => {
-      // 1. Must be within the admin-defined radius (or generic Any School)
-      const withinRadius = kit.school === 'Any School' || isSchoolWithinRadius(kit.school);
+    return kits.filter((kit) => {
+      const kitSchool = kit.schoolName || kit.school || 'Any School';
+      const kitClass = kit.classGrade || kit.className || 'all';
+      const kitTitle = kit.title || kit.name || '';
+
+      const withinRadius = kitSchool === 'Any School' || isSchoolWithinRadius(kitSchool);
       if (!withinRadius) return false;
 
-      // 2. Query filter
-      const matchSchool = filterSchool === '' || kit.school.toLowerCase().includes(filterSchool.toLowerCase()) || kit.name.toLowerCase().includes(filterSchool.toLowerCase());
-      const matchClass = filterClass === 'all' || kit.className === filterClass;
+      const matchSchool = filterSchool === '' || kitSchool.toLowerCase().includes(filterSchool.toLowerCase()) || kitTitle.toLowerCase().includes(filterSchool.toLowerCase());
+      const matchClass = filterClass === 'all' || kitClass === filterClass;
       return matchSchool && matchClass;
     });
-  }, [filterSchool, filterClass, isSchoolWithinRadius]);
+  }, [kits, filterSchool, filterClass, isSchoolWithinRadius]);
+
 
   const hasFilter = filterSchool !== '' || filterClass !== 'all';
 

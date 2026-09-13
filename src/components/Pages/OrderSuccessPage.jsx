@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 
-export default function OrderSuccessPage({ onNavigate }) {
+export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, selectedOrder = null }) {
   const { lastPlacedOrder, userProfile, isAuthenticated } = useCart();
   const [copied, setCopied] = useState(false);
 
@@ -59,7 +59,10 @@ export default function OrderSuccessPage({ onNavigate }) {
     })
   }));
 
-  const order = lastPlacedOrder || (userProfile?.orders && userProfile.orders[0]) || fallbackOrder;
+  const order = selectedOrder || lastPlacedOrder || (userProfile?.orders && userProfile.orders[0]) || fallbackOrder;
+  const shippingFee = order.shippingFee !== undefined
+    ? order.shippingFee
+    : (order.shippingCost !== undefined ? order.shippingCost : 0);
 
   const handleCopyOrderId = () => {
     if (order?.id) {
@@ -74,141 +77,146 @@ export default function OrderSuccessPage({ onNavigate }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/60 pt-28 pb-20 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gray-50/60 pt-2 pb-2 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto space-y-4">
         
-        {/* Celebration Header Card */}
-        <div className="bg-white rounded-3xl p-8 sm:p-10 border border-teal-100 shadow-sm text-center relative overflow-hidden">
-          {/* Subtle background decoration */}
-          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-brand-teal via-brand-yellow to-brand-pink" />
-          <div className="absolute -top-16 -right-16 w-36 h-36 bg-brand-teal/5 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-brand-yellow/10 rounded-full blur-2xl pointer-events-none" />
-
-          {/* Success Icon */}
-          <div className="relative inline-flex mb-5">
-            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-50 border-4 border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
-              <CheckCircle2 size={46} className="animate-bounce-subtle" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 bg-brand-teal text-white p-2 rounded-full shadow-md">
-              <Sparkles size={16} />
-            </div>
-          </div>
-
-          <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-black text-gray-900 mb-2">
-            Order Placed Successfully! 🎉
-          </h1>
-          <p className="text-sm sm:text-base text-gray-600 max-w-lg mx-auto">
-            Thank you for shopping with <span className="font-bold text-brand-teal">BookVardi</span>. We’ve received your order and our campus dispatch team is packing your stationery!
-          </p>
-
-          {/* Order ID & Student Email notification */}
-          <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-3 bg-gray-50 border border-gray-200/80 rounded-2xl px-5 py-3">
-            <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">
-              Order ID:
-            </span>
-            <span className="font-mono font-extrabold text-sm text-gray-900">
-              #{order.id}
-            </span>
+        {/* Back Navigation Bar if opened in details-only mode */}
+        {isDetailsOnly && (
+          <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-2xs flex items-center justify-between">
             <button
-              onClick={handleCopyOrderId}
-              className="inline-flex items-center gap-1 text-xs font-bold text-brand-teal hover:text-brand-teal-light transition-colors ml-1 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-gray-200 shadow-2xs"
-              title="Copy Order ID"
+              onClick={() => onNavigate('profile', null, 'orders')}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-700 hover:text-brand-teal transition-colors cursor-pointer"
             >
-              {copied ? (
-                <>
-                  <Check size={13} className="text-emerald-600" />
-                  <span className="text-emerald-600">Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={13} />
-                  <span>Copy</span>
-                </>
-              )}
+              <ArrowRight size={14} className="rotate-180" />
+              <span>Back to My Orders</span>
             </button>
-          </div>
-
-          {/* Confirmation email note */}
-          <p className="text-xs text-gray-500 mt-3">
-            Invoice & tracking updates dispatched to{' '}
-            <strong className="text-gray-700">
-              {order.shippingAddress?.email || userProfile?.email || 'your email'}
-            </strong>
-          </p>
-
-          {/* Student Rewards Banner */}
-          <div className="mt-6 max-w-md mx-auto bg-amber-50/80 border border-amber-200/70 rounded-2xl p-3.5 flex items-center justify-center gap-2.5 text-amber-900 text-xs font-bold">
-            <Sparkles size={16} className="text-amber-600 shrink-0" />
-            <span>
-              Hurray! You earned <strong className="text-amber-700 font-black">+{order.pointsEarned || 50} Student Reward Points</strong> on this order!
+            <span className="text-xs font-mono font-extrabold text-brand-teal bg-brand-teal/10 px-3 py-1 rounded-full">
+              Order #{order.id}
             </span>
           </div>
-        </div>
+        )}
+
+        {/* Celebration Header Card (Only visible when NOT in details-only mode) */}
+        {!isDetailsOnly && (
+          <div className="bg-white rounded-3xl p-8 sm:p-10 border border-teal-100 shadow-sm text-center relative overflow-hidden">
+            {/* Subtle background decoration */}
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-brand-teal via-brand-yellow to-brand-pink" />
+            <div className="absolute -top-16 -right-16 w-36 h-36 bg-brand-teal/5 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-brand-yellow/10 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Success Icon */}
+            <div className="relative inline-flex mb-5">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-50 border-4 border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
+                <CheckCircle2 size={46} className="animate-bounce-subtle" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-brand-teal text-white p-2 rounded-full shadow-md">
+                <Sparkles size={16} />
+              </div>
+            </div>
+
+            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-black text-gray-900 mb-2">
+              Order Placed Successfully! 🎉
+            </h1>
+            <p className="text-sm sm:text-base text-gray-600 max-w-lg mx-auto">
+              Thank you for shopping with <span className="font-bold text-brand-teal">BookVardi</span>. We’ve received your order and our campus dispatch team is packing your stationery!
+            </p>
+
+            {/* Order ID & Student Email notification */}
+            <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-3 bg-gray-50 border border-gray-200/80 rounded-2xl px-5 py-3">
+              <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">
+                Order ID:
+              </span>
+              <span className="font-mono font-extrabold text-sm text-gray-900">
+                #{order.id}
+              </span>
+              <button
+                onClick={handleCopyOrderId}
+                className="inline-flex items-center gap-1 text-xs font-bold text-brand-teal hover:text-brand-teal-light transition-colors ml-1 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-gray-200 shadow-2xs"
+                title="Copy Order ID"
+              >
+                {copied ? (
+                  <>
+                    <Check size={13} className="text-emerald-600" />
+                    <span className="text-emerald-600">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={13} />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Confirmation email note */}
+            <p className="text-xs text-gray-500 mt-3">
+              Invoice & tracking updates dispatched to{' '}
+              <strong className="text-gray-700">
+                {order.shippingAddress?.email || userProfile?.email || 'your email'}
+              </strong>
+            </p>
+
+            {/* Student Rewards Banner */}
+            <div className="mt-6 max-w-md mx-auto bg-amber-50/80 border border-amber-200/70 rounded-2xl p-3.5 flex items-center justify-center gap-2.5 text-amber-900 text-xs font-bold">
+              <Sparkles size={16} className="text-amber-600 shrink-0" />
+              <span>
+                Hurray! You earned <strong className="text-amber-700 font-black">+{order.pointsEarned || 50} Student Reward Points</strong> on this order!
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Live Order Tracker */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2">
             <div>
               <h2 className="font-display text-lg sm:text-xl font-extrabold text-gray-900 flex items-center gap-2">
                 <Truck className="text-brand-teal" size={20} />
                 Live Order Tracking
               </h2>
               <p className="text-xs text-gray-500">
-                BlueDart Express Campus Priority Courier • AWB #{order.id?.replace('SC-', 'BD-') || 'BD-88219'}
+                BlueDart Express Campus Priority Courier • AWB #{order.id?.replace('SC-', 'BD-') || order.trackingNumber || 'BD-88219'}
               </p>
             </div>
             <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3.5 py-1.5 rounded-full text-xs font-bold self-start sm:self-auto">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              Estimated Delivery: {order.estimatedDelivery}
+              Estimated Delivery: {order.estimatedDelivery || 'Thursday, 10 Sep'}
             </div>
           </div>
 
-          {/* 4-Step Tracker Flow */}
-          <div className="relative pt-2 pb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 relative">
-              {/* Step 1: Confirmed */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2">
-                <div className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-sm ring-4 ring-emerald-50">
-                  <Check size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-900">Order Confirmed</h4>
-                  <p className="text-[11px] text-gray-400">Payment verified</p>
-                </div>
-              </div>
+          {/* Live Order Tracker (Icon Only - Highlighted iff status updated, No line) */}
+          <div className="relative py-0">
+            <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
+              {[
+                { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: Check },
+                { id: 2, full: 'Processing & Packing', sub: 'At Central Warehouse', icon: Package },
+                { id: 3, full: 'Out for Campus Transit', sub: 'BlueDart Logistics', icon: Truck },
+                { id: 4, full: 'Delivered', sub: 'To your hostel desk', icon: MapPin }
+              ].map((step) => {
+                const stepIndex = order.status === 'Delivered' ? 4 : (order.status === 'In Transit' || order.status === 'Shipped' ? 3 : 2);
+                const isUpdated = step.id <= stepIndex;
+                const isCurrent = step.id === stepIndex;
+                const IconComp = step.icon;
 
-              {/* Step 2: Processing (Active) */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2">
-                <div className="w-10 h-10 rounded-full bg-brand-teal text-white flex items-center justify-center font-bold text-sm shadow-sm ring-4 ring-teal-50 animate-pulse">
-                  <Package size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-brand-teal">Processing & Packing</h4>
-                  <p className="text-[11px] text-gray-400">At Central Warehouse</p>
-                </div>
-              </div>
-
-              {/* Step 3: Shipped */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2 opacity-60">
-                <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center font-bold text-sm">
-                  <Truck size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-700">Out for Campus Transit</h4>
-                  <p className="text-[11px] text-gray-400">BlueDart Logistics</p>
-                </div>
-              </div>
-
-              {/* Step 4: Delivered */}
-              <div className="flex sm:flex-col items-center sm:text-center gap-3.5 sm:gap-2 opacity-60">
-                <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center font-bold text-sm">
-                  <MapPin size={18} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-gray-700">Delivered</h4>
-                  <p className="text-[11px] text-gray-400">To your hostel desk</p>
-                </div>
-              </div>
+                return (
+                  <div
+                    key={step.id}
+                    className="flex flex-col items-center justify-center h-16 group cursor-pointer shrink-0"
+                    title={`${step.full} • ${step.sub}`}
+                  >
+                    <div
+                      className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${
+                        isCurrent
+                          ? 'bg-brand-teal text-white ring-4 ring-teal-100 scale-110 shadow-lg animate-pulse opacity-100'
+                          : isUpdated
+                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 scale-105 shadow-sm opacity-100'
+                          : 'bg-gray-100 text-gray-600 border border-gray-300 opacity-90 hover:opacity-100'
+                      }`}
+                    >
+                      <IconComp size={22} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -269,7 +277,7 @@ export default function OrderSuccessPage({ onNavigate }) {
               <div className="flex justify-between text-gray-600">
                 <span>Delivery Charges:</span>
                 <span className="font-semibold text-emerald-600">
-                  {order.shippingFee === 0 ? 'FREE (Campus Priority)' : `₹${order.shippingFee}`}
+                  {(!shippingFee || shippingFee === 0 || shippingFee === 'FREE') ? 'FREE (Campus Priority)' : `₹${shippingFee}`}
                 </span>
               </div>
               {order.discountAmount > 0 && (
@@ -305,17 +313,25 @@ export default function OrderSuccessPage({ onNavigate }) {
 
               <div className="text-xs text-gray-600 space-y-1">
                 <div className="flex items-center justify-between">
-                  <strong className="text-gray-900 text-sm">{order.shippingAddress?.fullName}</strong>
+                  <strong className="text-gray-900 text-sm">
+                    {order.shippingAddress?.fullName || order.shippingAddress?.name || userProfile?.name || 'Customer'}
+                  </strong>
                   <span className="px-2 py-0.5 rounded-full bg-brand-teal/10 text-brand-teal text-[10px] font-bold">
-                    {order.shippingAddress?.type || 'Hostel'}
+                    {order.shippingAddress?.type || order.shippingAddress?.addressType || 'Home'}
                   </span>
                 </div>
-                <p className="text-gray-700">{order.shippingAddress?.street}</p>
                 <p className="text-gray-700">
-                  {order.shippingAddress?.city}, {order.shippingAddress?.pincode}
+                  {order.shippingAddress?.addressLine || order.shippingAddress?.street || order.shippingAddress?.address || ''}
+                </p>
+                <p className="text-gray-700">
+                  {[
+                    order.shippingAddress?.city,
+                    order.shippingAddress?.state,
+                    order.shippingAddress?.pincode
+                  ].filter(Boolean).join(', ')}
                 </p>
                 <p className="pt-1 text-gray-500 font-medium">
-                  Phone: <strong className="text-gray-800">{order.shippingAddress?.phone}</strong>
+                  Phone: <strong className="text-gray-800">{order.shippingAddress?.phone || userProfile?.phone || ''}</strong>
                 </p>
               </div>
             </div>
