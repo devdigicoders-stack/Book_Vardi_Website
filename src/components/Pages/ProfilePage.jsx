@@ -37,8 +37,12 @@ import SellerApplicationReviewCard from '../Profile/SellerApplicationReviewCard'
 import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
+import { compressImageToWebP } from '../../utils/imageCompressor';
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl } from '../../utils/api';
+
 
 export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
+
   const {
     userProfile,
     updateProfile,
@@ -283,21 +287,37 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     setIsEditingProfile(false);
   };
 
-  const handleAvatarUpload = (event) => {
+  const handleAvatarUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const avatarUrl = typeof reader.result === 'string' ? reader.result : '';
-      if (!avatarUrl) return;
+    try {
+      // 1. Compress image to WebP (512x512 max dimensions, 0.85 quality)
+      const compressed = await compressImageToWebP(file, 512, 512, 0.85);
+      let finalAvatarUrl = compressed.dataUrl;
 
-      setFormData((prev) => ({ ...prev, avatar: avatarUrl }));
-      updateProfile({ avatar: avatarUrl });
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
+      // 2. Upload to backend if backend is enabled
+      if (backendEnabled) {
+        try {
+          const res = await uploadAvatarToBackend(compressed.file, userProfile?.phone || '');
+          if (res?.avatarUrl) {
+            finalAvatarUrl = res.avatarUrl;
+          }
+        } catch (apiErr) {
+          console.warn('Backend avatar file upload failed, using WebP DataURL fallback:', apiErr?.message);
+        }
+      }
+
+      // 3. Update local form state and persistent user profile
+      setFormData((prev) => ({ ...prev, avatar: finalAvatarUrl }));
+      updateProfile({ avatar: finalAvatarUrl });
+    } catch (err) {
+      console.error('Avatar WebP compression error:', err);
+    } finally {
+      event.target.value = '';
+    }
   };
+
 
   const handleAddressSubmit = (e) => {
     e.preventDefault();
@@ -505,10 +525,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               <div className="relative">
                 <div className="group relative w-18 h-18 sm:w-22 sm:h-22 rounded-2xl border-2 border-brand-yellow p-1 bg-white/10 shadow-lg">
                   <img
-                    src={formData.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
+                    src={resolveImageUrl(formData.avatar) || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
                     alt={formData.name || 'Profile Avatar'}
                     className="w-full h-full object-cover rounded-xl"
                   />
+
                   {/* Top-Right Corner Pencil Button for Avatar Editing */}
                   <button
                     type="button"
@@ -523,7 +544,8 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 <input
                   ref={avatarInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/png, image/jpeg, image/jpg, image/webp"
+
                   onChange={handleAvatarUpload}
                   className="hidden"
                 />

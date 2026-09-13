@@ -61,9 +61,16 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    proxy: {
+      '/uploads': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
+    },
     watch: {
       ignored: ['**/src/data/mockData.js', '**/src/data/.seller_sync.json', '**/.platform_sync.json', '**/src/data/**']
     }
   }
 });
+
 

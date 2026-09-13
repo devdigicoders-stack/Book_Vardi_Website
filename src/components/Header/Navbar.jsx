@@ -4,7 +4,8 @@ import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { NAV_LINKS } from '../../data/mockData';
 import GlobalSearch from './GlobalSearch';
-import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend } from '../../utils/api';
+import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend, resolveImageUrl } from '../../utils/api';
+
 
 
 const MEGA_MENU_DATA = {
@@ -656,16 +657,19 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                 } px-2.5 py-1.5`}
                 onClick={(e) => {
                   e.stopPropagation();
+                  onNavigate('profile', null, 'profile');
                   setActionProfileOpen(!actionProfileOpen);
                 }}
+
               >
                 <div className="relative flex items-center justify-center">
                   {userProfile?.avatar ? (
                     <img
-                      src={userProfile.avatar}
+                      src={resolveImageUrl(userProfile.avatar)}
                       alt={displayName}
                       className="w-8 h-8 rounded-full object-cover ring-2 ring-white/80"
                     />
+
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-current/10 flex items-center justify-center text-[11px] font-extrabold ring-2 ring-white/80">
                       {displayName.charAt(0).toUpperCase()}

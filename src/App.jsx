@@ -83,8 +83,7 @@ function MainStore() {
     }
   }, [selectedProduct]);
 
-  // If user is logged out, active profile page falls back to home
-  const activePage = (currentPage === 'profile' && !isAuthenticated) ? 'home' : currentPage;
+  const activePage = currentPage;
 
   const [orderSuccessOptions, setOrderSuccessOptions] = useState(null);
 
@@ -130,12 +129,8 @@ function MainStore() {
       return;
     }
 
-    if (page === 'profile' && !isAuthenticated) {
-      openAuthModal('login');
-      return;
-    }
-
     setCurrentPage(page);
+
     try {
       const newUrl = page === 'home' 
         ? window.location.pathname 
@@ -231,9 +226,10 @@ function MainStore() {
           <AllCategoriesPage onNavigate={navigateTo} />
         )}
 
-        {activePage === 'profile' && isAuthenticated && (
+        {activePage === 'profile' && (
           <ProfilePage onNavigate={navigateTo} initialTab={activeProfileTab} />
         )}
+
 
         {activePage === 'checkout' && (
           <CheckoutPage onNavigate={navigateTo} />

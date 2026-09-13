@@ -345,4 +345,29 @@ export async function fetchRecommendationsFromBackend({ schoolName = '', classGr
   });
 }
 
+export async function uploadAvatarToBackend(file, phone = '') {
+  const formData = new FormData();
+  formData.append('avatar', file);
+
+  const res = await apiClient.post('/users/upload-avatar', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...(phone ? { 'x-user-phone': phone } : {})
+    }
+  });
+
+  return res.data;
+}
+
+export function resolveImageUrl(url) {
+
+  if (!url || typeof url !== 'string') return '';
+  if (/^https?:\/\//i.test(url) || url.startsWith('data:')) return url;
+  const backendHost = apiBaseUrl.replace(/\/api\/?$/, '');
+  const cleanPath = url.startsWith('/') ? url : `/${url}`;
+  return `${backendHost}${cleanPath}`;
+}
+
+
+
 
