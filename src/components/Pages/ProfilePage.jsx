@@ -34,6 +34,9 @@ import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
 import SellerRegistrationModal, { INITIAL_FORM_STATE } from '../Profile/SellerRegistrationModal';
 import SellerApplicationReviewCard from '../Profile/SellerApplicationReviewCard';
+import SchoolSelect from '../Common/SchoolSelect';
+import ClassSelect from '../Common/ClassSelect';
+import { useLocation } from '../../context/LocationContext';
 
 export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const {
@@ -66,6 +69,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     USERS,
     switchUser
   } = useCart();
+  const { userSubdistrict } = useLocation();
 
   const [activeTab, setActiveTab] = useState(initialTab); // 'profile' | 'wishlist' | 'orders' | 'cart' | 'addresses' | 'seller-data'
 
@@ -1024,44 +1028,35 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                          School
+                          School / Institution
                         </label>
                         {!isEditingProfile && (
                           <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
                         )}
                       </div>
-                      <input
-                        type="text"
+                      <SchoolSelect
                         value={formData.institution}
-                        onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
+                        onChange={(val) => setFormData({ ...formData, institution: val })}
                         readOnly={!isEditingProfile}
-                        className={`w-full rounded-xl px-4 py-2.5 text-xs sm:text-sm transition-all ${
-                          isEditingProfile
-                            ? 'bg-white border-2 border-brand-teal text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 shadow-2xs'
-                            : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
-                        }`}
+                        placeholder="Select or search school..."
                       />
                     </div>
 
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                          Class
+                          Class / Standard
                         </label>
                         {!isEditingProfile && (
                           <span className="text-[10px] text-gray-400 font-semibold">Locked</span>
                         )}
                       </div>
-                      <input
-                        type="text"
+                      <ClassSelect
                         value={formData.standard}
-                        onChange={(e) => setFormData({ ...formData, standard: e.target.value })}
+                        onChange={(val) => setFormData({ ...formData, standard: val })}
+                        selectedSchoolName={formData.institution}
                         readOnly={!isEditingProfile}
-                        className={`w-full rounded-xl px-4 py-2.5 text-xs sm:text-sm transition-all ${
-                          isEditingProfile
-                            ? 'bg-white border-2 border-brand-teal text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 shadow-2xs'
-                            : 'bg-gray-50 border border-gray-200 text-gray-700 font-semibold cursor-default select-text'
-                        }`}
+                        placeholder="Select Class (Nursery to 12th)..."
                       />
                     </div>
                   </div>
@@ -1074,13 +1069,17 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           <MapPin size={18} />
                         </div>
                         <div>
-                          <h3 className="font-display text-base font-extrabold text-brand-teal flex items-center gap-2">
+                          <h3 className="font-display text-base font-extrabold text-brand-teal flex items-center gap-2 flex-wrap">
                             <span>Primary Home / Delivery Address</span>
                             {Boolean(formData.street || formData.city || formData.pincode) && (
                               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200 uppercase tracking-wider">
                                 Default Delivery Address
                               </span>
                             )}
+                            <span className="bg-brand-teal/10 text-brand-teal text-[10px] font-bold px-2 py-0.5 rounded-full border border-brand-teal/20 flex items-center gap-1">
+                              <MapPin size={10} />
+                              <span>Locality: {userSubdistrict || 'Kamta, Lucknow'}</span>
+                            </span>
                           </h3>
                           <p className="text-[11px] text-gray-500">
                             Primary home address used for stationery order deliveries and checkout auto-fill.

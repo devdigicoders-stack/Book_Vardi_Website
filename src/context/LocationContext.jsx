@@ -129,14 +129,17 @@ export const DEFAULT_SCHOOLS = (MockData && Array.isArray(MockData.SCHOOLS) && M
   ? MockData.SCHOOLS
   : FALLBACK_SCHOOLS;
 
-// Standard known metro city centers with coordinates
+// Standard known cities and subdistrict localities with coordinates
 export const POPULAR_CITIES = [
-  { id: 'delhi', name: 'Delhi NCR (Central)', lat: 28.6139, lng: 77.2090, state: 'Delhi' },
-  { id: 'gurugram', name: 'Gurugram / Millennium City', lat: 28.4595, lng: 77.0266, state: 'Haryana' },
-  { id: 'noida', name: 'Noida / Greater Noida', lat: 28.5355, lng: 77.3910, state: 'Uttar Pradesh' },
-  { id: 'pune', name: 'Pune City', lat: 18.5204, lng: 73.8567, state: 'Maharashtra' },
-  { id: 'mumbai', name: 'Mumbai Metro', lat: 19.0760, lng: 72.8777, state: 'Maharashtra' },
-  { id: 'bengaluru', name: 'Bengaluru / Bangalore', lat: 12.9716, lng: 77.5946, state: 'Karnataka' },
+  { id: 'kamta_lucknow', name: 'Kamta, Lucknow', subdistrict: 'Kamta', city: 'Lucknow', lat: 26.8790, lng: 81.0118, state: 'Uttar Pradesh' },
+  { id: 'jajmau_kanpur', name: 'Jajmau, Kanpur', subdistrict: 'Jajmau', city: 'Kanpur', lat: 26.4312, lng: 80.4026, state: 'Uttar Pradesh' },
+  { id: 'rto_azamgarh', name: 'RTO, Azamgarh', subdistrict: 'RTO Area', city: 'Azamgarh', lat: 26.0682, lng: 83.1844, state: 'Uttar Pradesh' },
+  { id: 'sec14_gurugram', name: 'Sector 14, Gurugram', subdistrict: 'Sector 14', city: 'Gurugram', lat: 28.4732, lng: 77.0425, state: 'Haryana' },
+  { id: 'rk_puram_delhi', name: 'RK Puram, New Delhi', subdistrict: 'RK Puram', city: 'New Delhi', lat: 28.5684, lng: 77.1834, state: 'Delhi' },
+  { id: 'delhi', name: 'Delhi NCR (Central)', subdistrict: 'Central Delhi', city: 'New Delhi', lat: 28.6139, lng: 77.2090, state: 'Delhi' },
+  { id: 'pune', name: 'Pune City', subdistrict: 'Ganeshkhind', city: 'Pune', lat: 18.5204, lng: 73.8567, state: 'Maharashtra' },
+  { id: 'mumbai', name: 'Mumbai Metro', subdistrict: 'Bandra', city: 'Mumbai', lat: 19.0760, lng: 72.8777, state: 'Maharashtra' },
+  { id: 'bengaluru', name: 'Bengaluru / Bangalore', subdistrict: 'Indiranagar', city: 'Bengaluru', lat: 12.9716, lng: 77.5946, state: 'Karnataka' },
 ];
 
 /**
@@ -156,6 +159,71 @@ export function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const d = R * c;
   return Math.round(d * 10) / 10; // Round to 1 decimal place
+}
+
+/**
+ * Finds the nearest subdistrict locality from known POPULAR_CITIES or formats coordinates
+ */
+export function findNearestSubdistrict(lat, lng) {
+  if (!lat || !lng) return 'Kamta, Lucknow';
+
+  let closest = null;
+  let minDistance = Infinity;
+
+  for (const loc of POPULAR_CITIES) {
+    const dist = calculateDistanceKm(lat, lng, loc.lat, loc.lng);
+    if (dist !== null && dist < minDistance) {
+      minDistance = dist;
+      closest = loc;
+    }
+  }
+
+  if (closest && minDistance < 50) {
+    return closest.name;
+  }
+  return `Locality (${lat.toFixed(2)}, ${lng.toFixed(2)})`;
+}
+
+/**
+ * Reverse geocodes live GPS coordinates into subdistrict / locality name using Nominatim with fallback
+ */
+export async function resolveSubdistrictFromCoords(lat, lng) {
+  if (!lat || !lng) return 'Kamta, Lucknow';
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&addressdetails=1`,
+      {
+        headers: { 'Accept-Language': 'en' },
+        signal: controller.signal
+      }
+    );
+    clearTimeout(timeoutId);
+    if (response.ok) {
+      const data = await response.json();
+      const address = data.address || {};
+      const subdistrict =
+        address.suburb ||
+        address.neighbourhood ||
+        address.residential ||
+        address.subdistrict ||
+        address.city_district ||
+        address.county ||
+        address.village;
+      const city = address.city || address.town || address.state_district || address.state || '';
+      if (subdistrict && city) {
+        return `${subdistrict}, ${city}`;
+      } else if (subdistrict) {
+        return subdistrict;
+      } else if (city) {
+        return city;
+      }
+    }
+  } catch (e) {
+    console.warn('Live reverse geocoding fallback to nearest subdistrict:', e);
+  }
+  return findNearestSubdistrict(lat, lng);
 }
 
 const LocationContext = createContext(null);
@@ -195,15 +263,22 @@ export function LocationProvider({ children }) {
       const saved = localStorage.getItem('bv_user_coords');
       if (saved) return JSON.parse(saved);
     } catch {}
-    // Default fallback to Delhi NCR if previously picked
-    return { lat: 28.6139, lng: 77.2090, label: 'Delhi NCR (Default)' };
+    return { lat: 26.8790, lng: 81.0118, label: 'Kamta, Lucknow' };
   });
 
   const [locationLabel, setLocationLabel] = useState(() => {
     try {
-      return localStorage.getItem('bv_user_location_label') || 'Delhi NCR (Auto-detected)';
+      return localStorage.getItem('bv_user_location_label') || 'Kamta, Lucknow';
     } catch {
-      return 'Delhi NCR';
+      return 'Kamta, Lucknow';
+    }
+  });
+
+  const [userSubdistrict, setUserSubdistrict] = useState(() => {
+    try {
+      return localStorage.getItem('bv_user_subdistrict') || 'Kamta, Lucknow';
+    } catch {
+      return 'Kamta, Lucknow';
     }
   });
 
@@ -252,21 +327,28 @@ export function LocationProvider({ children }) {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
         const coords = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
+          lat,
+          lng,
           accuracy: position.coords.accuracy
         };
         setUserLocation(coords);
-        setLocationLabel('My Current GPS Location');
+
+        const resolvedLabel = await resolveSubdistrictFromCoords(lat, lng);
+
+        setUserSubdistrict(resolvedLabel);
+        setLocationLabel(resolvedLabel);
         setPermissionStatus('granted');
         setIsLocating(false);
         setIsPermissionModalOpen(false);
 
         try {
           localStorage.setItem('bv_user_coords', JSON.stringify(coords));
-          localStorage.setItem('bv_user_location_label', 'My Current GPS Location');
+          localStorage.setItem('bv_user_location_label', resolvedLabel);
+          localStorage.setItem('bv_user_subdistrict', resolvedLabel);
           localStorage.setItem('bv_location_permission', 'granted');
           localStorage.setItem('bv_location_prompted_once', 'true');
         } catch {}
@@ -303,15 +385,18 @@ export function LocationProvider({ children }) {
       lng: cityObj.lng,
       label: cityObj.name
     };
+    const subdistrictLabel = cityObj.subdistrict ? `${cityObj.subdistrict}, ${cityObj.city}` : cityObj.name;
     setUserLocation(coords);
-    setLocationLabel(cityObj.name);
+    setLocationLabel(subdistrictLabel);
+    setUserSubdistrict(subdistrictLabel);
     setPermissionStatus('manual');
     setLocationError(null);
     setIsPermissionModalOpen(false);
 
     try {
       localStorage.setItem('bv_user_coords', JSON.stringify(coords));
-      localStorage.setItem('bv_user_location_label', cityObj.name);
+      localStorage.setItem('bv_user_location_label', subdistrictLabel);
+      localStorage.setItem('bv_user_subdistrict', subdistrictLabel);
       localStorage.setItem('bv_location_permission', 'manual');
       localStorage.setItem('bv_location_prompted_once', 'true');
     } catch {}
@@ -351,6 +436,17 @@ export function LocationProvider({ children }) {
       });
   }, [schoolsWithDistance]);
 
+  // Top 10 Recommended Schools sorted by distance
+  const top10Schools = useMemo(() => {
+    return [...schoolsWithDistance]
+      .sort((a, b) => {
+        if (a.distanceKm == null) return 1;
+        if (b.distanceKm == null) return -1;
+        return a.distanceKm - b.distanceKm;
+      })
+      .slice(0, 10);
+  }, [schoolsWithDistance]);
+
   // Check if a school (by full name or shortName) is within the radius
   const isSchoolWithinRadius = useCallback((schoolName) => {
     if (!schoolName) return true;
@@ -376,6 +472,7 @@ export function LocationProvider({ children }) {
     schoolRadiusKm,
     userLocation,
     locationLabel,
+    userSubdistrict,
     permissionStatus,
     isLocating,
     locationError,
@@ -386,6 +483,7 @@ export function LocationProvider({ children }) {
     getDistanceToCoords,
     schools: schoolsWithDistance,
     nearbySchools,
+    top10Schools,
     isSchoolWithinRadius,
     allSchoolsCount: schools.length,
     nearbySchoolsCount: nearbySchools.length

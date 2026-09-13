@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Clock, TrendingUp, Sparkles, ArrowRight, Filter } from 'lucide-react';
-import { ALL_PRODUCTS } from '../../data/mockData';
+import { Search, X, Clock, TrendingUp, Sparkles, ArrowRight, Filter, Trash2 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { fetchFeaturedProductsFromBackend } from '../../utils/api';
 
 export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -9,12 +9,47 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
   const wrapperRef = useRef(null);
   const { openProductDetails } = useCart();
 
-  // Mock data for search suggestions
-  const recentSearches = ['NCERT Class 10', 'Boys Summer Uniform', 'Olympiad Workbook'];
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [recommendedProducts, setRecommendedProducts] = useState([]);
   const topSearches = ['Girls Pleated Skirt', 'CBSE Practice Books', 'Kids Drawing Book', 'Winter Sweaters'];
-  
-  // Get 3 random popular products for recommendations
-  const topProducts = ALL_PRODUCTS.filter(p => p.discountBadge === 'BESTSELLER' || p.rating >= 4.9).slice(0, 3);
+
+  // Load recent searches from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('bv_recent_searches');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setRecentSearches(parsed);
+      }
+    } catch (e) {}
+  }, []);
+
+  // Fetch recommended products from backend
+  useEffect(() => {
+    fetchFeaturedProductsFromBackend(3)
+      .then((res) => {
+        const list = res?.products || res || [];
+        setRecommendedProducts(Array.isArray(list) ? list : []);
+      })
+      .catch(() => setRecommendedProducts([]));
+  }, []);
+
+  const saveRecentSearch = (term) => {
+    if (!term || !term.trim()) return;
+    const cleanTerm = term.trim();
+    const updated = [cleanTerm, ...recentSearches.filter((t) => t.toLowerCase() !== cleanTerm.toLowerCase())].slice(0, 6);
+    setRecentSearches(updated);
+    try {
+      localStorage.setItem('bv_recent_searches', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
+  const clearRecentSearches = () => {
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem('bv_recent_searches');
+    } catch (e) {}
+  };
 
   useEffect(() => {
     setQuery(currentQuery || '');
@@ -33,6 +68,7 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
   const handleSubmit = (e) => {
     e?.preventDefault();
     if (query.trim()) {
+      saveRecentSearch(query.trim());
       onSearch(query.trim());
       onNavigate('products');
       setIsOpen(false);
@@ -41,10 +77,12 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
 
   const handleSuggestionClick = (suggestion) => {
     setQuery(suggestion);
+    saveRecentSearch(suggestion);
     onSearch(suggestion);
     onNavigate('products');
     setIsOpen(false);
   };
+
 
   return (
     <div className="relative w-full" ref={wrapperRef}>
@@ -91,12 +129,23 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
           <div className="p-4 space-y-5">
             
             {/* Recently Searched */}
-            {!query && (
+            {!query && recentSearches.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Clock size={12} />
-                  Recently Searched
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock size={12} />
+                    Recently Searched
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={clearRecentSearches}
+                    className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                    title="Clear search history"
+                  >
+                    <Trash2 size={11} />
+                    Clear
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {recentSearches.map((term, i) => (
                     <button
@@ -139,30 +188,46 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
                 Recommended For You
               </h4>
               <div className="space-y-2">
-                {topProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => {
-                      setIsOpen(false);
-                      openProductDetails(product);
-                    }}
-                    className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 rounded-xl transition-colors text-left group"
-                  >
-                    <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0">
-                      <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold text-gray-900 truncate group-hover:text-brand-teal transition-colors">
-                        {product.name}
-                      </div>
-                      <div className="text-xs text-gray-500 truncate">
-                        ₹{product.price} <span className="line-through text-gray-300 ml-1">₹{product.originalPrice}</span>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                {recommendedProducts.length === 0 ? (
+                  <div className="text-xs text-gray-400 py-2 text-center">
+                    No recommended products related found.
+                  </div>
+                ) : (
+                  recommendedProducts.map((product) => {
+                    const prodImg = product.image || (Array.isArray(product.images) && product.images[0]) || '';
+                    return (
+                      <button
+                        key={product._id || product.id}
+                        onClick={() => {
+                          setIsOpen(false);
+                          openProductDetails(product);
+                        }}
+                        className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 rounded-xl transition-colors text-left group"
+                      >
+                        <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0">
+                          {prodImg ? (
+                            <img src={prodImg} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400 bg-gray-200">
+                              BV
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold text-gray-900 truncate group-hover:text-brand-teal transition-colors">
+                            {product.name}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate">
+                            ₹{product.price} {product.mrp && product.mrp > product.price ? <span className="line-through text-gray-300 ml-1">₹{product.mrp}</span> : null}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
+
 
             {query && (
               <div className="pt-2">

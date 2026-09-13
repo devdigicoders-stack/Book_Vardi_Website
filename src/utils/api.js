@@ -293,3 +293,56 @@ export function getUpiIntentUrl({ app = 'gpay', amount, vpa = 'bookvardi@upi', o
   }
 }
 
+// Category & Dynamic Header API calls
+export async function fetchCategoriesFromBackend() {
+  return requestApi('/categories', { method: 'GET', fallback: [] });
+}
+
+export async function fetchCategoryTreeFromBackend() {
+  return requestApi('/categories/tree', { method: 'GET', fallback: [] });
+}
+
+// Product Catalog & Search API calls
+export async function fetchProductsFromBackend(params = {}) {
+  return requestApi('/products', { method: 'GET', params, fallback: { products: [], total: 0 } });
+}
+
+export async function fetchProductByIdFromBackend(id) {
+  return requestApi(`/products/${id}`, { method: 'GET', fallback: null });
+}
+
+export async function fetchFeaturedProductsFromBackend(limit = 8) {
+  return requestApi('/products', {
+    method: 'GET',
+    params: { sortBy: 'rating', limit },
+    fallback: { products: [] }
+  });
+}
+
+export async function fetchSpecialOffersFromBackend(limit = 10) {
+  return requestApi('/products', {
+    method: 'GET',
+    params: { hasOffer: 'true', limit },
+    fallback: { products: [] }
+  });
+}
+
+// Kit Bundles API calls
+export async function fetchKitsFromBackend(params = {}) {
+  return requestApi('/kits', { method: 'GET', params, fallback: { kits: [], count: 0 } });
+}
+
+export async function fetchKitByIdFromBackend(id) {
+  return requestApi(`/kits/${id}`, { method: 'GET', fallback: null });
+}
+
+// Location & School/Class Recommendations API
+export async function fetchRecommendationsFromBackend({ schoolName = '', classGrade = '', limit = 6 } = {}) {
+  return requestApi('/products', {
+    method: 'GET',
+    params: { schoolName, classGrade, limit },
+    fallback: { products: [] }
+  });
+}
+
+

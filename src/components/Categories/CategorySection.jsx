@@ -1,9 +1,24 @@
-import React, { useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { CATEGORIES } from '../../data/mockData';
+import { fetchCategoriesFromBackend } from '../../utils/api';
 
 export default function CategorySection({ activeCategory, onSelectCategory, onNavigate }) {
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
   const scrollContainerRef = useRef(null);
+
+  useEffect(() => {
+    fetchCategoriesFromBackend()
+      .then((data) => {
+        setCategories(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setCategories([]);
+        setLoading(false);
+      });
+  }, []);
+
 
   return (
     <section className="py-10 md:py-14 bg-white border-b border-gray-100 overflow-hidden" id="categories">
@@ -30,43 +45,53 @@ export default function CategorySection({ activeCategory, onSelectCategory, onNa
             ref={scrollContainerRef}
             className="flex flex-nowrap gap-3 sm:gap-4 md:gap-5 overflow-x-auto pb-4 pt-1 px-1 scrollbar-none snap-x snap-mandatory touch-pan-x scroll-smooth"
           >
-            {CATEGORIES.map((cat) => {
-              const isSelected = activeCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  className={`flex flex-col items-center text-center p-2 rounded-xl transition-all transform hover:-translate-y-1 group shrink-0 min-w-[100px] sm:min-w-[110px] md:min-w-[120px] snap-center cursor-pointer ${
-                    isSelected ? 'scale-105' : ''
-                  }`}
-                  onClick={() => onSelectCategory(cat.id === activeCategory ? null : cat.id)}
-                >
-                  {/* Avatar */}
-                  <div
-                    className={`w-18 h-18 sm:w-22 sm:h-22 md:w-24 md:h-24 rounded-full overflow-hidden mb-2.5 border-2 transition-all p-1 bg-gray-50 shadow-xs ${
-                      isSelected
-                        ? 'border-brand-teal ring-4 ring-brand-yellow'
-                        : 'border-gray-200 group-hover:border-brand-yellow group-hover:shadow-md'
-                    }`}
-                  >
-                    <img
-                      src={cat.imageUrl}
-                      alt={cat.name}
-                      className="w-full h-full object-cover rounded-full transition-transform duration-300 group-hover:scale-110"
-                      loading="lazy"
-                    />
-                  </div>
+            {categories.length === 0 ? (
+              <div className="w-full text-center py-6 text-xs font-semibold text-gray-500">
+                No categories related found.
+              </div>
+            ) : (
+              categories.map((cat) => {
+                const catId = cat.slug || cat.id || cat._id || cat.name?.toLowerCase().replace(/\s+/g, '_');
+                const isSelected = activeCategory === catId;
+                const catImg = cat.imageUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=300&auto=format&fit=crop&q=80';
 
-                  {/* Text */}
-                  <span className="text-[11px] sm:text-xs font-extrabold tracking-wider text-brand-teal uppercase mb-0.5 group-hover:text-brand-pink transition-colors whitespace-nowrap">
-                    {cat.name}
-                  </span>
-                  <span className="text-[10px] sm:text-[11px] font-semibold text-gray-400 group-hover:text-brand-teal group-hover:underline">
-                    {isSelected ? 'Viewing Items' : 'Shop Now'}
-                  </span>
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={cat._id || cat.id || catId}
+                    className={`flex flex-col items-center text-center p-2 rounded-xl transition-all transform hover:-translate-y-1 group shrink-0 min-w-[100px] sm:min-w-[110px] md:min-w-[120px] snap-center cursor-pointer ${
+                      isSelected ? 'scale-105' : ''
+                    }`}
+                    onClick={() => onSelectCategory(catId === activeCategory ? null : catId)}
+                  >
+                    {/* Avatar */}
+                    <div
+                      className={`w-18 h-18 sm:w-22 sm:h-22 md:w-24 md:h-24 rounded-full overflow-hidden mb-2.5 border-2 transition-all p-1 bg-gray-50 shadow-xs ${
+                        isSelected
+                          ? 'border-brand-teal ring-4 ring-brand-yellow'
+                          : 'border-gray-200 group-hover:border-brand-yellow group-hover:shadow-md'
+                      }`}
+                    >
+                      <img
+                        src={catImg}
+                        alt={cat.name}
+                        className="w-full h-full object-cover rounded-full transition-transform duration-300 group-hover:scale-110"
+                        loading="lazy"
+                      />
+                    </div>
+
+                    {/* Text */}
+                    <span className="text-[11px] sm:text-xs font-extrabold tracking-wider text-brand-teal uppercase mb-0.5 group-hover:text-brand-pink transition-colors whitespace-nowrap">
+                      {cat.name}
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-semibold text-gray-400 group-hover:text-brand-teal group-hover:underline">
+                      {isSelected ? 'Viewing Items' : 'Shop Now'}
+                    </span>
+                  </button>
+                );
+              })
+            )}
           </div>
+
         </div>
       </div>
     </section>

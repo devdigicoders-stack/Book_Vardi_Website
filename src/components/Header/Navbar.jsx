@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck, MapPin } from 'lucide-react';
+import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck, MapPin, RotateCcw } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
-import { NAV_LINKS, CATEGORIES } from '../../data/mockData';
+import { NAV_LINKS } from '../../data/mockData';
 import GlobalSearch from './GlobalSearch';
-import { backendEnabled, fetchUserProfileFromBackend } from '../../utils/api';
+import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend } from '../../utils/api';
+
 
 const MEGA_MENU_DATA = {
   uniforms: ['Boys Summer', 'Boys Winter', 'Girls Summer', 'Girls Winter', 'Sports & PT', 'House T-Shirts'],
@@ -212,8 +213,21 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
     isAdmin,
     isSeller,
   } = useCart();
-  const { locationLabel, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen } = useLocation();
+  const { locationLabel, userSubdistrict, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen, requestBrowserLocation, isLocating } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [categoriesTree, setCategoriesTree] = useState([]);
+
+  useEffect(() => {
+    fetchCategoryTreeFromBackend()
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCategoriesTree(data);
+        } else {
+          setCategoriesTree([]);
+        }
+      })
+      .catch(() => setCategoriesTree([]));
+  }, []);
 
   useEffect(() => {
     if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
@@ -236,6 +250,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         .catch(() => {});
     }
   }, [isAuthenticated, userProfile?.phone, userProfile?.id, setUserProfile]);
+
 
   const getDisplayName = (profile) => {
     if (profile?.name && String(profile.name).trim() !== '' && String(profile.name).trim() !== 'Student Account') {
@@ -411,37 +426,54 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         }`}
       >
         <div className={isMobile ? 'flex flex-col gap-4' : 'container mx-auto px-4 flex flex-wrap gap-8 justify-center'}>
-          {CATEGORIES.map(category => (
-            <div key={category.id} className={isMobile ? 'flex flex-col gap-2' : 'flex flex-col gap-3 min-w-[140px] max-w-[180px]'}>
-              <button 
-                onClick={() => {
-                  setMegaMenuOpen(false);
-                  setMobileMenuOpen(false);
-                  onNavigate('products', category.id);
-                }}
-                className="font-extrabold text-brand-teal hover:text-brand-pink text-sm uppercase tracking-wider text-left transition-colors flex items-center justify-between group cursor-pointer"
-              >
-                <span>{category.name}</span>
-                {!isMobile && <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />}
-              </button>
-              
-              <div className="flex flex-col gap-2">
-                {MEGA_MENU_DATA[category.id]?.map((sub, idx) => (
+          {categoriesTree.length === 0 ? (
+            <div className="py-6 text-center text-xs font-semibold text-gray-500 w-full">
+              No categories related found.
+            </div>
+          ) : (
+            categoriesTree.map((category) => {
+              const catId = category.slug || category._id || category.id || category.name?.toLowerCase().replace(/\s+/g, '_');
+              const subList = Array.isArray(category.subCategories) && category.subCategories.length > 0
+                ? category.subCategories
+                : (MEGA_MENU_DATA[catId] || []);
+
+              return (
+                <div key={category._id || category.id || catId} className={isMobile ? 'flex flex-col gap-2' : 'flex flex-col gap-3 min-w-[140px] max-w-[180px]'}>
                   <button 
-                    key={idx}
                     onClick={() => {
                       setMegaMenuOpen(false);
                       setMobileMenuOpen(false);
-                      onNavigate('products', category.id); // In real app, filter by subcategory
+                      onNavigate('products', catId);
                     }}
-                    className="text-xs font-semibold text-gray-500 hover:text-brand-teal hover:bg-brand-teal/5 py-1 px-2 -ml-2 rounded-lg text-left transition-colors cursor-pointer"
+                    className="font-extrabold text-brand-teal hover:text-brand-pink text-sm uppercase tracking-wider text-left transition-colors flex items-center justify-between group cursor-pointer"
                   >
-                    {sub}
+                    <span>{category.name}</span>
+                    {!isMobile && <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />}
                   </button>
-                ))}
-              </div>
-            </div>
-          ))}
+                  
+                  <div className="flex flex-col gap-2">
+                    {subList.map((sub, idx) => {
+                      const subName = typeof sub === 'string' ? sub : sub?.name;
+                      return (
+                        <button 
+                          key={sub._id || idx}
+                          onClick={() => {
+                            setMegaMenuOpen(false);
+                            setMobileMenuOpen(false);
+                            onNavigate('products', catId);
+                          }}
+                          className="text-xs font-semibold text-gray-500 hover:text-brand-teal hover:bg-brand-teal/5 py-1 px-2 -ml-2 rounded-lg text-left transition-colors cursor-pointer"
+                        >
+                          {subName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          )}
+
           
           {/* Quick View All Link */}
           {!isMobile && (
@@ -471,23 +503,62 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
       }`}
     >
       <div className="container mx-auto px-4 flex items-center justify-between h-[76px] gap-6">
-        {/* Brand Logo */}
-        <button
-          onClick={() => {
-            setActiveHomeSection('home');
-            onNavigate('home');
-          }}
-          className="flex items-center text-left cursor-pointer group focus:outline-none shrink-0"
-        >
-          <img
-            src="/logo.png"
-            alt="Book Vardi"
-            className="h-11 sm:h-12 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
-          />
-          <span className="font-display text-xl font-extrabold text-black tracking-tight">
-                BOOK<span className="text-brand-yellow">VARDI</span>
-              </span>
-        </button>
+        {/* Brand Logo & Location Subdistrict Badge */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Logo Icon */}
+          <button
+            onClick={() => {
+              setActiveHomeSection('home');
+              onNavigate('home');
+            }}
+            className="cursor-pointer group focus:outline-none shrink-0"
+          >
+            <img
+              src="/logo.png"
+              alt="Book Vardi"
+              className="h-11 sm:h-12 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+            />
+          </button>
+
+          {/* Text + Location Badge stacked vertically parallel to logo icon */}
+          <div className="flex flex-col items-start justify-center">
+            <button
+              onClick={() => {
+                setActiveHomeSection('home');
+                onNavigate('home');
+              }}
+              className="font-display text-lg sm:text-xl font-extrabold text-black tracking-tight leading-none cursor-pointer focus:outline-none"
+            >
+              BOOK<span className="text-brand-yellow">VARDI</span>
+            </button>
+
+            {/* Location subdistrict badge directly below text, parallel to brand icon */}
+            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50/90 border border-emerald-200/80 px-2 py-0.5 rounded-full mt-1 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setIsPermissionModalOpen(true)}
+                className="flex items-center gap-1 hover:underline cursor-pointer"
+                title="Click to change delivery subdistrict or city"
+              >
+                <MapPin size={12} className="text-emerald-600 shrink-0" />
+                <span> <span className="text-emerald-800 font-extrabold">{userSubdistrict || locationLabel || 'allow location'}</span></span>
+              </button>
+
+              {/* Sync with Live GPS Location symbol */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  requestBrowserLocation();
+                }}
+                className="p-0.5 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer text-emerald-700 hover:text-emerald-900"
+                title="Click to sync with live GPS location"
+              >
+                <RotateCcw size={11} className={`stroke-[2.5] ${isLocating ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+        </div>
         
 
         {/* Global Search Bar (Desktop) */}

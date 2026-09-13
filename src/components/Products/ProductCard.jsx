@@ -4,32 +4,43 @@ import { useCart } from '../../context/CartContext';
 
 export default function ProductCard({ product }) {
   const { wishlist, toggleWishlist, addToCart, openProductDetails, cartItems } = useCart();
-  const isWishlisted = wishlist.some((id) => Number(id) === Number(product.id));
-  const cartItem = cartItems?.find((item) => Number(item.id) === Number(product.id));
+  
+  const productId = product?._id || product?.id;
+  const isWishlisted = wishlist.some((id) => String(id) === String(productId));
+  const cartItem = cartItems?.find((item) => String(item._id || item.id) === String(productId));
   const countInCart = cartItem ? cartItem.quantity : 0;
 
-  const getBadgeStyle = (badge) => {
-    if (!badge) return '';
-    const b = badge.toLowerCase();
-    if (b.includes('off') || b.includes('sale')) return 'bg-brand-pink text-white';
-    if (b.includes('popular') || b.includes('bestseller')) return 'bg-brand-yellow text-brand-teal-dark';
+  const title = product?.name || 'Product';
+  const subtitle = product?.subtitle || product?.description || product?.category || '';
+  const price = product?.price || 0;
+  const originalPrice = product?.originalPrice || product?.mrp || (price > 0 && product?.discountPercentage ? Math.round(price / (1 - product.discountPercentage / 100)) : null);
+  const image = product?.image || (Array.isArray(product?.images) && product.images[0]) || '/images/gel-pen-set.jpg';
+  const rating = product?.rating || product?.averageRating || 4.5;
+  const reviewsCount = product?.reviewsCount || product?.reviews || product?.numReviews || 0;
+  const badge = product?.discountBadge || (Array.isArray(product?.tags) && product.tags[0]) || (product?.discountPercentage ? `${product.discountPercentage}% OFF` : '');
+
+  const getBadgeStyle = (badgeText) => {
+    if (!badgeText) return '';
+    const b = String(badgeText).toLowerCase();
+    if (b.includes('off') || b.includes('sale') || b.includes('deal')) return 'bg-brand-pink text-white';
+    if (b.includes('popular') || b.includes('bestseller') || b.includes('top')) return 'bg-brand-yellow text-brand-teal-dark';
     return 'bg-brand-ochre text-white';
   };
 
   return (
     <div
-      onClick={() => openProductDetails(product)}
+      onClick={() => openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount })}
       className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl overflow-hidden flex flex-col hover:shadow-xl hover:border-brand-teal/20 transition-all duration-300 transform hover:-translate-y-1 group cursor-pointer"
     >
       {/* Product Image Area */}
       <div className="relative w-full pt-[100%] bg-gray-50 overflow-hidden">
-        {product.discountBadge && (
+        {badge && (
           <span
             className={`absolute top-2 left-2 sm:top-3 sm:left-3 z-10 text-[9px] sm:text-[10px] font-extrabold tracking-wider px-1.5 sm:px-2 py-0.5 rounded uppercase shadow-xs ${getBadgeStyle(
-              product.discountBadge
+              badge
             )}`}
           >
-            {product.discountBadge}
+            {badge}
           </span>
         )}
 
@@ -43,9 +54,9 @@ export default function ProductCard({ product }) {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            toggleWishlist(product.id);
+            toggleWishlist(productId);
           }}
-          aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+          aria-label={isWishlisted ? `Remove ${title} from wishlist` : `Add ${title} to wishlist`}
           title={isWishlisted ? 'Liked' : 'Like'}
         >
           <Heart
@@ -56,8 +67,8 @@ export default function ProductCard({ product }) {
         </button>
 
         <img
-          src={product.image}
-          alt={product.name}
+          src={image}
+          alt={title}
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           loading="lazy"
           onError={(e) => {
@@ -79,26 +90,27 @@ export default function ProductCard({ product }) {
       <div className="p-2.5 sm:p-4 flex flex-col flex-grow">
         <h3
           className="text-xs sm:text-sm font-bold text-brand-teal line-clamp-1 group-hover:text-brand-teal-light leading-snug"
-          title={product.name}
+          title={title}
         >
-          {product.name}
+          {title}
         </h3>
         <p className="text-[10px] sm:text-xs text-gray-500 line-clamp-1 mb-2">
-          {product.subtitle}
+          {subtitle}
         </p>
 
         <div className="mt-auto flex flex-col gap-1.5 sm:gap-2">
           {/* Price */}
           <div className="flex items-baseline gap-1.5 sm:gap-2">
             <span className="text-sm sm:text-base font-extrabold text-brand-teal">
-              ₹{product.price}
+              ₹{price}
             </span>
-            {product.originalPrice && (
+            {originalPrice && originalPrice > price && (
               <span className="text-[10px] sm:text-xs text-gray-400 line-through">
-                ₹{product.originalPrice}
+                ₹{originalPrice}
               </span>
             )}
           </div>
+
 
           {/* Rating */}
           <div className="flex items-center gap-1 text-[11px] text-gray-600">
