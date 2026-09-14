@@ -360,7 +360,6 @@ export async function uploadAvatarToBackend(file, phone = '') {
 }
 
 export function resolveImageUrl(url) {
-
   if (!url || typeof url !== 'string') return '';
   if (/^https?:\/\//i.test(url) || url.startsWith('data:')) return url;
   const backendHost = apiBaseUrl.replace(/\/api\/?$/, '');
@@ -368,6 +367,56 @@ export function resolveImageUrl(url) {
   return `${backendHost}${cleanPath}`;
 }
 
+// Product Reviews API calls
+export async function fetchProductReviewsFromBackend(productId) {
+  if (!productId) return [];
+  return requestApi(`/reviews/product/${productId}`, {
+    method: 'GET',
+    fallback: []
+  });
+}
 
+export async function addReviewToBackend(reviewPayload, phone = '') {
+  const userPhone = phone || reviewPayload?.phone || '';
+  return requestApi('/reviews', {
+    method: 'POST',
+    data: reviewPayload,
+    headers: userPhone ? { 'x-user-phone': userPhone } : {}
+  });
+}
 
+export async function deleteReviewInBackend(reviewId, phone = '') {
+  return requestApi(`/reviews/${reviewId}`, {
+    method: 'DELETE',
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
 
+export async function updateReviewStatusInBackend(reviewId, status, phone = '') {
+  return requestApi(`/reviews/${reviewId}/status`, {
+    method: 'PATCH',
+    data: { status },
+    headers: phone ? { 'x-user-phone': phone } : {}
+  });
+}
+
+// Partner Schools & Bulk Orders API calls
+export async function fetchSchoolsFromBackend(params = {}) {
+  return requestApi('/schools', { method: 'GET', params, fallback: { schools: [] } });
+}
+
+export async function registerSellerInBackend(formData) {
+  const res = await apiClient.post('/seller/register', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  });
+  return res.data;
+}
+
+export async function submitSchoolBulkOrderInBackend(payload) {
+  return requestApi('/schools/bulk-order', {
+    method: 'POST',
+    data: payload
+  });
+}

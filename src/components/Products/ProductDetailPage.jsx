@@ -16,11 +16,15 @@ import {
   MessageSquare,
   Sparkles,
   Tag,
-  Ticket
+  Ticket,
+  Camera,
+  UploadCloud,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { ALL_PRODUCTS, KIT_BUNDLES } from '../../data/mockData';
+import { compressImageToWebP } from '../../utils/imageCompressor';
 import GrabKitSection from './GrabKitSection';
 
 const FALLBACK_IMAGE = '/images/gel-pen-set.jpg';
@@ -81,6 +85,7 @@ export default function ProductDetailPage({ onNavigate }) {
     setIsCartOpen,
     productReviews,
     addProductReview,
+    fetchReviewsForProduct,
     userProfile,
     showToast,
     cartItems
@@ -96,24 +101,37 @@ export default function ProductDetailPage({ onNavigate }) {
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [newRating, setNewRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
-  const [reviewerName, setReviewerName] = useState(userProfile?.name || 'Ritesh Yadav');
-  const [reviewerInstitution, setReviewerInstitution] = useState(userProfile?.institution || 'DTU Delhi');
-  const [reviewTitle, setReviewTitle] = useState('');
   const [reviewComment, setReviewComment] = useState('');
+  const [reviewImages, setReviewImages] = useState([]);
+  const [isCompressingImages, setIsCompressingImages] = useState(false);
 
   const scrollRef = useRef(null);
 
-  // Sync user name when userProfile changes
-  useEffect(() => {
-    if (userProfile?.name) {
-      setReviewerName(userProfile.name);
-    }
-    if (userProfile?.institution) {
-      setReviewerInstitution(userProfile.institution);
-    }
-  }, [userProfile]);
+  const handleImageUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setIsCompressingImages(true);
 
-  // Reset quantity and scroll position when product changes
+    for (const file of files) {
+      try {
+        const compressed = await compressImageToWebP(file, 1024, 1024, 0.82);
+        setReviewImages((prev) => [...prev, compressed.dataUrl]);
+      } catch (err) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setReviewImages((prev) => [...prev, event.target.result]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+    setIsCompressingImages(false);
+  };
+
+  const removeReviewImage = (indexToRemove) => {
+    setReviewImages((prev) => prev.filter((_, i) => i !== indexToRemove));
+  };
+
+  // Reset quantity and scroll position when product changes, and fetch reviews from backend
   const productGallery = getProductGallery(selectedProduct);
 
   useEffect(() => {
@@ -122,6 +140,9 @@ export default function ProductDetailPage({ onNavigate }) {
       setShowReviewForm(false);
       setActiveImageIndex(0);
       window.scrollTo(0, 0);
+      if (fetchReviewsForProduct) {
+        fetchReviewsForProduct(selectedProduct.id);
+      }
     }
   }, [selectedProduct]);
 
@@ -142,32 +163,11 @@ export default function ProductDetailPage({ onNavigate }) {
   }, 0);
 
   // Reviews for this product
-  const reviewsList = productReviews[selectedProduct.id] || [
-    {
-      id: 991,
-      name: 'Ananya Deshmukh',
-      institution: 'Delhi University',
-      rating: 5,
-      date: '3 days ago',
-      title: 'Top-tier academic stationery!',
-      comment: 'Really satisfied with the quality. Exceeded expectations for daily college work.',
-      helpfulCount: 18
-    },
-    {
-      id: 992,
-      name: 'Kabir Singhania',
-      institution: 'DPS R.K. Puram',
-      rating: 5,
-      date: '1 week ago',
-      title: 'Durable and great value',
-      comment: 'Very reliable for regular school sessions and revision. Value for money.',
-      helpfulCount: 9
-    }
-  ];
+  const reviewsList = productReviews[selectedProduct.id] || [];
 
-  const averageRating = (
-    reviewsList.reduce((acc, r) => acc + r.rating, 0) / reviewsList.length
-  ).toFixed(1);
+  const averageRating = reviewsList.length > 0
+    ? (reviewsList.reduce((acc, r) => acc + r.rating, 0) / reviewsList.length).toFixed(1)
+    : '0.0';
 
   // Recommendation products (exclude current)
   const moreInKit = ALL_PRODUCTS.filter(
@@ -195,21 +195,19 @@ export default function ProductDetailPage({ onNavigate }) {
 
   const handleReviewSubmit = (e) => {
     e.preventDefault();
-    if (!reviewTitle.trim() || !reviewComment.trim()) {
-      showToast('⚠️ Please provide both a title and review comment');
+    if (!reviewComment.trim()) {
+      showToast('⚠️ Please write your review comment');
       return;
     }
 
     addProductReview(selectedProduct.id, {
-      name: reviewerName.trim() || 'Verified Student',
-      institution: reviewerInstitution.trim() || 'Student',
       rating: newRating,
-      title: reviewTitle.trim(),
-      comment: reviewComment.trim()
+      comment: reviewComment.trim(),
+      images: reviewImages
     });
 
-    setReviewTitle('');
     setReviewComment('');
+    setReviewImages([]);
     setShowReviewForm(false);
   };
 
@@ -783,7 +781,7 @@ export default function ProductDetailPage({ onNavigate }) {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div>
                   <h3 className="font-display text-xl font-extrabold text-brand-teal flex items-center gap-2">
-                    <span>Student Reviews & Ratings</span>
+                    <span>Product Reviews</span>
                     <MessageSquare size={18} className="text-brand-teal" />
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5">
@@ -818,7 +816,7 @@ export default function ProductDetailPage({ onNavigate }) {
                       <Star
                         key={i}
                         size={16}
-                        fill={i < Math.round(Number(averageRating)) ? 'currentColor' : 'none'}
+                        fill={i < Math.round(Number(averageRating)) && Number(averageRating) > 0 ? 'currentColor' : 'none'}
                         stroke="currentColor"
                       />
                     ))}
@@ -826,16 +824,18 @@ export default function ProductDetailPage({ onNavigate }) {
                   <span className="text-xs text-gray-500">
                     Based on {reviewsList.length} student reviews
                   </span>
-                  <span className="text-[11px] font-bold text-green-700 mt-1">
-                    98% of students recommend this
-                  </span>
+                  {reviewsList.length > 0 && (
+                    <span className="text-[11px] font-bold text-green-700 mt-1">
+                      98% of students recommend this
+                    </span>
+                  )}
                 </div>
 
                 {/* Star distribution bars */}
                 <div className="sm:col-span-8 space-y-1.5 flex flex-col justify-center text-xs">
                   {[5, 4, 3, 2, 1].map((stars) => {
                     const matchCount = reviewsList.filter((r) => r.rating === stars).length;
-                    const pct = Math.round((matchCount / reviewsList.length) * 100) || (stars === 5 ? 85 : stars === 4 ? 12 : 3);
+                    const pct = reviewsList.length > 0 ? Math.round((matchCount / reviewsList.length) * 100) : 0;
                     return (
                       <div key={stars} className="flex items-center gap-2">
                         <span className="w-12 text-gray-600 font-bold">{stars} Stars</span>
@@ -860,15 +860,15 @@ export default function ProductDetailPage({ onNavigate }) {
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                     <h4 className="text-sm font-extrabold text-brand-teal uppercase tracking-wider">
-                      Share Your Student Experience
+                      Write a Review
                     </h4>
-                    <span className="text-[11px] text-gray-500">All fields required</span>
+                    <span className="text-[11px] text-gray-500">Single paragraph review & photos</span>
                   </div>
 
                   {/* Rating selector */}
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                      Your Overall Rating
+                      Your Rating
                     </label>
                     <div className="flex items-center gap-1.5">
                       {[1, 2, 3, 4, 5].map((star) => (
@@ -894,70 +894,66 @@ export default function ProductDetailPage({ onNavigate }) {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        Your Name
-                      </label>
-                      <input
-                        type="text"
-                        value={reviewerName}
-                        onChange={(e) => setReviewName(e.target.value)}
-                        placeholder="e.g. Ritesh Yadav"
-                        required
-                        className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">
-                        School / College / Course
-                      </label>
-                      <input
-                        type="text"
-                        value={reviewerInstitution}
-                        onChange={(e) => setReviewerInstitution(e.target.value)}
-                        placeholder="e.g. Delhi Technological University"
-                        required
-                        className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
-                      />
-                    </div>
-                  </div>
-
+                  {/* Single Paragraph Review Textarea */}
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Review Headline
-                    </label>
-                    <input
-                      type="text"
-                      value={reviewTitle}
-                      onChange={(e) => setReviewTitle(e.target.value)}
-                      placeholder="e.g. Perfect for exam revision notes!"
-                      required
-                      className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Detailed Student Review
+                      Your Review
                     </label>
                     <textarea
-                      rows={3}
+                      rows={4}
                       value={reviewComment}
                       onChange={(e) => setReviewComment(e.target.value)}
-                      placeholder="Tell other students how this stationery performs (paper quality, ink smoothness, durability)..."
+                      placeholder="Write your experience in a single paragraph (quality, durability, performance)..."
                       required
-                      className="w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
+                      className="w-full bg-white border border-gray-200 rounded-xl p-3 text-xs focus:outline-none focus:border-brand-teal leading-relaxed"
                     />
                   </div>
 
-                  <div className="flex items-center gap-3 pt-1">
+                  {/* Multiple Images Upload Section */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                      Upload Photos (Multiple)
+                    </label>
+                    
+                    {reviewImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2.5 mb-3">
+                        {reviewImages.map((imgUrl, idx) => (
+                          <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-200 shadow-2xs group">
+                            <img src={imgUrl} alt={`Upload ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeReviewImage(idx)}
+                              className="absolute top-0.5 right-0.5 bg-black/70 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                              title="Remove photo"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-brand-teal/40 bg-brand-teal/5 text-brand-teal hover:bg-brand-teal/10 font-semibold text-xs transition-all cursor-pointer">
+                      <Camera size={16} />
+                      <span>{isCompressingImages ? 'Processing photos...' : 'Add Photos'}</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        disabled={isCompressingImages}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2">
                     <button
                       type="submit"
-                      className="bg-brand-teal hover:bg-brand-teal-light text-white text-xs font-extrabold px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+                      disabled={isCompressingImages}
+                      className="bg-brand-teal hover:bg-brand-teal-light text-white text-xs font-extrabold px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
                     >
-                      Submit Student Review
+                      Submit Review
                     </button>
                     <button
                       type="button"
@@ -971,69 +967,83 @@ export default function ProductDetailPage({ onNavigate }) {
               )}
 
               {/* Reviews List */}
-              <div className="space-y-4">
-                {reviewsList.map((review) => (
-                  <div
-                    key={review.id}
-                    className="p-5 rounded-2xl border border-gray-200 bg-white hover:border-brand-teal/30 hover:shadow-xs transition-all space-y-2.5"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-brand-teal/10 text-brand-teal font-extrabold text-xs flex items-center justify-center">
-                          {review.name.charAt(0)}
+              {reviewsList.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50/80 rounded-2xl border border-dashed border-gray-200 p-6">
+                  <MessageSquare className="mx-auto text-gray-300 mb-2" size={32} />
+                  <p className="text-xs text-gray-600 font-bold">No reviews yet for this product.</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">Be the first verified customer to share your thoughts!</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {reviewsList.map((review) => (
+                    <div
+                      key={review.id}
+                      className="p-5 rounded-2xl border border-gray-200 bg-white hover:border-brand-teal/30 hover:shadow-xs transition-all space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-green-700 bg-green-50 px-2.5 py-0.5 rounded-full border border-green-200">
+                            Verified Customer
+                          </span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-gray-900">{review.name}</span>
-                            <span className="text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.2 rounded-full border border-green-200">
-                              Verified Student
-                            </span>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center text-brand-ochre">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                size={12}
+                                fill={i < review.rating ? 'currentColor' : 'none'}
+                                stroke="currentColor"
+                              />
+                            ))}
                           </div>
-                          <span className="text-[11px] text-gray-400 block">{review.institution}</span>
+                          <span className="text-[11px] text-gray-400">• {review.date}</span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center text-brand-ochre">
-                          {[...Array(5)].map((_, i) => (
-                            <Star
-                              key={i}
-                              size={12}
-                              fill={i < review.rating ? 'currentColor' : 'none'}
-                              stroke="currentColor"
-                            />
+                      {/* Single paragraph review comment */}
+                      <p className="text-xs text-gray-700 leading-relaxed font-normal">
+                        {review.comment}
+                      </p>
+
+                      {/* Uploaded Review Images Gallery */}
+                      {Array.isArray(review.images) && review.images.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {review.images.map((imgUrl, imgIdx) => (
+                            <a
+                              key={imgIdx}
+                              href={imgUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-16 h-16 rounded-xl overflow-hidden border border-gray-200 shadow-2xs hover:opacity-95 transition-opacity"
+                            >
+                              <img src={imgUrl} alt={`Review photo ${imgIdx + 1}`} className="w-full h-full object-cover" />
+                            </a>
                           ))}
                         </div>
-                        <span className="text-[11px] text-gray-400">• {review.date}</span>
+                      )}
+
+                      <div className="pt-2 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleHelpfulClick(review.id)}
+                          className={`inline-flex items-center gap-1.5 text-[11px] font-semibold transition-colors cursor-pointer px-2.5 py-1 rounded-lg ${
+                            helpfulVotes[review.id]
+                              ? 'text-brand-teal bg-brand-teal/10 font-bold'
+                              : 'text-gray-500 hover:text-brand-teal hover:bg-gray-100'
+                          }`}
+                        >
+                          <ThumbsUp size={12} />
+                          <span>
+                            Helpful ({review.helpfulCount + (helpfulVotes[review.id] ? 1 : 0)})
+                          </span>
+                        </button>
                       </div>
                     </div>
-
-                    <h4 className="text-xs font-bold text-gray-900 mt-1">
-                      {review.title}
-                    </h4>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      {review.comment}
-                    </p>
-
-                    <div className="pt-2 flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleHelpfulClick(review.id)}
-                        className={`inline-flex items-center gap-1.5 text-[11px] font-semibold transition-colors cursor-pointer px-2.5 py-1 rounded-lg ${
-                          helpfulVotes[review.id]
-                            ? 'text-brand-teal bg-brand-teal/10 font-bold'
-                            : 'text-gray-500 hover:text-brand-teal hover:bg-gray-100'
-                        }`}
-                      >
-                        <ThumbsUp size={12} />
-                        <span>
-                          Helpful ({review.helpfulCount + (helpfulVotes[review.id] ? 1 : 0)})
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>

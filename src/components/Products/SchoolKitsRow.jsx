@@ -3,10 +3,11 @@ import ProductCarouselRow from './ProductCarouselRow';
 import KitCard from './KitCard';
 import { useLocation } from '../../context/LocationContext';
 import { fetchKitsFromBackend } from '../../utils/api';
+import { KIT_BUNDLES } from '../../data/mockData';
 
 export default function SchoolKitsRow({ onNavigate }) {
   const { isSchoolWithinRadius } = useLocation();
-  const [kits, setKits] = useState([]);
+  const [kits, setKits] = useState(KIT_BUNDLES);
   const [filterSchool, setFilterSchool] = useState('');
   const [filterClass, setFilterClass] = useState('all');
 
@@ -14,9 +15,13 @@ export default function SchoolKitsRow({ onNavigate }) {
     fetchKitsFromBackend()
       .then((res) => {
         const list = res?.kits || res || [];
-        setKits(Array.isArray(list) ? list : []);
+        if (Array.isArray(list) && list.length > 0) {
+          setKits(list);
+        } else {
+          setKits(KIT_BUNDLES);
+        }
       })
-      .catch(() => setKits([]));
+      .catch(() => setKits(KIT_BUNDLES));
   }, []);
 
   useEffect(() => {

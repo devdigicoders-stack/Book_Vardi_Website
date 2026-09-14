@@ -176,7 +176,22 @@ export default function Footer({ onNavigate }) {
                   </button>
                 </li>
               )}
-              <li><a href="#" className="hover:text-brand-yellow transition-colors">School Partners</a></li>
+              <li>
+                <button
+                  onClick={() => onNavigate && onNavigate('school-bulk-order')}
+                  className="hover:text-brand-yellow transition-colors text-left cursor-pointer flex items-center gap-1 font-semibold text-brand-yellow"
+                >
+                  <span>School Bulk Orders</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onNavigate && onNavigate('school-directory')}
+                  className="hover:text-brand-yellow transition-colors text-left cursor-pointer"
+                >
+                  School Partners
+                </button>
+              </li>
               <li><a href="#" className="hover:text-brand-yellow transition-colors">Privacy Policy</a></li>
               <li><a href="#" className="hover:text-brand-yellow transition-colors">Terms of Service</a></li>
             </ul>

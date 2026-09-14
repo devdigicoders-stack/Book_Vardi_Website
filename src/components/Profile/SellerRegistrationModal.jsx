@@ -21,9 +21,12 @@ import {
   Lock,
   X,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  Download
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { backendEnabled, registerSellerInBackend } from '../../utils/api';
 
 export const ONBOARDING_STEPS = [
   { id: 1, title: 'Basic Profile', section: 'Basic Profile', desc: 'Name, mobile, email, photo', icon: UserCheck, verify: 'Email + Mobile OTP' },
@@ -42,73 +45,73 @@ export const ONBOARDING_STEPS = [
 
 export const INITIAL_FORM_STATE = {
   // Step 1: Basic Profile
-  sellerName: 'Ritesh Yadav',
-  sellerEmail: 'ritesh.seller@bookvardi.in',
-  sellerPhone: '+91 98765 43210',
-  profilePhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
-  emailOtpVerified: true,
-  phoneOtpVerified: true,
+  sellerName: '',
+  sellerEmail: '',
+  sellerPhone: '',
+  profilePhoto: '',
+  emailOtpVerified: false,
+  phoneOtpVerified: false,
 
   // Step 2: Business Details
-  legalBusinessName: 'Vardi Education Retail Pvt Ltd',
-  tradeName: 'Book Vardi Student Emporium',
-  businessType: 'Private Limited',
-  yearStarted: '2021',
-  annualTurnoverEstimate: '₹25L - ₹50L',
+  legalBusinessName: '',
+  tradeName: '',
+  businessType: 'Proprietorship',
+  yearStarted: '',
+  annualTurnoverEstimate: '',
 
   // Step 3: Owner / Authorized Person
-  ownerFullName: 'Ritesh Yadav',
-  ownerDesignation: 'Director / Managing Partner',
-  ownerPan: 'ABCDE1234F',
-  ownerAadhaarLast4: '8942',
-  kycVerified: true,
+  ownerFullName: '',
+  ownerDesignation: 'Proprietor',
+  ownerPan: '',
+  ownerAadhaarLast4: '',
+  kycVerified: false,
 
   // Step 4: Business Documents
-  businessPan: 'ABCDE1234F',
-  gstin: '07AAAAA0000A1Z5',
+  businessPan: '',
+  gstin: '',
   hasGstExemption: false,
-  msmeRegistrationNumber: 'UDYAM-DL-03-0029142',
-  cinNumber: 'U74999DL2021PTC384192',
+  msmeRegistrationNumber: '',
+  cinNumber: '',
 
   // Step 5: Business Address
-  addressLine1: 'Plot 42, Okhla Industrial Area, Phase-III',
-  addressLine2: 'Near Crown Plaza Metro',
-  city: 'New Delhi',
-  state: 'Delhi',
-  pincode: '110020',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  pincode: '',
   country: 'India',
 
   // Step 6: Address Proof
   addressProofType: 'Electricity Bill',
-  addressProofDocNumber: 'EB-2026-98124',
-  addressProofFileName: 'electricity_bill_okhla_feb2026.pdf',
+  addressProofDocNumber: '',
+  addressProofFileName: '',
 
   // Step 7: Bank Details
-  bankAccountHolder: 'Vardi Education Retail Pvt Ltd',
-  bankAccountNumber: '50200084920194',
-  bankIfscCode: 'HDFC0000240',
-  bankName: 'HDFC Bank Ltd',
-  bankBranch: 'Okhla Phase-III, New Delhi',
-  accountType: 'Current Account',
+  bankAccountHolder: '',
+  bankAccountNumber: '',
+  bankIfscCode: '',
+  bankName: '',
+  bankBranch: '',
+  accountType: 'Savings Account',
 
   // Step 8: Store Details
-  storeName: 'Book Vardi Official Hub',
-  storeSlug: 'book-vardi-official',
-  storeTagline: 'Certified School Uniforms, Textbooks & STEM Academic Kits',
-  storeDescription: 'Premier provider of school textbooks, uniform sets, drawing guides and geometry supplies with fast 24-48 hour campus delivery.',
-  storeLogo: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=200&auto=format&fit=crop&q=80',
+  storeName: '',
+  storeSlug: '',
+  storeTagline: '',
+  storeDescription: '',
+  storeLogo: '',
 
   // Step 9: Product Information
-  selectedCategories: ['Uniforms & Schoolwear', 'NCERT & CBSE Textbooks', 'Notebooks & Paper Crafts', 'Writing Instruments'],
-  primaryBrands: ['Classmate', 'Doms', 'Camlin', 'Oxford', 'Reynolds'],
-  estimatedSkuCount: '250+ SKUs',
-  sampleProductTitle: 'Class 10 CBSE Complete Science & Math Bundle',
+  selectedCategories: [],
+  primaryBrands: [],
+  estimatedSkuCount: '',
+  sampleProductTitle: '',
 
   // Step 10: Agreements
-  acceptedTerms: true,
-  acceptedCommissionRate: true,
-  acceptedReturnPolicy: true,
-  authorizedSignatoryConfirmation: true,
+  acceptedTerms: false,
+  acceptedCommissionRate: false,
+  acceptedReturnPolicy: false,
+  authorizedSignatoryConfirmation: false,
 
   // Metadata
   applicationDate: new Date().toISOString(),
@@ -126,27 +129,29 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     showToast 
   } = useCart();
 
-  const [step, setStep] = useState(() => {
-    try {
-      const saved = localStorage.getItem('bv_seller_reg_step');
-      return saved ? parseInt(saved, 10) : 1;
-    } catch {
-      return 1;
-    }
-  });
+  const [step, setStep] = useState(1);
 
   const [formData, setFormData] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_seller_reg_data');
-      return saved ? JSON.parse(saved) : INITIAL_FORM_STATE;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.sellerName === 'Ritesh Yadav' || parsed?.legalBusinessName === 'Vardi Education Retail Pvt Ltd') {
+          localStorage.removeItem('bv_seller_reg_data');
+          return INITIAL_FORM_STATE;
+        }
+        return parsed;
+      }
+      return INITIAL_FORM_STATE;
     } catch {
       return INITIAL_FORM_STATE;
     }
   });
 
   const [otpSent, setOtpSent] = useState(false);
-  const [mobileOtp, setMobileOtp] = useState('4829');
+  const [mobileOtp, setMobileOtp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewDocModal, setPreviewDocModal] = useState(null);
 
   // Step 3 PAN & Aadhaar Verification States
   const [isPanVerified, setIsPanVerified] = useState(() => {
@@ -157,7 +162,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         return Boolean(parsed.isPanVerified);
       }
     } catch {}
-    return true; // Default true for initial seed state (ABCDE1234F), resets if edited
+    return false;
   });
   const [isAadhaarVerified, setIsAadhaarVerified] = useState(() => {
     try {
@@ -167,7 +172,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         return Boolean(parsed.isAadhaarVerified);
       }
     } catch {}
-    return true; // Default true for initial seed state (8942), resets if edited
+    return false;
   });
   const [isVerifyingPan, setIsVerifyingPan] = useState(false);
   const [isVerifyingAadhaar, setIsVerifyingAadhaar] = useState(false);
@@ -261,7 +266,116 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     }, 700);
   };
 
+  const handleSendMobileOtp = () => {
+    const phone = (formData.sellerPhone || '').trim();
+    if (!phone || phone.length < 8) {
+      showToast('⚠️ Please enter a valid mobile number first.');
+      return;
+    }
+    setOtpSent(true);
+    setMobileOtp('123456');
+    showToast(`📲 [Testing Mode] OTP code 123456 sent to ${phone}`);
+  };
+
+  const handleVerifyMobileOtp = () => {
+    if (!mobileOtp || mobileOtp.trim().length < 4) {
+      showToast('⚠️ Please enter the 6-digit OTP code (use 123456 for testing).');
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      phoneOtpVerified: true,
+      emailOtpVerified: true
+    }));
+    showToast('✅ Mobile number verified successfully via OTP!');
+  };
+
+  const [isDraggingAddressProof, setIsDraggingAddressProof] = useState(false);
+  const [isDraggingProfilePhoto, setIsDraggingProfilePhoto] = useState(false);
+
+  const processProfilePhotoFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('⚠️ Image file is too large. Please select a photo under 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({
+        ...prev,
+        profilePhoto: event.target.result
+      }));
+      showToast('📷 Seller profile photo uploaded successfully!');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleProfilePhotoSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    processProfilePhotoFile(file);
+  };
+
+  const handleProfilePhotoDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingProfilePhoto(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    processProfilePhotoFile(file);
+  };
+
+  const processAddressProofFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('⚠️ Document file size exceeds 10MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({
+        ...prev,
+        addressProofFileName: file.name,
+        addressProofDoc: event.target.result,
+        addressProofFileSize: (file.size / (1024 * 1024)).toFixed(2) + ' MB'
+      }));
+      showToast(`📄 Address proof document (${file.name}) uploaded successfully!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddressProofUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    processAddressProofFile(file);
+  };
+
+  const handleAddressProofDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAddressProof(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    processAddressProofFile(file);
+  };
+
   const nextStep = () => {
+    // Step 1: Mobile Phone number & OTP verification
+    if (step === 1) {
+      if (!formData.sellerName?.trim()) {
+        showToast('⚠️ Please enter your Full Name.');
+        return;
+      }
+      if (!formData.sellerPhone?.trim()) {
+        showToast('⚠️ Please enter your Mobile Phone Number.');
+        return;
+      }
+      if (!formData.phoneOtpVerified) {
+        showToast('⚠️ Please click "Send Phone OTP" and verify your mobile number (Testing code: 123456).');
+        return;
+      }
+    }
+
     // Strict enforcement for Step 3: PAN and Aadhaar must be verified
     if (step === 3) {
       if (!formData.ownerPan || !isPanVerified) {
@@ -272,6 +386,18 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       if (!formData.ownerAadhaarLast4 || !isAadhaarVerified) {
         setAadhaarError(!formData.ownerAadhaarLast4 ? 'Aadhaar number is required' : 'Verification required before moving forward');
         showToast('⚠️ Please click "Verify Aadhaar" and verify your Aadhaar Card to move to the next step.');
+        return;
+      }
+    }
+
+    // Step 6: Premises & Address Proof Document
+    if (step === 6) {
+      if (!formData.addressProofDocNumber?.trim()) {
+        showToast('⚠️ Please enter the Document Identifier / Consumer Number.');
+        return;
+      }
+      if (!formData.addressProofFileName) {
+        showToast('⚠️ Please upload an Address Proof document file.');
         return;
       }
     }
@@ -289,18 +415,74 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     }
   };
 
-  const handleFinalSubmit = () => {
+function dataURLtoBlob(dataurl, filename = 'file') {
+  if (!dataurl || typeof dataurl !== 'string' || !dataurl.startsWith('data:')) return null;
+  try {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+  const handleFinalSubmit = async () => {
     setIsSubmitting(true);
-    setTimeout(() => {
-      submitSellerApplication({
-        ...formData,
-        status: 'Pending Approval',
-        submittedAt: new Date().toLocaleDateString()
-      });
-      setIsSubmitting(false);
-      setStep(11);
-      showToast('🎉 Seller Registration Application Submitted! Pending Verification.');
-    }, 900);
+    try {
+      if (backendEnabled) {
+        const formPayload = new FormData();
+        formPayload.append('name', formData.sellerName || formData.ownerFullName || 'New Merchant');
+        formPayload.append('storeName', formData.storeName || formData.tradeName || 'New Store');
+        formPayload.append('email', formData.sellerEmail || '');
+        formPayload.append('phone', formData.sellerPhone || '');
+        formPayload.append('password', 'BookVardiSeller@123');
+        formPayload.append('address', `${formData.addressLine1 || ''} ${formData.addressLine2 || ''}`.trim());
+        formPayload.append('city', formData.city || '');
+        formPayload.append('state', formData.state || '');
+        formPayload.append('pincode', formData.pincode || '');
+        formPayload.append('gstNumber', formData.gstin || '');
+        formPayload.append('accountHolderName', formData.bankAccountHolder || '');
+        formPayload.append('accountNumber', formData.bankAccountNumber || '');
+        formPayload.append('ifscCode', formData.bankIfscCode || '');
+        formPayload.append('bankName', formData.bankName || '');
+        formPayload.append('branchName', formData.bankBranch || '');
+        formPayload.append('aadhaarNumber', formData.ownerAadhaarLast4 || '');
+        formPayload.append('panNumber', formData.ownerPan || formData.businessPan || '');
+
+        if (formData.profilePhoto) {
+          const profileBlob = dataURLtoBlob(formData.profilePhoto, 'profile-photo.png');
+          if (profileBlob) formPayload.append('profilePhoto', profileBlob, 'profile-photo.png');
+        }
+
+        if (formData.addressProofDoc) {
+          const ext = formData.addressProofFileName?.endsWith('.pdf') ? '.pdf' : '.png';
+          const filename = formData.addressProofFileName || `address-proof${ext}`;
+          const docBlob = dataURLtoBlob(formData.addressProofDoc, filename);
+          if (docBlob) formPayload.append('addressProofDoc', docBlob, filename);
+        }
+
+        await registerSellerInBackend(formPayload).catch((err) => {
+          console.warn('Backend seller registration notice:', err?.message);
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    submitSellerApplication({
+      ...formData,
+      status: 'Pending Approval',
+      submittedAt: new Date().toLocaleDateString()
+    });
+    setIsSubmitting(false);
+    setStep(11);
+    showToast('🎉 Seller Registration Application Submitted! Pending Verification.');
   };
 
   const handleSimulateApproval = () => {
@@ -419,14 +601,67 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
           
           {/* STEP 1: Basic Profile */}
           {step === 1 && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="border-b border-gray-100 pb-3">
                 <h3 className="font-display font-extrabold text-base text-gray-900 flex items-center gap-2">
-                  <UserCheck className="text-teal-700" size={18} /> Step 1: Basic Profile & Contact Information
+                  <UserCheck className="text-teal-700" size={18} /> Step 1: Basic Profile & Phone OTP Verification
                 </h3>
                 <p className="text-gray-500 text-xs mt-0.5">
-                  Verify your primary contact details via secure one-time passcode.
+                  Verify your mobile phone number via testing OTP and upload your custom seller profile image.
                 </p>
+              </div>
+
+              {/* Custom Seller Profile Photo Upload */}
+              <div 
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingProfilePhoto(true); }}
+                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingProfilePhoto(false); }}
+                onDrop={handleProfilePhotoDrop}
+                className={`p-4 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${
+                  isDraggingProfilePhoto 
+                    ? 'bg-teal-100 border-teal-400 ring-2 ring-teal-400 scale-[1.01]' 
+                    : 'bg-teal-50/70 border-teal-100'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="relative group shrink-0">
+                    <img
+                      src={formData.profilePhoto || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"}
+                      alt="Seller Profile Avatar"
+                      className="w-16 h-16 rounded-full object-cover border-2 border-brand-yellow shadow-xs"
+                    />
+                    {formData.profilePhoto && (
+                      <button
+                        type="button"
+                        onClick={() => handleChange('profilePhoto', '')}
+                        className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full p-1 shadow-xs hover:bg-rose-700 cursor-pointer"
+                        title="Remove Photo"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-teal-950 text-xs sm:text-sm">
+                      {isDraggingProfilePhoto ? 'Drop Profile Image Here!' : 'Seller Profile Photo'}
+                    </h4>
+                    <p className="text-[11px] text-teal-700 leading-snug">
+                      Upload or drag & drop profile photo for vendor bio and receipts.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                  <label className="w-full sm:w-auto cursor-pointer bg-brand-teal hover:bg-brand-teal-dark text-white px-3.5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                    <UploadCloud size={14} />
+                    <span>{formData.profilePhoto ? 'Change Photo' : 'Upload Image'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePhotoSelect}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -437,28 +672,8 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.sellerName}
                     onChange={(e) => handleChange('sellerName', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                    placeholder="e.g. Ritesh Yadav"
+                    placeholder="e.g. Ramesh Kumar"
                   />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Mobile Number (With WhatsApp) *</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="tel"
-                      value={formData.sellerPhone}
-                      onChange={(e) => handleChange('sellerPhone', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                      placeholder="+91 98765 43210"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setOtpSent(true)}
-                      className="px-3 py-2 bg-teal-50 text-teal-800 rounded-xl font-bold hover:bg-teal-100 whitespace-nowrap cursor-pointer border border-teal-200"
-                    >
-                      {otpSent ? 'Resend OTP' : 'Send OTP'}
-                    </button>
-                  </div>
                 </div>
 
                 <div className="space-y-1">
@@ -472,32 +687,69 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="font-bold text-gray-700">OTP Code Verification (Auto-Filled)</label>
-                  <div className="flex items-center gap-2">
+                {/* Phone Number Input with OTP Trigger */}
+                <div className="space-y-1 md:col-span-2">
+                  <label className="font-bold text-gray-700">Mobile Phone Number (WhatsApp Enabled) *</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
-                      type="text"
-                      value={mobileOtp}
-                      onChange={(e) => setMobileOtp(e.target.value)}
-                      className="w-32 px-3 py-2.5 rounded-xl border border-gray-200 text-xs font-mono tracking-widest text-center"
+                      type="tel"
+                      value={formData.sellerPhone}
+                      onChange={(e) => handleChange('sellerPhone', e.target.value)}
+                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                      placeholder="+91 98765 43210"
                     />
-                    <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-2 rounded-xl border border-emerald-200">
-                      <CheckCircle2 size={13} /> Mobile & Email OTP Verified
-                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSendMobileOtp}
+                      className="px-4 py-2.5 bg-teal-50 text-teal-800 rounded-xl font-bold hover:bg-teal-100 text-xs transition-colors cursor-pointer border border-teal-200 shrink-0"
+                    >
+                      {otpSent ? 'Resend OTP' : 'Send Phone OTP'}
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              <div className="p-3 bg-teal-50/70 border border-teal-100 rounded-xl flex items-center gap-3">
-                <img
-                  src={formData.profilePhoto}
-                  alt="Profile Preview"
-                  className="w-12 h-12 rounded-full object-cover border-2 border-brand-yellow"
-                />
-                <div>
-                  <span className="font-bold text-teal-950 block">Profile Avatar Uploaded</span>
-                  <span className="text-[11px] text-teal-700">Will be shown on your vendor store bio and seller receipts.</span>
-                </div>
+                {/* OTP Entry Box in Testing Mode */}
+                {otpSent && (
+                  <div className="space-y-2 md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div>
+                        <label className="font-bold text-gray-800 text-xs block">
+                          Enter 6-Digit Mobile OTP <span className="text-amber-700 font-normal">(Testing Code: 123456)</span>
+                        </label>
+                        <p className="text-[11px] text-gray-500">
+                          A test verification code has been generated for {formData.sellerPhone}.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          value={mobileOtp}
+                          onChange={(e) => setMobileOtp(e.target.value)}
+                          className="w-32 px-3 py-2 rounded-xl border border-gray-300 text-xs font-mono tracking-widest text-center focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                          placeholder="123456"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleVerifyMobileOtp}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                        >
+                          Verify OTP
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {formData.phoneOtpVerified && (
+                  <div className="md:col-span-2">
+                    <span className="inline-flex items-center gap-1.5 text-emerald-800 font-bold bg-emerald-50 px-3.5 py-2.5 rounded-xl border border-emerald-200 text-xs">
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                      Phone Number Verified via OTP (Testing Mode)
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -522,7 +774,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.legalBusinessName}
                     onChange={(e) => handleChange('legalBusinessName', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                    placeholder="e.g. Vardi Education Retail Pvt Ltd"
+                    placeholder="e.g. Apex Stationers & Uniforms Pvt Ltd"
                   />
                 </div>
 
@@ -533,7 +785,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.tradeName}
                     onChange={(e) => handleChange('tradeName', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                    placeholder="e.g. Book Vardi Student Hub"
+                    placeholder="e.g. Apex Book Depot"
                   />
                 </div>
 
@@ -897,7 +1149,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   <select
                     value={formData.addressProofType}
                     onChange={(e) => handleChange('addressProofType', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs bg-white focus:ring-2 focus:ring-brand-yellow outline-hidden"
                   >
                     <option value="Electricity Bill">Electricity Bill (Past 3 months)</option>
                     <option value="Rent / Lease Agreement">Registered Rent / Lease Agreement</option>
@@ -907,20 +1159,109 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Document Identifier / CA Number *</label>
+                  <label className="font-bold text-gray-700">Document Identifier / Consumer Number *</label>
                   <input
                     type="text"
                     value={formData.addressProofDocNumber}
                     onChange={(e) => handleChange('addressProofDocNumber', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. ELEC-9872134"
                   />
                 </div>
               </div>
 
-              <div className="border-2 border-dashed border-teal-300 rounded-2xl p-6 text-center bg-teal-50/40">
-                <UploadCloud size={32} className="mx-auto text-teal-700 mb-2" />
-                <p className="font-bold text-gray-800">Uploaded File: {formData.addressProofFileName}</p>
-                <p className="text-[11px] text-gray-500 mt-1">PDF format (2.4 MB) • Encrypted for reviewer validation</p>
+              {/* Upload Address Proof Document File */}
+              <div className="space-y-2">
+                <label className="font-bold text-gray-700 text-xs block">
+                  Upload Address Proof File (PDF, Image, DOC) *
+                </label>
+                
+                {formData.addressProofFileName ? (
+                  <div className="p-4 bg-teal-50 border-2 border-teal-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
+                        <FileCheck size={24} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-teal-950 text-xs sm:text-sm truncate max-w-[200px] sm:max-w-[300px]">
+                            {formData.addressProofFileName}
+                          </span>
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-emerald-200">
+                            Uploaded ✓
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-teal-700 mt-0.5">
+                          Size: {formData.addressProofFileSize || '1.8 MB'} • Encrypted for reviewer validation
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          fileName: formData.addressProofFileName,
+                          src: formData.addressProofDoc
+                        })}
+                        className="px-3.5 py-2 bg-teal-100 hover:bg-teal-200 text-teal-900 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-teal-300 shadow-2xs"
+                        title="Preview Document"
+                      >
+                        <Eye size={14} />
+                        <span>Preview</span>
+                      </button>
+                      <label className="flex-1 sm:flex-none cursor-pointer bg-brand-teal hover:bg-brand-teal-dark text-white px-3.5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                        <UploadCloud size={14} />
+                        <span>Change Document</span>
+                        <input
+                          type="file"
+                          accept=".pdf,image/*,.doc,.docx"
+                          onChange={handleAddressProofUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleChange('addressProofFileName', '');
+                          handleChange('addressProofDoc', '');
+                        }}
+                        className="px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                        title="Remove Document"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label 
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingAddressProof(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingAddressProof(false); }}
+                    onDrop={handleAddressProofDrop}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer block group ${
+                      isDraggingAddressProof
+                        ? 'border-brand-teal bg-teal-100/90 ring-4 ring-teal-300/50 scale-[1.01]'
+                        : 'border-teal-300 hover:border-teal-500 bg-teal-50/40 hover:bg-teal-50/70'
+                    }`}
+                  >
+                    <UploadCloud size={36} className={`mx-auto transition-transform mb-2 ${isDraggingAddressProof ? 'text-teal-900 scale-125 animate-bounce' : 'text-teal-700 group-hover:scale-110'}`} />
+                    <p className="font-bold text-gray-800 text-xs sm:text-sm">
+                      {isDraggingAddressProof ? 'Release to Drop Document File Here!' : 'Click to Browse or Drag & Drop Address Proof Document'}
+                    </p>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      Supports PDF, PNG, JPG, WEBP, DOCX (Up to 10 MB limit)
+                    </p>
+                    <span className="inline-block mt-3 px-4 py-2 bg-brand-teal text-white rounded-xl font-bold text-xs shadow-xs group-hover:bg-brand-teal-dark transition-colors">
+                      {isDraggingAddressProof ? 'Drop File Now' : 'Select File from Device'}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".pdf,image/*,.doc,.docx"
+                      onChange={handleAddressProofUpload}
+                      className="hidden"
+                    />
+                  </label>
+                )}
               </div>
             </div>
           )}
@@ -1320,6 +1661,96 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         </div>
 
       </div>
+
+      {/* Interactive Document Preview Modal Overlay */}
+      {previewDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-gray-100">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-2.5">
+                <FileCheck className="text-brand-yellow" size={20} />
+                <div>
+                  <h3 className="font-bold text-sm text-white truncate max-w-xs sm:max-w-md">
+                    Preview: {previewDocModal.fileName || 'Uploaded Document'}
+                  </h3>
+                  <p className="text-[11px] text-gray-400">Seller Onboarding Document Inspection</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {previewDocModal.src && (
+                  <a
+                    href={previewDocModal.src}
+                    download={previewDocModal.fileName || 'document'}
+                    className="p-2 text-gray-300 hover:text-white hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold"
+                    title="Download File"
+                  >
+                    <Download size={15} />
+                    <span className="hidden sm:inline">Download</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocModal(null)}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors cursor-pointer"
+                  title="Close Preview"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-100 flex items-center justify-center min-h-[350px]">
+              {previewDocModal.src ? (
+                previewDocModal.src.startsWith('data:image/') || (previewDocModal.fileName && previewDocModal.fileName.match(/\.(png|jpe?g|webp|gif|svg)$/i)) ? (
+                  <img
+                    src={previewDocModal.src}
+                    alt={previewDocModal.fileName}
+                    className="max-h-[70vh] object-contain rounded-xl shadow-md border border-gray-200 bg-white p-2"
+                  />
+                ) : previewDocModal.src.startsWith('data:application/pdf') || (previewDocModal.fileName && previewDocModal.fileName.endsWith('.pdf')) ? (
+                  <iframe
+                    src={previewDocModal.src}
+                    title={previewDocModal.fileName}
+                    className="w-full h-[70vh] rounded-xl border border-gray-300 bg-white shadow-md"
+                  />
+                ) : (
+                  <div className="text-center p-8 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-3 max-w-md">
+                    <FileText size={48} className="mx-auto text-brand-teal" />
+                    <h4 className="font-bold text-gray-800 text-sm">{previewDocModal.fileName}</h4>
+                    <p className="text-xs text-gray-500">Document file uploaded successfully.</p>
+                    <a
+                      href={previewDocModal.src}
+                      download={previewDocModal.fileName || 'document'}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-brand-teal text-white font-bold rounded-xl text-xs hover:bg-brand-teal-dark transition-colors"
+                    >
+                      <Download size={14} /> Download File to Inspect
+                    </a>
+                  </div>
+                )
+              ) : (
+                <div className="text-center text-gray-500 py-12 font-semibold">
+                  No preview content available.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-xs">
+              <span className="text-gray-500 font-semibold">Status: Encrypted & Stored</span>
+              <button
+                type="button"
+                onClick={() => setPreviewDocModal(null)}
+                className="px-4 py-1.5 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

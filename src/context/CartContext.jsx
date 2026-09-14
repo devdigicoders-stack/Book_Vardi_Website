@@ -20,7 +20,10 @@ import {
   updateAddressInBackend,
   deleteAddressInBackend,
   createOrderInBackend,
-  fetchMyOrdersFromBackend
+  fetchMyOrdersFromBackend,
+  fetchProductReviewsFromBackend,
+  addReviewToBackend,
+  deleteReviewInBackend
 } from '../utils/api';
 
 export const EMPTY_USER_PROFILE = {
@@ -633,27 +636,6 @@ export function CartProvider({ children }) {
 
   const closeProductDetails = () => {
     setSelectedProduct(null);
-  };
-
-  const addProductReview = (productId, newReview) => {
-    const pId = Number(productId);
-    const reviewItem = {
-      id: Date.now(),
-      date: 'Just now',
-      helpfulCount: 0,
-      ...newReview
-    };
-
-    setProductReviews((prev) => {
-      const updated = {
-        ...prev,
-        [pId]: [reviewItem, ...(prev[pId] || [])]
-      };
-      pushPlatformSync({ reviews: updated });
-      return updated;
-    });
-
-    showToast('⭐ Thank you for your review! Your feedback helps fellow students.');
   };
 
   const addToCart = (product, quantity = 1) => {
@@ -1334,6 +1316,108 @@ export function CartProvider({ children }) {
     showToast('Cart cleared! 🛒');
   };
 
+  const fetchReviewsForProduct = async (productId) => {
+    if (!productId) return [];
+    let list = [];
+    if (backendEnabled) {
+      try {
+        const dbReviews = await fetchProductReviewsFromBackend(productId);
+        if (Array.isArray(dbReviews)) {
+          list = dbReviews;
+          setProductReviews((prev) => ({
+            ...prev,
+            [productId]: dbReviews
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch reviews from backend DB:', err);
+        list = productReviews[productId] || [];
+      }
+    } else {
+      list = productReviews[productId] || [];
+    }
+
+    if (list) {
+      const approvedList = list.filter((r) => r.status === 'approved' || !r.status);
+      const count = approvedList.length;
+      const avg = count > 0 ? Number((approvedList.reduce((sum, r) => sum + r.rating, 0) / count).toFixed(1)) : 0;
+      setProducts((prevProducts) =>
+        prevProducts.map((p) => {
+          if (String(p.id || p._id) === String(productId)) {
+            return {
+              ...p,
+              rating: avg,
+              averageRating: avg,
+              numReviews: count,
+              reviewsCount: count,
+              reviews: count
+            };
+          }
+          return p;
+        })
+      );
+    }
+    return list;
+  };
+
+  const addProductReview = async (productId, reviewData) => {
+    const newReview = {
+      id: Date.now(),
+      name: reviewData.name || userProfile?.name || 'Verified Customer',
+      institution: reviewData.institution || userProfile?.institution || 'Verified Customer',
+      rating: Number(reviewData.rating) || 5,
+      date: 'Just now',
+      title: reviewData.title || '',
+      comment: reviewData.comment || '',
+      images: reviewData.images || [],
+      status: 'pending',
+      helpfulCount: 0
+    };
+
+    let currentReviews = productReviews[productId] || [];
+    let updatedList = [newReview, ...currentReviews];
+
+    setProductReviews((prev) => ({
+      ...prev,
+      [productId]: updatedList
+    }));
+
+    pushPlatformSync({
+      reviews: { [productId]: updatedList }
+    });
+
+    if (backendEnabled) {
+      try {
+        const payload = {
+          productId,
+          rating: Number(reviewData.rating),
+          comment: reviewData.comment,
+          title: reviewData.title || '',
+          userName: reviewData.name || userProfile?.name || 'Verified Customer',
+          institution: reviewData.institution || userProfile?.institution || 'Verified Customer',
+          images: reviewData.images || []
+        };
+        const userPhone = userProfile?.phone || '';
+        const res = await addReviewToBackend(payload, userPhone);
+        if (res?.review) {
+          setProductReviews((prev) => {
+            const list = prev[productId] || [];
+            const filtered = list.filter((r) => r.id !== newReview.id);
+            return {
+              ...prev,
+              [productId]: [res.review, ...filtered]
+            };
+          });
+        }
+      } catch (err) {
+        console.error('Failed to sync review with backend DB:', err);
+      }
+    }
+
+    showToast('🌟 Review submitted! It will appear on the website once approved by the seller.');
+    return newReview;
+  };
+
   const placeOrder = (orderData) => {
     const randomId = `SC-${Math.floor(1000 + Math.random() * 9000)}`;
     const randomTracking = `BLUEDART-${Math.floor(10000000 + Math.random() * 90000000)}`;
@@ -1503,6 +1587,7 @@ export function CartProvider({ children }) {
         closeProductDetails,
         productReviews,
         addProductReview,
+        fetchReviewsForProduct,
         lastPlacedOrder,
         setLastPlacedOrder,
         appliedCoupon,

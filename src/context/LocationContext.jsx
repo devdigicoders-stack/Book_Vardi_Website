@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import * as MockData from '../data/mockData';
 import { usePlatformSyncListener } from '../utils/syncBridge';
+import { backendEnabled, fetchSchoolsFromBackend } from '../utils/api';
 
 const FALLBACK_SCHOOLS = [
   {
@@ -246,6 +247,19 @@ export function LocationProvider({ children }) {
     } catch {}
     return DEFAULT_SCHOOLS;
   });
+
+  useEffect(() => {
+    if (backendEnabled && typeof fetchSchoolsFromBackend === 'function') {
+      fetchSchoolsFromBackend()
+        .then((res) => {
+          const list = res?.schools || res || [];
+          if (Array.isArray(list) && list.length > 0) {
+            setSchools(list);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   // 3. User Location state
   // Permission state: 'prompt' | 'granted' | 'denied' | 'manual'

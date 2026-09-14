@@ -26,17 +26,17 @@ export default function TopAnnouncementBar({ onNavigate }) {
         </div>
 
         {/* User Subdistrict Location Badge (Kamta Lucknow, Jajmau Kanpur, RTO Azamgarh) */}
-        <button
+        {/* <button
           type="button"
           onClick={() => setIsPermissionModalOpen(true)}
-          className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full transition-all cursor-pointer shadow-2xs shrink-0"
+          className="sm:hidden inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full transition-all cursor-pointer shadow-2xs shrink-0"
           title="Click to change your delivery locality or city"
         >
           <MapPin size={12} className="text-brand-yellow shrink-0" />
           <span className="text-white/70 font-normal">Delivering to:</span>
           <span className="text-brand-yellow font-extrabold">{displayLocality}</span>
           <ChevronDown size={12} className="text-white/60 shrink-0" />
-        </button>
+        </button> */}
       </div>
     </div>
   );

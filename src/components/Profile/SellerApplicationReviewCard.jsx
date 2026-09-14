@@ -378,11 +378,37 @@ export default function SellerApplicationReviewCard({ applicationData, onEditSte
                 <span className="font-bold text-gray-800 font-mono">{data.addressProofDocNumber || 'EB-2026-98124'}</span>
               </div>
               <div>
-                <span className="block text-gray-400 font-medium text-[11px]">Uploaded File</span>
-                <span className="font-semibold text-teal-800 flex items-center gap-1 mt-0.5">
-                  <FileCheck size={14} />
-                  <span>{data.addressProofFileName || 'address_proof_verified.pdf'}</span>
-                </span>
+                <span className="block text-gray-400 font-medium text-[11px]">Uploaded Document File</span>
+                {data.addressProofDoc ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    {data.addressProofDoc.startsWith('data:image/') || (data.addressProofFileName && data.addressProofFileName.match(/\.(png|jpe?g|webp)$/i)) ? (
+                      <img src={data.addressProofDoc} alt="Document Preview" className="w-10 h-10 rounded-lg object-cover border border-gray-300" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg bg-teal-50 text-teal-800 flex items-center justify-center border border-teal-200 shrink-0">
+                        <FileCheck size={18} />
+                      </div>
+                    )}
+                    <div>
+                      <span className="font-bold text-teal-950 text-xs block truncate max-w-[150px]">
+                        {data.addressProofFileName || 'address_proof.pdf'}
+                      </span>
+                      <a
+                        href={data.addressProofDoc}
+                        target="_blank"
+                        rel="noreferrer"
+                        download={data.addressProofFileName || 'address_proof'}
+                        className="text-[10px] text-brand-teal font-bold hover:underline"
+                      >
+                        View / Download ↗
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <span className="font-semibold text-teal-800 flex items-center gap-1 mt-0.5">
+                    <FileCheck size={14} />
+                    <span>{data.addressProofFileName || 'Verified Document Attached'}</span>
+                  </span>
+                )}
               </div>
             </div>
           )}

@@ -15,8 +15,10 @@ export default function ProductCard({ product }) {
   const price = product?.price || 0;
   const originalPrice = product?.originalPrice || product?.mrp || (price > 0 && product?.discountPercentage ? Math.round(price / (1 - product.discountPercentage / 100)) : null);
   const image = product?.image || (Array.isArray(product?.images) && product.images[0]) || '/images/gel-pen-set.jpg';
-  const rating = product?.rating || product?.averageRating || 4.5;
-  const reviewsCount = product?.reviewsCount || product?.reviews || product?.numReviews || 0;
+  const rawRating = product?.rating ?? product?.averageRating;
+  const rating = rawRating !== undefined && rawRating !== null ? Number(rawRating) : 0;
+  const rawReviewsCount = product?.reviewsCount ?? product?.reviews ?? product?.numReviews;
+  const reviewsCount = rawReviewsCount !== undefined && rawReviewsCount !== null ? Number(rawReviewsCount) : 0;
   const badge = product?.discountBadge || (Array.isArray(product?.tags) && product.tags[0]) || (product?.discountPercentage ? `${product.discountPercentage}% OFF` : '');
 
   const getBadgeStyle = (badgeText) => {
@@ -120,13 +122,14 @@ export default function ProductCard({ product }) {
                   key={i}
                   size={10}
                   className="sm:w-3 sm:h-3"
-                  fill={i < Math.floor(product.rating) ? 'currentColor' : 'none'}
+                  fill={i < Math.floor(rating) && rating > 0 ? 'currentColor' : 'none'}
                   stroke="currentColor"
                 />
               ))}
             </div>
+            <span className="font-bold text-gray-700">{rating.toFixed(1)}</span>
             <span className="text-[10px] sm:text-[11px] text-gray-400 hidden xs:inline">
-              ({(product.reviewsCount || product.reviews || 0).toLocaleString()})
+              ({reviewsCount.toLocaleString()})
             </span>
           </div>
 
