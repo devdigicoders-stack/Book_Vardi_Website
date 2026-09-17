@@ -1,18 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowRight, Sparkles, CheckCircle2, ShoppingBag } from 'lucide-react';
-import { HERO_SLIDES } from '../../data/mockData';
+const DEFAULT_SLIDES = [
+  {
+    id: 1,
+    eyebrow: 'Official School Store',
+    title: 'Everything You Need, All in One Place.',
+    description: 'Official uniforms, NCERT books, curated stationery kits, and school supplies delivered directly to your doorstep.',
+    primaryCta: 'Shop School Kits',
+    secondaryCta: 'Explore Categories',
+    image: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=1200&auto=format&fit=crop&q=80'
+  },
+  {
+    id: 2,
+    eyebrow: 'Verified School Partner',
+    title: 'Curated Study Kits & Class Bundles',
+    description: 'Get standard-wise books, notebooks, drawing sets, and uniform accessories tailored specifically for your school.',
+    primaryCta: 'Find Your School',
+    secondaryCta: 'Browse Supplies',
+    image: 'https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=1200&auto=format&fit=crop&q=80'
+  },
+  {
+    id: 3,
+    eyebrow: 'Express Delivery',
+    title: '100% Eco-Friendly & Premium Supplies',
+    description: 'Certified non-toxic paper, ergonomic backpacks, and durable stationery for students of all ages.',
+    primaryCta: 'Shop New Arrivals',
+    secondaryCta: 'View Special Offers',
+    image: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=1200&auto=format&fit=crop&q=80'
+  }
+];
 
 export default function HeroSection({ onNavigate }) {
   const [activeSlide, setActiveSlide] = useState(0);
-  const slide = HERO_SLIDES[activeSlide];
+  const slides = DEFAULT_SLIDES;
+  const slide = slides[activeSlide] || slides[0];
 
   // Auto-scroll functionality
   useEffect(() => {
+    if (slides.length <= 1) return;
     const timer = setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % HERO_SLIDES.length);
+      setActiveSlide((prev) => (prev + 1) % slides.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [slides.length]);
 
   const handleShopNow = () => {
     if (onNavigate) onNavigate('products');
@@ -43,8 +73,7 @@ export default function HeroSection({ onNavigate }) {
             </span>
 
             <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-extrabold text-white lg:text-brand-teal tracking-tight leading-[1.15]">
-              Everything You Need,{' '}
-              <span className="text-brand-yellow lg:text-brand-pink block sm:inline">All in One Place.</span>
+              {slide.title}
             </h1>
 
             <p className="text-white/90 lg:text-gray-600 text-sm sm:text-base lg:text-lg leading-relaxed max-w-lg">
@@ -84,7 +113,7 @@ export default function HeroSection({ onNavigate }) {
 
             {/* Pagination Dots */}
             <div className="flex items-center gap-2 pt-2 sm:pt-4">
-              {HERO_SLIDES.map((_, index) => (
+              {slides.map((_, index) => (
                 <button
                   key={index}
                   className={`h-2 rounded-full transition-all cursor-pointer ${

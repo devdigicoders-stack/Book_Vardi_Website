@@ -19,7 +19,24 @@ import {
   TwitterIcon,
   FacebookIcon
 } from '../Common/SocialIcons';
-import { ABOUT_DATA } from '../../data/mockData';
+
+const ABOUT_DATA = {
+  mission: 'To make authentic, school-approved uniforms, textbooks, and kits accessible to every parent and student across India.',
+  story: 'Book Vardi was founded with a clear objective: simplify the school shopping experience for families. By partnering directly with educational institutions and verified manufacturers, we deliver genuine uniforms and syllabus-aligned books right to your doorstep.',
+  stats: [
+    { label: 'Partner Schools', value: '50+' },
+    { label: 'Students Served', value: '10,000+' },
+    { label: 'Genuine Products', value: '100%' },
+    { label: 'Cities Covered', value: '25+' }
+  ],
+  values: [
+    { id: 1, title: 'Authenticity Guarantee', desc: '100% genuine NCERT books and school-approved uniforms.', icon: 'ShieldCheck' },
+    { id: 2, title: 'Student-Centric Care', desc: 'Tailored kit bundles to save parents time and expense.', icon: 'Smile' },
+    { id: 3, title: 'Quality Assurance', desc: 'Durable, breathable fabrics designed for daily school life.', icon: 'Leaf' }
+  ],
+  team: [],
+  testimonials: []
+};
 
 const ICON_MAP = {
   Leaf: Leaf,

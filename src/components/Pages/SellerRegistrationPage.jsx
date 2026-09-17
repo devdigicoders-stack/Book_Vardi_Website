@@ -48,7 +48,7 @@ export default function SellerRegistrationPage({ onNavigate }) {
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2 text-xs text-brand-yellow font-semibold">
             <span className="flex items-center gap-1">
-              <ShieldCheck size={14} /> Instant Document Verification
+              <ShieldCheck size={14} /> Automated KYC Verification
             </span>
             <span>•</span>
             <span>Zero Listing Fee</span>

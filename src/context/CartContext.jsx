@@ -1,6 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { USERS, MOCK_USER_PROFILE, ALL_PRODUCTS, PROMOTIONS, ORDERS as MOCK_ORDERS } from '../data/mockData';
-import { pushPlatformSync, usePlatformSyncListener } from '../utils/syncBridge';
 import {
   backendEnabled,
   loginWithBackend,
@@ -48,96 +46,7 @@ export const EMPTY_USER_PROFILE = {
   addresses: []
 };
 
-const INITIAL_MOCK_REVIEWS = {
-  1: [
-    {
-      id: 101,
-      name: 'Aanya Sharma',
-      institution: 'IIT Delhi',
-      rating: 5,
-      date: '2 days ago',
-      title: 'Best notebook for engineering math & note-taking!',
-      comment: 'The 100 GSM paper has zero bleedthrough even with gel pens and mild highlighters. The spiral binding lays flat perfectly on lecture desks.',
-      helpfulCount: 28
-    },
-    {
-      id: 102,
-      name: 'Rohan Verma',
-      institution: "St. Stephen's College",
-      rating: 5,
-      date: '1 week ago',
-      title: 'Smooth, durable cover & premium feel',
-      comment: 'Been using this for my semester notes. The micro-perforated edges make tearing out summary sheets super clean without ripping.',
-      helpfulCount: 15
-    },
-    {
-      id: 103,
-      name: 'Priya Nair',
-      institution: 'DPS R.K. Puram',
-      rating: 4,
-      date: '2 weeks ago',
-      title: 'Great quality, highly recommend for students',
-      comment: 'Very aesthetic pastel look and great line spacing. Fits easily into my backpack.',
-      helpfulCount: 9
-    }
-  ],
-  2: [
-    {
-      id: 201,
-      name: 'Arjun Mehta',
-      institution: 'BITS Pilani',
-      rating: 5,
-      date: '3 days ago',
-      title: 'Incredible ink flow! No smudging during rapid exams',
-      comment: 'These 0.5mm gel pens write like butter. Fast drying ink means no blue smudges across my hand during long 3-hour exam sessions.',
-      helpfulCount: 42
-    },
-    {
-      id: 202,
-      name: 'Kavya Iyer',
-      institution: 'Miranda House',
-      rating: 5,
-      date: '2 weeks ago',
-      title: 'Favorite pen set of the year',
-      comment: 'The matte barrels are so comfortable to hold. 10 pens for ₹249 is an absolute steal for this quality.',
-      helpfulCount: 19
-    }
-  ],
-  3: [
-    {
-      id: 301,
-      name: 'Sneha Patel',
-      institution: 'National Law University',
-      rating: 5,
-      date: 'Yesterday',
-      title: 'Soft pastel shades that do not bleed or distract',
-      comment: 'Unlike neon highlighters that hurt your eyes, these pastel tones are calm, legible and do not soak through standard textbook pages.',
-      helpfulCount: 34
-    },
-    {
-      id: 302,
-      name: 'Varun Rao',
-      institution: 'Symbiosis Pune',
-      rating: 4,
-      date: '5 days ago',
-      title: 'Great chisel tip for thin & thick highlighting',
-      comment: 'Very versatile tip. Perfect for law case briefs and textbook margins.',
-      helpfulCount: 11
-    }
-  ],
-  4: [
-    {
-      id: 401,
-      name: 'Meera Sen',
-      institution: 'SRCC Delhi',
-      rating: 5,
-      date: '4 days ago',
-      title: 'Keeps my study desk spotless and organized',
-      comment: 'Has separate slots for pens, sticky notes, phone stand, and calculator. Extremely sturdy and looks beautiful on my desk.',
-      helpfulCount: 22
-    }
-  ]
-};
+const INITIAL_MOCK_REVIEWS = {};
 
 export function getProfileCompleteness(profile) {
   const missing = [];
@@ -200,19 +109,15 @@ export function CartProvider({ children }) {
   const [registeredUsers, setRegisteredUsers] = useState(() => {
     try {
       const saved = localStorage.getItem('book_vardi_registered_users');
-      const customUsers = saved ? JSON.parse(saved) : [];
-      return [...USERS, ...customUsers];
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return USERS;
+      return [];
     }
   });
 
   useEffect(() => {
     try {
-      const customUsers = registeredUsers.filter(
-        (u) => !USERS.some((orig) => orig.id === u.id || (orig.phone && u.phone && orig.phone === u.phone))
-      );
-      localStorage.setItem('book_vardi_registered_users', JSON.stringify(customUsers));
+      localStorage.setItem('book_vardi_registered_users', JSON.stringify(registeredUsers));
     } catch (e) {
       console.error(e);
     }
@@ -264,18 +169,18 @@ export function CartProvider({ children }) {
   const [products, setProducts] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_sync_products');
-      return saved ? JSON.parse(saved) : ALL_PRODUCTS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return ALL_PRODUCTS;
+      return [];
     }
   });
 
   const [promotions, setPromotions] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_sync_promotions');
-      return saved ? JSON.parse(saved) : (PROMOTIONS || []);
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return PROMOTIONS || [];
+      return [];
     }
   });
 
@@ -291,6 +196,8 @@ export function CartProvider({ children }) {
       return INITIAL_MOCK_REVIEWS;
     }
   });
+
+
 
   // Most recently placed order (for Order Success Confirmation)
   const [lastPlacedOrder, setLastPlacedOrder] = useState(() => {
@@ -324,12 +231,22 @@ export function CartProvider({ children }) {
     )
   );
 
-  // Seller status & authorization state (derived from current user profile)
+  // Seller status & authorization state (derived from current user profile & local storage keys)
   const [sellerStatus, setSellerStatus] = useState(() => {
     try {
       const saved = localStorage.getItem('book_vardi_seller_status');
-      if (saved) return JSON.parse(saved);
-      return userProfile?.sellerStatus || (userProfile?.isSeller ? 'approved' : 'none');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed) return String(parsed).toLowerCase();
+      }
+      const regData = localStorage.getItem('bv_seller_reg_data');
+      if (regData) {
+        const parsed = JSON.parse(regData);
+        if (parsed.submissionStatus || parsed.status) {
+          return String(parsed.submissionStatus || parsed.status).toLowerCase();
+        }
+      }
+      return String(userProfile?.sellerStatus || (userProfile?.isSeller ? 'approved' : 'none')).toLowerCase();
     } catch {
       return 'none';
     }
@@ -346,11 +263,22 @@ export function CartProvider({ children }) {
 
   const [isSellerModalOpen, setIsSellerModalOpen] = useState(false);
 
-  // Approved seller check: user must be an approved seller in mockData
+  // Helper check for approved seller status
+  const checkStatusApproved = (stat) => {
+    if (!stat) return false;
+    const s = String(stat).toLowerCase().trim();
+    return s === 'approved' || s === 'active' || s === 'verified';
+  };
+
+  // Approved seller check: user is approved if sellerStatus, userProfile, or sellerProfile has approved status
   const isSeller = Boolean(
     isAuthenticated && (
-      (userProfile?.isSeller === true && (userProfile?.sellerStatus === 'approved' || sellerStatus === 'approved')) ||
-      (sellerStatus === 'approved' && ['Partner Merchant', 'Store Manager', 'Catalog Specialist', 'Logistics Lead', 'Seller'].includes(userProfile?.role))
+      userProfile?.isSeller === true ||
+      checkStatusApproved(sellerStatus) ||
+      checkStatusApproved(userProfile?.sellerStatus) ||
+      checkStatusApproved(sellerProfile?.status) ||
+      checkStatusApproved(sellerProfile?.submissionStatus) ||
+      ['Partner Merchant', 'Store Manager', 'Catalog Specialist', 'Logistics Lead', 'Seller', 'Merchant'].includes(userProfile?.role)
     )
   );
 
@@ -358,7 +286,7 @@ export function CartProvider({ children }) {
   useEffect(() => {
     if (userProfile) {
       const currentAdminStat = userProfile.adminStatus || (userProfile.isAdmin ? 'approved' : 'none');
-      const currentSellerStat = userProfile.sellerStatus || (userProfile.isSeller ? 'approved' : 'none');
+      const currentSellerStat = userProfile.sellerStatus || (userProfile.isSeller ? 'approved' : sellerStatus || 'none');
       setAdminStatus(currentAdminStat);
       setSellerStatus(currentSellerStat);
       try {
@@ -377,6 +305,7 @@ export function CartProvider({ children }) {
       fetchUserProfileFromBackend(identifier)
         .then((dbUser) => {
           if (dbUser) {
+            const dbSellerStat = dbUser.sellerStatus || (dbUser.isSeller ? 'approved' : undefined);
             setUserProfile((prev) => ({
               ...prev,
               id: dbUser.id || dbUser._id || prev?.id,
@@ -385,11 +314,19 @@ export function CartProvider({ children }) {
               phone: dbUser.phone || prev?.phone,
               avatar: dbUser.avatar || prev?.avatar,
               role: dbUser.role || prev?.role,
+              isSeller: dbUser.isSeller !== undefined ? dbUser.isSeller : (dbSellerStat === 'approved' || prev?.isSeller),
+              sellerStatus: dbSellerStat || prev?.sellerStatus,
               institution: dbUser.institution !== undefined ? dbUser.institution : prev?.institution,
               studentId: dbUser.studentId !== undefined ? dbUser.studentId : prev?.studentId,
               standard: dbUser.standard !== undefined ? dbUser.standard : prev?.standard,
               addresses: Array.isArray(dbUser.addresses) && dbUser.addresses.length > 0 ? dbUser.addresses : (prev?.addresses || [])
             }));
+            if (dbSellerStat) {
+              setSellerStatus(dbSellerStat);
+              try {
+                localStorage.setItem('book_vardi_seller_status', JSON.stringify(dbSellerStat));
+              } catch (e) {}
+            }
           }
         })
         .catch(() => {});
@@ -399,7 +336,8 @@ export function CartProvider({ children }) {
   useEffect(() => {
     if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
       const phone = userProfile?.phone || '';
-      fetchWishlistFromBackend(phone)
+      const userId = userProfile?.id || userProfile?._id || '';
+      fetchWishlistFromBackend(phone, userId)
         .then((res) => {
           if (res?.productIds && Array.isArray(res.productIds)) {
             setWishlist(res.productIds);
@@ -412,7 +350,8 @@ export function CartProvider({ children }) {
   useEffect(() => {
     if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
       const phone = userProfile?.phone || '';
-      fetchCartFromBackend(phone)
+      const userId = userProfile?.id || userProfile?._id || '';
+      fetchCartFromBackend(phone, userId)
         .then((res) => {
           if (res?.cart?.items && Array.isArray(res.cart.items)) {
             setCartItems(res.cart.items);
@@ -470,10 +409,6 @@ export function CartProvider({ children }) {
       onboardingStep: data?.currentStep || 12,
       rawApplication: data
     };
-
-    pushPlatformSync({
-      sellers: [newSellerEntry]
-    });
 
     showToast('Seller application submitted successfully! 🚀');
   };
@@ -552,75 +487,33 @@ export function CartProvider({ children }) {
     } catch (e) {}
   }, [promotions]);
 
-  // Real-time synchronization subscription across ports & tabs
-  usePlatformSyncListener((incoming) => {
-    if (!incoming) return;
-    if (incoming.products && Array.isArray(incoming.products)) {
-      setProducts(incoming.products);
-    }
-    if (incoming.promotions && Array.isArray(incoming.promotions)) {
-      setPromotions(incoming.promotions);
-    }
-    if (incoming.reviews) {
-      setProductReviews((prev) => ({ ...prev, ...incoming.reviews }));
-    }
-    // If an admin approved or verified this user's seller store
-    if (incoming.sellers && Array.isArray(incoming.sellers)) {
-      const currentEmail = userProfile?.email?.toLowerCase();
-      const matchingSeller = incoming.sellers.find(
-        (s) => s.email?.toLowerCase() === currentEmail || (sellerProfile && s.storeName === sellerProfile.storeName)
-      );
-      if (matchingSeller) {
-        if (matchingSeller.status === 'Verified' || matchingSeller.status === 'Approved') {
-          setSellerStatus('approved');
-          setUserProfile((prev) => ({
-            ...prev,
-            isSeller: true,
-            sellerStatus: 'approved'
-          }));
-        } else if (matchingSeller.status === 'Rejected') {
-          setSellerStatus('rejected');
-          setUserProfile((prev) => ({
-            ...prev,
-            isSeller: false,
-            sellerStatus: 'rejected'
-          }));
-        }
-      }
-    }
-    // Update tracking status of user's orders if updated by seller or admin
-    if (incoming.orders && Array.isArray(incoming.orders)) {
-      setUserProfile((prev) => {
-        if (!prev || !prev.orders || prev.orders.length === 0) return prev;
-        let modified = false;
-        const newOrders = prev.orders.map((userOrd) => {
-          const matched = incoming.orders.find((o) => o.id === userOrd.id);
-          if (matched && (matched.status !== userOrd.status || matched.trackingNumber !== userOrd.trackingNumber)) {
-            modified = true;
-            return {
-              ...userOrd,
-              status: matched.status || userOrd.status,
-              trackingNumber: matched.trackingNumber || userOrd.trackingNumber
-            };
-          }
-          return userOrd;
-        });
-        return modified ? { ...prev, orders: newOrders } : prev;
-      });
-    }
 
-    // Reset cart across tabs if order was placed on another tab
-    if (incoming.cartResetForPhone && userProfile?.phone) {
-      const incDigits = String(incoming.cartResetForPhone).replace(/\D/g, '');
-      const userDigits = String(userProfile.phone).replace(/\D/g, '');
-      if (incDigits && userDigits && (incDigits.endsWith(userDigits.slice(-10)) || userDigits.endsWith(incDigits.slice(-10)))) {
-        setCartItems([]);
-        try {
-          localStorage.removeItem('book_vardi_items_v2');
-        } catch (e) {}
-      }
+
+  // Recently Viewed Product Tracking State
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_recently_viewed_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
     }
   });
+
+  const addRecentlyViewed = (productOrId) => {
+    if (!productOrId) return;
+    const id = typeof productOrId === 'object' ? (productOrId.id || productOrId._id) : productOrId;
+    if (!id) return;
+    const strId = String(id);
+    setRecentlyViewedIds((prev) => {
+      const filtered = prev.filter((item) => String(item) !== strId);
+      const updated = [strId, ...filtered].slice(0, 20);
+      try {
+        localStorage.setItem('bv_recently_viewed_ids', JSON.stringify(updated));
+      } catch (e) {}
+      window.dispatchEvent(new CustomEvent('bv_recently_viewed_updated', { detail: updated }));
+      return updated;
+    });
+  };
 
   // Trigger temporary notification
   const showToast = (message) => {
@@ -632,6 +525,9 @@ export function CartProvider({ children }) {
 
   const openProductDetails = (product) => {
     setSelectedProduct(product);
+    if (product) {
+      addRecentlyViewed(product);
+    }
   };
 
   const closeProductDetails = () => {
@@ -669,9 +565,19 @@ export function CartProvider({ children }) {
 
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
-      addToCartInBackend(product, qtyToAdd, phone).catch(() => {});
+      const userId = userProfile?.id || userProfile?._id || '';
+      addToCartInBackend(product, qtyToAdd, phone, userId)
+        .then((res) => {
+          if (res?.cart?.items && Array.isArray(res.cart.items)) {
+            setCartItems(res.cart.items);
+          }
+        })
+        .catch((err) => {
+          console.error('Add to cart backend error:', err);
+        });
+
       if (inWishlist && prodId) {
-        removeFromWishlistInBackend(prodId, phone)
+        removeFromWishlistInBackend(prodId, phone, userId)
           .then((res) => {
             if (res?.productIds && Array.isArray(res.productIds)) {
               setWishlist(res.productIds);
@@ -687,12 +593,13 @@ export function CartProvider({ children }) {
     if (!isAuthenticated) return false;
     const strId = String(id);
     const phone = userProfile?.phone || '';
+    const userId = userProfile?.id || userProfile?._id || '';
 
     setWishlist((prev) => prev.filter((item) => String(item) !== strId));
     showToast('Removed item from your wishlist');
 
     if (backendEnabled) {
-      removeFromWishlistInBackend(id, phone)
+      removeFromWishlistInBackend(id, phone, userId)
         .then((res) => {
           if (res?.productIds && Array.isArray(res.productIds)) {
             setWishlist(res.productIds);
@@ -708,10 +615,19 @@ export function CartProvider({ children }) {
   };
 
   const removeFromCart = (id) => {
-    setCartItems((prev) => prev.filter((item) => String(item.id) !== String(id)));
+    setCartItems((prev) => prev.filter((item) => String(item.id || item.productId || item._id) !== String(id)));
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
-      removeFromCartInBackend(id, phone).catch(() => {});
+      const userId = userProfile?.id || userProfile?._id || '';
+      removeFromCartInBackend(id, phone, userId)
+        .then((res) => {
+          if (res?.cart?.items && Array.isArray(res.cart.items)) {
+            setCartItems(res.cart.items);
+          }
+        })
+        .catch((err) => {
+          console.error('Remove from cart backend error:', err);
+        });
     }
   };
 
@@ -724,7 +640,7 @@ export function CartProvider({ children }) {
     setCartItems((prev) =>
       prev
         .map((item) => {
-          if (String(item.id) === String(id)) {
+          if (String(item.id || item.productId || item._id) === String(id)) {
             const newQty = item.quantity + delta;
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
@@ -734,18 +650,39 @@ export function CartProvider({ children }) {
     );
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
-      updateCartItemInBackend(id, delta, phone).catch(() => {});
+      const userId = userProfile?.id || userProfile?._id || '';
+      updateCartItemInBackend(id, delta, phone, userId)
+        .then((res) => {
+          if (res?.cart?.items && Array.isArray(res.cart.items)) {
+            setCartItems(res.cart.items);
+          }
+        })
+        .catch((err) => {
+          console.error('Update cart item backend error:', err);
+        });
     }
   };
 
-  const toggleWishlist = (id) => {
+  const toggleWishlist = (idOrProduct, productObj = null) => {
     if (!isAuthenticated) {
       openAuthModal('login');
       showToast('Please log in to save items to your wishlist! ❤️');
       return false;
     }
+
+    let id;
+    let product = productObj;
+
+    if (typeof idOrProduct === 'object' && idOrProduct !== null) {
+      product = idOrProduct;
+      id = idOrProduct.id || idOrProduct._id || idOrProduct.productId;
+    } else {
+      id = idOrProduct;
+    }
+
     const numId = isNaN(id) ? id : Number(id);
     const phone = userProfile?.phone || '';
+    const userId = userProfile?.id || userProfile?._id || '';
 
     setWishlist((prev) => {
       const exists = prev.some((item) => String(item) === String(id));
@@ -759,7 +696,7 @@ export function CartProvider({ children }) {
     });
 
     if (backendEnabled) {
-      toggleWishlistInBackend(id, phone)
+      toggleWishlistInBackend(id, phone, userId, product)
         .then((res) => {
           if (res?.productIds && Array.isArray(res.productIds)) {
             setWishlist(res.productIds);
@@ -823,7 +760,7 @@ export function CartProvider({ children }) {
   const displayedCartItems = isAuthenticated ? cartItems : [];
   const displayedWishlist = isAuthenticated ? wishlist : [];
 
-  const wishlistProducts = ALL_PRODUCTS.filter((product) =>
+  const wishlistProducts = (products || []).filter((product) =>
     displayedWishlist.some((id) => Number(id) === Number(product.id))
   );
 
@@ -1084,7 +1021,7 @@ export function CartProvider({ children }) {
     }
 
     setIsAuthenticated(true);
-    const matched = USERS.find((u) => u.email.toLowerCase() === email);
+    const matched = registeredUsers.find((u) => u.email && email && u.email.toLowerCase() === email.toLowerCase());
 
     let resolvedProfile;
     if (matched) {
@@ -1115,8 +1052,8 @@ export function CartProvider({ children }) {
   };
 
   const switchUser = (userIdOrEmail) => {
-    const target = USERS.find(
-      (u) => u.id === userIdOrEmail || u.email.toLowerCase() === String(userIdOrEmail).toLowerCase()
+    const target = registeredUsers.find(
+      (u) => u.id === userIdOrEmail || (u.email && u.email.toLowerCase() === String(userIdOrEmail).toLowerCase())
     );
     if (target) {
       setIsAuthenticated(true);
@@ -1173,6 +1110,10 @@ export function CartProvider({ children }) {
         };
 
         setRegisteredUsers((prev) => [...prev, freshProfile]);
+        setIsAuthenticated(true);
+        setUserProfile(freshProfile);
+        closeAuthModal();
+        showToast(`🎉 Registration successful! Welcome, ${freshProfile.name || 'Student'}! ✨`);
         return freshProfile;
       } catch (error) {
         showToast(error.message || 'User already registered. Login please');
@@ -1204,12 +1145,16 @@ export function CartProvider({ children }) {
     };
 
     setRegisteredUsers((prev) => [...prev, freshProfile]);
+    setIsAuthenticated(true);
+    setUserProfile(freshProfile);
+    closeAuthModal();
     setWishlist([]);
     setCartItems([]);
     try {
       localStorage.removeItem('book_vardi_wishlist_v2');
       localStorage.removeItem('book_vardi_items_v2');
     } catch (e) {}
+    showToast(`🎉 Registration successful! Welcome, ${freshProfile.name || 'Student'}! ✨`);
     return freshProfile;
   };
 
@@ -1341,9 +1286,12 @@ export function CartProvider({ children }) {
       const approvedList = list.filter((r) => r.status === 'approved' || !r.status);
       const count = approvedList.length;
       const avg = count > 0 ? Number((approvedList.reduce((sum, r) => sum + r.rating, 0) / count).toFixed(1)) : 0;
-      setProducts((prevProducts) =>
-        prevProducts.map((p) => {
+      setProducts((prevProducts) => {
+        let changed = false;
+        const updated = prevProducts.map((p) => {
           if (String(p.id || p._id) === String(productId)) {
+            if (p.averageRating === avg && (p.numReviews === count || p.reviewsCount === count)) return p;
+            changed = true;
             return {
               ...p,
               rating: avg,
@@ -1354,8 +1302,9 @@ export function CartProvider({ children }) {
             };
           }
           return p;
-        })
-      );
+        });
+        return changed ? updated : prevProducts;
+      });
     }
     return list;
   };
@@ -1382,9 +1331,9 @@ export function CartProvider({ children }) {
       [productId]: updatedList
     }));
 
-    pushPlatformSync({
-      reviews: { [productId]: updatedList }
-    });
+    try {
+      localStorage.setItem('bv_sync_reviews', JSON.stringify({ [productId]: updatedList }));
+    } catch (e) {}
 
     if (backendEnabled) {
       try {
@@ -1407,6 +1356,23 @@ export function CartProvider({ children }) {
               ...prev,
               [productId]: [res.review, ...filtered]
             };
+          });
+        }
+        if (res?.averageRating !== undefined) {
+          const newAvg = Number(res.averageRating);
+          const newNum = Number(res.numReviews) || 1;
+          setProducts((prevProducts) =>
+            prevProducts.map((p) =>
+              (p._id === productId || p.id === productId || String(p._id) === String(productId) || String(p.id) === String(productId))
+                ? { ...p, averageRating: newAvg, rating: newAvg, numReviews: newNum }
+                : p
+            )
+          );
+          setSelectedProduct((prev) => {
+            if (prev && (prev._id === productId || prev.id === productId || String(prev._id) === String(productId) || String(prev.id) === String(productId))) {
+              return { ...prev, averageRating: newAvg, rating: newAvg, numReviews: newNum };
+            }
+            return prev;
           });
         }
       } catch (err) {
@@ -1500,13 +1466,6 @@ export function CartProvider({ children }) {
 
     setProducts(updatedProducts);
 
-    // Push new order and updated inventory to all 3 portals (Admin, Seller, User)
-    pushPlatformSync({
-      orders: [platformOrder],
-      products: updatedProducts,
-      cartResetForPhone: userProfile?.phone || ''
-    });
-
     setLastPlacedOrder(newOrder);
     setCartItems([]);
     setAppliedCoupon(null);
@@ -1585,6 +1544,8 @@ export function CartProvider({ children }) {
         selectedProduct,
         openProductDetails,
         closeProductDetails,
+        recentlyViewedIds,
+        addRecentlyViewed,
         productReviews,
         addProductReview,
         fetchReviewsForProduct,
@@ -1593,7 +1554,6 @@ export function CartProvider({ children }) {
         appliedCoupon,
         applyCoupon,
         removeCoupon,
-        clearCart,
         placeOrder,
         sellerStatus,
         setSellerStatus,
@@ -1606,7 +1566,7 @@ export function CartProvider({ children }) {
         isAdmin,
         adminStatus,
         setAdminStatus,
-        USERS,
+        USERS: registeredUsers,
         registeredUsers,
         isUserRegistered,
         switchUser

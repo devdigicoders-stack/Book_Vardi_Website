@@ -1,23 +1,22 @@
 import React from 'react';
 import { Truck, ShieldCheck, Award, RotateCcw, Headphones } from 'lucide-react';
-import { VALUE_PROPS } from '../../data/mockData';
-
-const ICON_MAP = {
-  Truck: Truck,
-  ShieldCheck: ShieldCheck,
-  Award: Award,
-  RotateCcw: RotateCcw,
-  Headphones: Headphones
-};
+const FEATURES = [
+  { id: 1, title: '100% Genuine Books', desc: 'Direct from NCERT & top publishers', icon: 'Award' },
+  { id: 2, title: 'School-Approved Uniforms', desc: 'Exact color, pattern & embroidery', icon: 'ShieldCheck' },
+  { id: 3, title: 'Fast Doorstep Delivery', desc: 'Pan-India shipping within 3-5 days', icon: 'Truck' },
+  { id: 4, title: 'Easy Returns & Swap', desc: 'Hassle-free 7-day exchange guarantee', icon: 'RotateCcw' },
+  { id: 5, title: '24/7 Student Support', desc: 'Instant WhatsApp & phone helpdesk', icon: 'Headphones' }
+];
 
 export default function FeaturesBar() {
   return (
     <section className="bg-white py-8 border-b border-gray-100">
       <div className="container mx-auto px-4">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-6">
-          {VALUE_PROPS.map((item, idx) => {
-            const IconComponent = ICON_MAP[item.icon] || Award;
-            const isLast = idx === VALUE_PROPS.length - 1;
+          {FEATURES.map((item, idx) => {
+            const iconMap = { Truck, ShieldCheck, Award, RotateCcw, Headphones };
+            const IconComponent = iconMap[item.icon] || Award;
+            const isLast = idx === FEATURES.length - 1;
             return (
               <div
                 key={item.id}

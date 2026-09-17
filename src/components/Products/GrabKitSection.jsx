@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, School, GraduationCap, ArrowRight, Package, ChevronDown, Check, ShoppingCart } from 'lucide-react';
-import { KIT_BUNDLES } from '../../data/mockData';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import KitCard from './KitCard';
@@ -48,16 +47,80 @@ export default function GrabKitSection({ onNavigate }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const { isSchoolWithinRadius, schoolRadiusKm } = useLocation();
+  const { userLocation, locationLabel, schools: partnerSchools } = useLocation();
 
-  const availableSchools = [...new Set(KIT_BUNDLES.map((kit) => kit.school))]
-    .filter((s) => s === 'Any School' || isSchoolWithinRadius(s))
-    .sort();
-  const availableClasses = [...new Set(KIT_BUNDLES.map((kit) => kit.className))].sort();
+  // Extract user pincode and its 3rd digit (index 2, reading left-to-right)
+  const userPincode = useMemo(() => {
+    if (userLocation?.pincode) return String(userLocation.pincode).trim();
+    const match = (locationLabel || '').match(/\b\d{6}\b/);
+    return match ? match[0] : '226010'; // Default Lucknow pin
+  }, [userLocation, locationLabel]);
 
-  const filteredSchools = availableSchools.filter((s) =>
-    s.toLowerCase().includes(schoolQuery.toLowerCase())
-  );
+  const pincode3rdDigit = useMemo(() => {
+    return userPincode && userPincode.length >= 3 ? userPincode.charAt(2) : '6';
+  }, [userPincode]);
+
+  // Group schools into nearby district matches (pincode 3rd digit) and other partner schools
+  const { nearby3rdDigitSchools, otherSchools } = useMemo(() => {
+    const matched = [];
+    const others = [];
+
+    const allSchoolNames = [...new Set([
+      ...partnerSchools.map((s) => ({ name: s.shortName || s.name, fullObj: s }))
+    ])].filter((item, index, self) => item.name && self.findIndex(t => t.name === item.name) === index);
+
+    allSchoolNames.forEach((item) => {
+      const schObj = item.fullObj;
+      const schPin = (schObj?.pincode || '').toString().trim();
+      if (schPin.length >= 3 && schPin.charAt(2) === pincode3rdDigit) {
+        matched.push(item.name);
+      } else {
+        others.push(item.name);
+      }
+    });
+
+    return {
+      nearby3rdDigitSchools: matched.sort(),
+      otherSchools: others.sort()
+    };
+  }, [partnerSchools, pincode3rdDigit]);
+
+  // Combined list for search filtering
+  const filteredNearbySchools = useMemo(() => {
+    const q = schoolQuery.toLowerCase().trim();
+    if (!q) return nearby3rdDigitSchools;
+    return nearby3rdDigitSchools.filter(s => s.toLowerCase().includes(q));
+  }, [nearby3rdDigitSchools, schoolQuery]);
+
+  const filteredOtherSchools = useMemo(() => {
+    const q = schoolQuery.toLowerCase().trim();
+    if (!q) return otherSchools;
+    return otherSchools.filter(s => s.toLowerCase().includes(q));
+  }, [otherSchools, schoolQuery]);
+
+  // Dynamic class list for selected school (or all unique classes if none selected)
+  const availableClasses = useMemo(() => {
+    if (schoolQuery.trim()) {
+      const selectedSchoolObj = partnerSchools.find(
+        (s) =>
+          (s.name && s.name.toLowerCase().includes(schoolQuery.toLowerCase())) ||
+          (s.shortName && s.shortName.toLowerCase().includes(schoolQuery.toLowerCase()))
+      );
+
+      if (selectedSchoolObj && Array.isArray(selectedSchoolObj.classes) && selectedSchoolObj.classes.length > 0) {
+        return selectedSchoolObj.classes;
+      }
+    }
+
+    // Default full sequence of classes
+    const defaultClasses = [
+      'Nursery', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3',
+      'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8',
+      'Class 9', 'Class 10', 'Class 11', 'Class 12'
+    ];
+    const kitClasses = [];
+    return [...new Set([...defaultClasses, ...kitClasses])];
+  }, [schoolQuery, partnerSchools]);
 
   return (
     <section className="py-6 bg-gradient-to-r from-brand-teal/5 via-brand-teal/10 to-brand-yellow/10 border-b border-gray-100 relative z-30 h-full">
@@ -89,20 +152,51 @@ export default function GrabKitSection({ onNavigate }) {
                 }}
                 className="w-full pl-9 pr-3 py-3 md:py-2 bg-transparent text-sm md:text-base focus:outline-none"
               />
-              {showSchoolDropdown && filteredSchools.length > 0 && (
-                <div className="absolute top-full left-0 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto py-2">
-                  {filteredSchools.map((school, i) => (
-                    <button
-                      key={i}
-                      className="w-full text-left px-4 py-3 md:py-2 text-sm text-gray-700 hover:bg-brand-teal/5 hover:text-brand-teal transition-colors"
-                      onClick={() => {
-                        setSchoolQuery(school);
-                        setShowSchoolDropdown(false);
-                      }}
-                    >
-                      {school}
-                    </button>
-                  ))}
+              {showSchoolDropdown && (filteredNearbySchools.length > 0 || filteredOtherSchools.length > 0) && (
+                <div className="absolute top-full left-0 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto py-2">
+                  {filteredNearbySchools.length > 0 && (
+                    <div>
+                      <div className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-teal-800 bg-teal-50 border-y border-teal-100/60 flex items-center justify-between">
+                        <span>Nearby Schools (PIN 3rd digit match: {pincode3rdDigit})</span>
+                        <span className="text-[9px] font-bold text-teal-600 bg-white px-1.5 py-0.2 rounded">PIN {userPincode}</span>
+                      </div>
+                      {filteredNearbySchools.map((school, i) => (
+                        <button
+                          key={`nearby-${i}`}
+                          type="button"
+                          className="w-full text-left px-4 py-2.5 text-xs sm:text-sm text-gray-800 hover:bg-brand-teal/5 hover:text-brand-teal font-medium transition-colors flex items-center justify-between"
+                          onClick={() => {
+                            setSchoolQuery(school);
+                            setShowSchoolDropdown(false);
+                          }}
+                        >
+                          <span className="font-semibold">{school}</span>
+                          <span className="text-[10px] text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full font-bold">Nearby</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {filteredOtherSchools.length > 0 && (
+                    <div>
+                      <div className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-gray-400 bg-gray-50 border-y border-gray-100">
+                        Other Partner Schools & Catalog
+                      </div>
+                      {filteredOtherSchools.map((school, i) => (
+                        <button
+                          key={`other-${i}`}
+                          type="button"
+                          className="w-full text-left px-4 py-2.5 text-xs sm:text-sm text-gray-700 hover:bg-brand-teal/5 hover:text-brand-teal transition-colors"
+                          onClick={() => {
+                            setSchoolQuery(school);
+                            setShowSchoolDropdown(false);
+                          }}
+                        >
+                          {school}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

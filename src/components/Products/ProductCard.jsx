@@ -56,7 +56,7 @@ export default function ProductCard({ product }) {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            toggleWishlist(productId);
+            toggleWishlist(productId, product);
           }}
           aria-label={isWishlisted ? `Remove ${title} from wishlist` : `Add ${title} to wishlist`}
           title={isWishlisted ? 'Liked' : 'Like'}

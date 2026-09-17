@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
-import { ALL_PRODUCTS, KIT_BUNDLES } from '../../data/mockData';
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import GrabKitSection from './GrabKitSection';
 
@@ -88,7 +87,11 @@ export default function ProductDetailPage({ onNavigate }) {
     fetchReviewsForProduct,
     userProfile,
     showToast,
-    cartItems
+    cartItems,
+    products = [],
+    promotions = [],
+    applyCoupon,
+    appliedCoupon
   } = useCart();
 
   const [quantity, setQuantity] = useState(1);
@@ -96,6 +99,82 @@ export default function ProductDetailPage({ onNavigate }) {
   const [helpfulVotes, setHelpfulVotes] = useState({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [selectedBundleItems, setSelectedBundleItems] = useState([]);
+  const [selectedCouponForDetails, setSelectedCouponForDetails] = useState(null);
+  const [appliedProductCouponMap, setAppliedProductCouponMap] = useState({});
+
+  const currentProductIdKey = selectedProduct?.id || selectedProduct?._id || 'default_product';
+  const currentAppliedCouponCode = appliedProductCouponMap[currentProductIdKey] || null;
+
+  // Available Offers & Coupons list
+  const availableCoupons = [
+    {
+      code: 'SCHOOL10',
+      title: 'Get 10% Flat Student Discount',
+      subtitle: '10% Off on all academic books & uniforms',
+      discountType: 'percentage',
+      discountValue: '10%',
+      minOrder: 0,
+      minOrderLabel: 'No Minimum Order Value',
+      expiry: 'Dec 31, 2026',
+      colorScheme: 'pink',
+      details: 'Applies a 10% instant price reduction on your entire cart subtotal. Valid for all registered students, parents, and schools. Only 1 coupon can be applied per order.'
+    },
+    {
+      code: 'STUDENT50',
+      title: '₹50 Flat Student Savings',
+      subtitle: 'Save ₹50 on orders above ₹399',
+      discountType: 'flat',
+      discountValue: '₹50',
+      minOrder: 399,
+      minOrderLabel: 'Min Order Value ₹399',
+      expiry: 'Dec 31, 2026',
+      colorScheme: 'teal',
+      details: 'Get flat ₹50 instant cashback discount when your cart value exceeds ₹399. Applies across notebooks, stationery kits, and school uniforms. Only 1 coupon can be applied per order.'
+    },
+    {
+      code: 'FREESHIP',
+      title: '100% Free Doorstep Delivery',
+      subtitle: 'Zero shipping charges on any cart value',
+      discountType: 'freeship',
+      discountValue: 'Free Delivery',
+      minOrder: 0,
+      minOrderLabel: 'No Minimum Order Value',
+      expiry: 'Dec 31, 2026',
+      colorScheme: 'yellow',
+      details: 'Waives 100% of shipping and delivery fees for doorstep student dispatch. Valid for all pin codes across India. Only 1 coupon can be applied per order.'
+    },
+    ...(promotions || []).map((p) => ({
+      code: p.code,
+      title: p.title || `${p.code} Promo Offer`,
+      subtitle: p.description || `Special offer on ${p.code}`,
+      discountType: p.discountType || 'percentage',
+      discountValue: p.discountValue ? `${p.discountValue}%` : 'Special Discount',
+      minOrder: p.minOrderValue || 0,
+      minOrderLabel: p.minOrderValue ? `Min Order Value ₹${p.minOrderValue}` : 'No Minimum Limit',
+      expiry: p.expiryDate ? new Date(p.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Limited Time',
+      colorScheme: 'teal',
+      details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`
+    }))
+  ];
+
+  const handleApplyCouponAndCheckout = (couponCode) => {
+    if (selectedProduct) {
+      addToCart(selectedProduct, quantity);
+    }
+    const res = applyCoupon(couponCode);
+    if (res && res.success !== false) {
+      setAppliedProductCouponMap((prev) => ({
+        ...prev,
+        [currentProductIdKey]: couponCode
+      }));
+      setSelectedCouponForDetails(null);
+      closeProductDetails();
+      setIsCartOpen(false);
+      if (onNavigate) {
+        onNavigate('checkout');
+      }
+    }
+  };
 
   // Review Form State
   const [showReviewForm, setShowReviewForm] = useState(false);
@@ -170,28 +249,21 @@ export default function ProductDetailPage({ onNavigate }) {
     : '0.0';
 
   // Recommendation products (exclude current)
-  const moreInKit = ALL_PRODUCTS.filter(
+  const moreInKit = (products || []).filter(
     (p) => p.id !== selectedProduct.id && p.category !== selectedProduct.category
   ).slice(0, 6);
 
-  const similarProducts = ALL_PRODUCTS.filter(
+  const similarProducts = (products || []).filter(
     (p) => p.id !== selectedProduct.id && p.category === selectedProduct.category
   ).slice(0, 6);
 
-  const helpfulProducts = ALL_PRODUCTS.filter(
+  const helpfulProducts = (products || []).filter(
     (p) => p.id !== selectedProduct.id && p.rating >= 4.8
   ).slice(0, 6);
 
   const { isSchoolWithinRadius } = useLocation();
 
-  const recommendedKits = KIT_BUNDLES
-    .filter((kit) => kit.id !== selectedProduct.id && (kit.school === 'Any School' || isSchoolWithinRadius(kit.school)))
-    .sort((firstKit, secondKit) => {
-      const firstMatch = firstKit.school === selectedProduct.school || firstKit.className === selectedProduct.className;
-      const secondMatch = secondKit.school === selectedProduct.school || secondKit.className === selectedProduct.className;
-      return Number(secondMatch) - Number(firstMatch);
-    })
-    .slice(0, 6);
+  const recommendedKits = [];
 
   const handleReviewSubmit = (e) => {
     e.preventDefault();
@@ -407,7 +479,7 @@ export default function ProductDetailPage({ onNavigate }) {
 
                   <button
                     type="button"
-                    onClick={() => toggleWishlist(selectedProduct.id)}
+                    onClick={() => toggleWishlist(selectedProduct.id, selectedProduct)}
                     className={`absolute top-3 right-3 z-10 w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center transition-all cursor-pointer shadow-xs ${
                       isWishlisted
                         ? 'text-brand-pink bg-pink-50 border-brand-pink/40 scale-105'
@@ -652,37 +724,158 @@ export default function ProductDetailPage({ onNavigate }) {
               </h3>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Offer 1 */}
-                <div className="bg-brand-pink/5 border border-brand-pink/20 rounded-xl p-3 flex gap-3 cursor-pointer hover:bg-brand-pink/10 transition-colors">
-                  <div className="w-8 h-8 rounded-full bg-brand-pink text-white flex items-center justify-center shrink-0">
-                    <span className="text-[10px] font-extrabold">%</span>
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-brand-teal">Get 10% Off</h4>
-                    <p className="text-[10px] text-gray-500 mt-0.5 mb-1.5">On orders above ₹500</p>
-                    <div className="inline-flex items-center gap-1.5 bg-white border border-dashed border-brand-pink/40 px-2 py-0.5 rounded text-[10px] font-bold text-brand-pink uppercase tracking-wider">
-                      <span>STUDENT10</span>
-                      <button className="ml-1 text-gray-400 hover:text-brand-teal cursor-pointer">Copy</button>
-                    </div>
-                  </div>
-                </div>
+                {availableCoupons.map((coupon) => {
+                  const isApplied = currentAppliedCouponCode === coupon.code;
+                  return (
+                    <div 
+                      key={coupon.code}
+                      className={`border rounded-2xl p-4 flex flex-col justify-between gap-3 transition-all ${
+                        isApplied 
+                          ? 'bg-green-50/80 border-green-300 ring-2 ring-green-400/20' 
+                          : 'bg-gradient-to-br from-gray-50/80 to-teal-50/20 border-gray-200/80 hover:border-brand-teal/30 hover:shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 bg-white border border-dashed border-brand-teal/40 px-2.5 py-1 rounded-lg text-xs font-mono font-extrabold text-brand-teal uppercase tracking-wider shadow-2xs">
+                            <Ticket size={12} className="text-brand-pink" />
+                            <span>{coupon.code}</span>
+                          </span>
+                          {isApplied && (
+                            <span className="text-[10px] font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full border border-green-200">
+                              ACTIVE
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] font-bold text-brand-pink bg-brand-pink/10 px-2 py-0.5 rounded-md shrink-0">
+                          {coupon.discountValue}
+                        </span>
+                      </div>
 
-                {/* Offer 2 */}
-                <div className="bg-brand-teal/5 border border-brand-teal/20 rounded-xl p-3 flex gap-3 cursor-pointer hover:bg-brand-teal/10 transition-colors">
-                  <div className="w-8 h-8 rounded-full bg-brand-teal text-brand-yellow flex items-center justify-center shrink-0">
-                    <Ticket size={14} />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-brand-teal">Free Shipping</h4>
-                    <p className="text-[10px] text-gray-500 mt-0.5 mb-1.5">No minimum order value</p>
-                    <div className="inline-flex items-center gap-1.5 bg-white border border-dashed border-brand-teal/40 px-2 py-0.5 rounded text-[10px] font-bold text-brand-teal uppercase tracking-wider">
-                      <span>FREESHIP</span>
-                      <button className="ml-1 text-gray-400 hover:text-brand-teal cursor-pointer">Copy</button>
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-900 leading-snug">
+                          {coupon.title}
+                        </h4>
+                        <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-1">
+                          {coupon.subtitle}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100/80">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCouponForDetails(coupon)}
+                          className="text-[11px] font-bold text-gray-500 hover:text-brand-teal underline decoration-dotted underline-offset-4 cursor-pointer transition-colors"
+                        >
+                          Details
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApplyCouponAndCheckout(coupon.code)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shadow-2xs cursor-pointer flex items-center gap-1 active:scale-95 ${
+                            isApplied
+                              ? 'bg-green-700 text-white hover:bg-green-800'
+                              : 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark'
+                          }`}
+                        >
+                          {isApplied ? (
+                            <>
+                              <CheckCircle2 size={13} />
+                              <span>Applied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Zap size={13} />
+                              <span>Apply & Checkout</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* COUPON DETAILS POPUP MODAL */}
+            {selectedCouponForDetails && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+                <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-100 relative space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCouponForDetails(null)}
+                    className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-brand-pink/10 text-brand-pink border border-brand-pink/20">
+                      OFFER DETAILS
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="font-display font-black text-lg text-brand-teal">
+                      {selectedCouponForDetails.title}
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {selectedCouponForDetails.subtitle}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-gray-50 border border-dashed border-gray-300 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">PROMO CODE</span>
+                      <span className="font-mono text-base font-extrabold text-brand-teal tracking-wider">
+                        {selectedCouponForDetails.code}
+                      </span>
+                    </div>
+                    <span className="text-xs font-extrabold text-green-700 bg-green-50 border border-green-200 px-2.5 py-1 rounded-lg">
+                      {selectedCouponForDetails.discountValue}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-xs text-gray-600 bg-amber-50/50 border border-amber-200/60 p-3.5 rounded-2xl">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-gray-500">Minimum Purchase:</span>
+                      <span className="font-bold text-gray-800">{selectedCouponForDetails.minOrderLabel}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-gray-500">Validity:</span>
+                      <span className="font-bold text-gray-800">{selectedCouponForDetails.expiry}</span>
+                    </div>
+                    <div className="pt-2 border-t border-amber-200/40 text-[11px] text-gray-600 leading-relaxed">
+                      {selectedCouponForDetails.details}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/60 flex items-center gap-2 text-[11px] text-blue-900 font-semibold">
+                    <Sparkles size={14} className="text-blue-600 shrink-0" />
+                    <span>Only 1 offer or coupon code can be active per order.</span>
+                  </div>
+
+                  <div className="pt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCouponForDetails(null)}
+                      className="flex-1 py-3 px-4 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer text-center"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCouponAndCheckout(selectedCouponForDetails.code)}
+                      className="flex-1 py-3 px-4 rounded-xl bg-brand-teal hover:bg-brand-teal-light text-white text-xs font-extrabold shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>Apply & Checkout</span>
+                      <Zap size={14} className="text-brand-yellow" />
+                    </button>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* SPECIFICATIONS & EXTRA DETAILS SECTION */}
             <div className="mt-8 pt-6 border-t border-gray-100">
@@ -975,9 +1168,9 @@ export default function ProductDetailPage({ onNavigate }) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {reviewsList.map((review) => (
+                  {reviewsList.map((review, index) => (
                     <div
-                      key={review.id}
+                      key={review._id || review.id || `rev-${index}`}
                       className="p-5 rounded-2xl border border-gray-200 bg-white hover:border-brand-teal/30 hover:shadow-xs transition-all space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">

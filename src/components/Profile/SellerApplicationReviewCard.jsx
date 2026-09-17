@@ -210,8 +210,8 @@ export default function SellerApplicationReviewCard({ applicationData, onEditSte
                 <span className="font-bold text-gray-800">{data.businessType || 'N/A'}</span>
               </div>
               <div>
-                <span className="block text-gray-400 font-medium text-[11px]">Year Started & Turnover</span>
-                <span className="font-bold text-gray-800">{data.yearStarted || 'N/A'} • {data.annualTurnoverEstimate || 'N/A'}</span>
+                <span className="block text-gray-400 font-medium text-[11px]">Year Started</span>
+                <span className="font-bold text-gray-800">{data.yearStarted || 'N/A'}</span>
               </div>
             </div>
           )}
@@ -482,14 +482,10 @@ export default function SellerApplicationReviewCard({ applicationData, onEditSte
 
           {expandedSections[8] && (
             <div className="p-5 space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Public Store Name</span>
                   <span className="font-bold text-gray-800 text-sm">{data.storeName || 'Book Vardi Official Hub'}</span>
-                </div>
-                <div>
-                  <span className="block text-gray-400 font-medium text-[11px]">Store Handle / Slug</span>
-                  <span className="font-bold text-teal-800 font-mono">bookvardi.in/store/{data.storeSlug || 'book-vardi-official'}</span>
                 </div>
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Store Tagline</span>

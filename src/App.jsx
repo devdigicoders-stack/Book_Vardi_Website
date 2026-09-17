@@ -46,7 +46,7 @@ function getInitialPage() {
     if (candidate) {
       const validPages = [
         'home', 'products', 'product-detail', 'about', 'contact', 'offers', 'new-arrivals',
-        'all-categories', 'profile', 'checkout', 'order-success', 'seller-dashboard',
+        'all-categories', 'profile', 'checkout', 'cart', 'order-success', 'seller-dashboard',
         'seller-registration', 'school-directory', 'school-details', 'school-bulk-order'
       ];
       const match = validPages.find(p => candidate.startsWith(p));
@@ -232,7 +232,7 @@ function MainStore() {
         )}
 
 
-        {activePage === 'checkout' && (
+        {(activePage === 'checkout' || activePage === 'cart') && (
           <CheckoutPage onNavigate={navigateTo} />
         )}
 

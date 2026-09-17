@@ -11,6 +11,7 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
 
   const [recentSearches, setRecentSearches] = useState([]);
   const [recommendedProducts, setRecommendedProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const topSearches = ['Girls Pleated Skirt', 'CBSE Practice Books', 'Kids Drawing Book', 'Winter Sweaters'];
 
   // Load recent searches from localStorage
@@ -26,12 +27,14 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
 
   // Fetch recommended products from backend
   useEffect(() => {
-    fetchFeaturedProductsFromBackend(3)
+    setIsLoading(true);
+    fetchFeaturedProductsFromBackend(4)
       .then((res) => {
         const list = res?.products || res || [];
         setRecommendedProducts(Array.isArray(list) ? list : []);
       })
-      .catch(() => setRecommendedProducts([]));
+      .catch(() => setRecommendedProducts([]))
+      .finally(() => setIsLoading(false));
   }, []);
 
   const saveRecentSearch = (term) => {
@@ -125,8 +128,8 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
       </form>
 
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="p-4 space-y-5">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200 min-w-full sm:min-w-[500px] md:min-w-[620px] left-1/2 -translate-x-1/2">
+          <div className="p-5 space-y-5">
             
             {/* Recently Searched */}
             {!query && recentSearches.length > 0 && (
@@ -139,7 +142,7 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
                   <button
                     type="button"
                     onClick={clearRecentSearches}
-                    className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                    className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors cursor-pointer"
                     title="Clear search history"
                   >
                     <Trash2 size={11} />
@@ -151,7 +154,7 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
                     <button
                       key={i}
                       onClick={() => handleSuggestionClick(term)}
-                      className="text-xs bg-gray-50 hover:bg-brand-teal/5 text-gray-700 hover:text-brand-teal border border-gray-100 hover:border-brand-teal/20 px-3 py-1.5 rounded-lg transition-colors"
+                      className="text-xs bg-gray-50 hover:bg-brand-teal/5 text-gray-700 hover:text-brand-teal border border-gray-200/60 hover:border-brand-teal/30 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer font-medium"
                     >
                       {term}
                     </button>
@@ -172,7 +175,7 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
                     <button
                       key={i}
                       onClick={() => handleSuggestionClick(term)}
-                      className="text-xs bg-gray-50 hover:bg-brand-teal/5 text-gray-700 hover:text-brand-teal border border-gray-100 hover:border-brand-teal/20 px-3 py-1.5 rounded-lg transition-colors"
+                      className="text-xs bg-gray-50 hover:bg-brand-teal/5 text-gray-700 hover:text-brand-teal border border-gray-200/60 hover:border-brand-teal/30 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer font-medium"
                     >
                       {term}
                     </button>
@@ -182,18 +185,30 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
             )}
 
             {/* Top Products */}
-            <div className="space-y-3 pt-2 border-t border-gray-100">
+            <div className="space-y-3 pt-3 border-t border-gray-100">
               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles size={12} className="text-brand-yellow" />
                 Recommended For You
               </h4>
-              <div className="space-y-2">
-                {recommendedProducts.length === 0 ? (
-                  <div className="text-xs text-gray-400 py-2 text-center">
-                    No recommended products related found.
-                  </div>
-                ) : (
-                  recommendedProducts.map((product) => {
+              {isLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl border border-gray-100 bg-gray-50/60 animate-pulse">
+                      <div className="w-12 h-12 rounded-lg bg-gray-200 shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3 bg-gray-200 rounded-md w-3/4" />
+                        <div className="h-2.5 bg-gray-200 rounded-md w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : recommendedProducts.length === 0 ? (
+                <div className="text-xs text-gray-400 py-3 text-center col-span-full">
+                  No recommended products found.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {recommendedProducts.map((product) => {
                     const prodImg = product.image || (Array.isArray(product.images) && product.images[0]) || '';
                     return (
                       <button
@@ -202,9 +217,9 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
                           setIsOpen(false);
                           openProductDetails(product);
                         }}
-                        className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 rounded-xl transition-colors text-left group"
+                        className="w-full flex items-center gap-3 p-2.5 hover:bg-gray-50/80 rounded-xl border border-gray-100/80 hover:border-brand-teal/20 transition-all text-left group cursor-pointer"
                       >
-                        <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0">
+                        <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden shrink-0 border border-gray-100">
                           {prodImg ? (
                             <img src={prodImg} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                           ) : (
@@ -214,18 +229,18 @@ export default function GlobalSearch({ onNavigate, onSearch, currentQuery }) {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-bold text-gray-900 truncate group-hover:text-brand-teal transition-colors">
+                          <div className="text-xs font-bold text-gray-900 truncate group-hover:text-brand-teal transition-colors">
                             {product.name}
                           </div>
-                          <div className="text-xs text-gray-500 truncate">
+                          <div className="text-[11px] text-gray-500 font-semibold mt-0.5">
                             ₹{product.price} {product.mrp && product.mrp > product.price ? <span className="line-through text-gray-300 ml-1">₹{product.mrp}</span> : null}
                           </div>
                         </div>
                       </button>
                     );
-                  })
-                )}
-              </div>
+                  })}
+                </div>
+              )}
             </div>
 
 

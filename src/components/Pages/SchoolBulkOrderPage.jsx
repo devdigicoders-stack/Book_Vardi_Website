@@ -149,17 +149,24 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
       additionalNotes: additionalNotes.trim()
     };
 
+    let finalRefId = refId;
     if (backendEnabled) {
       try {
-        await submitSchoolBulkOrderInBackend(payload);
+        const res = await submitSchoolBulkOrderInBackend(payload);
+        if (res?.referenceId) {
+          finalRefId = res.referenceId;
+        }
       } catch (err) {
-        console.warn('Backend bulk order submission error:', err?.message);
+        console.error('Backend bulk order submission error:', err?.message);
+        showToast(`❌ Submission error: ${err?.message || 'Failed to submit bulk order'}`);
+        setIsSubmitting(false);
+        return;
       }
     }
 
     setIsSubmitting(false);
-    setSubmittedReferenceId(refId);
-    showToast(`🎉 Bulk Order Inquiry ${refId} submitted successfully!`);
+    setSubmittedReferenceId(finalRefId);
+    showToast(`🎉 Bulk Order Inquiry ${finalRefId} submitted successfully!`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

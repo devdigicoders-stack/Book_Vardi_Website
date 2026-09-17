@@ -23,10 +23,14 @@ import {
   RefreshCw,
   ExternalLink,
   Eye,
-  Download
+  Download,
+  Crosshair,
+  Navigation,
+  Loader2
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { backendEnabled, registerSellerInBackend } from '../../utils/api';
+import LocationPickerModal from './LocationPickerModal';
 
 export const ONBOARDING_STEPS = [
   { id: 1, title: 'Basic Profile', section: 'Basic Profile', desc: 'Name, mobile, email, photo', icon: UserCheck, verify: 'Email + Mobile OTP' },
@@ -129,7 +133,16 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     showToast 
   } = useCart();
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(() => {
+    try {
+      const savedStep = localStorage.getItem('bv_seller_reg_step');
+      if (savedStep) {
+        const parsed = parseInt(savedStep, 10);
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 12) return parsed;
+      }
+    } catch {}
+    return 1;
+  });
 
   const [formData, setFormData] = useState(() => {
     try {
@@ -150,6 +163,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
   const [otpSent, setOtpSent] = useState(false);
   const [mobileOtp, setMobileOtp] = useState('');
+  const [showOtpPopup, setShowOtpPopup] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewDocModal, setPreviewDocModal] = useState(null);
 
@@ -178,6 +192,72 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
   const [isVerifyingAadhaar, setIsVerifyingAadhaar] = useState(false);
   const [panError, setPanError] = useState('');
   const [aadhaarError, setAadhaarError] = useState('');
+
+  // Step 5 Location Picker States
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [locationStatus, setLocationStatus] = useState('');
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsDetectingLocation(true);
+    setLocationStatus('Detecting your GPS location...');
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`);
+          const data = await res.json();
+          const addr = data.address || {};
+
+          const street = addr.road || addr.building || (addr.house_number ? `${addr.house_number}, ${addr.road || ''}` : '');
+          const colony = addr.suburb || addr.neighbourhood || addr.residential || addr.village || addr.subdistrict || '';
+          const landmark = addr.amenity || addr.landmark || addr.commercial || '';
+          const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || '';
+          const state = addr.state || 'Uttar Pradesh';
+          const pincode = addr.postcode || '';
+
+          setFormData(prev => ({
+            ...prev,
+            addressLine1: street || prev.addressLine1,
+            addressLine2: colony || prev.addressLine2,
+            landmark: landmark || prev.landmark,
+            city: city || prev.city,
+            state: state || prev.state || 'Uttar Pradesh',
+            pincode: pincode || prev.pincode
+          }));
+          setLocationStatus('GPS Location detected successfully!');
+        } catch (err) {
+          setLocationStatus('Could not reverse geocode location. Please fill manually or pick on map.');
+        } finally {
+          setIsDetectingLocation(false);
+        }
+      },
+      (err) => {
+        setIsDetectingLocation(false);
+        setLocationStatus('Location permission denied or unavailable.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleMapLocationSelect = (loc) => {
+    setFormData(prev => ({
+      ...prev,
+      addressLine1: loc.street || loc.addressLine1 || prev.addressLine1,
+      addressLine2: loc.colony || loc.addressLine2 || prev.addressLine2,
+      landmark: loc.landmark || prev.landmark,
+      city: loc.city || prev.city,
+      state: loc.state || prev.state || 'Uttar Pradesh',
+      pincode: loc.pincode || prev.pincode
+    }));
+    setLocationStatus(`Location updated from Map: ${loc.city || ''}, ${loc.state || 'Uttar Pradesh'}`);
+  };
 
   useEffect(() => {
     try {
@@ -371,6 +451,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         return;
       }
       if (!formData.phoneOtpVerified) {
+        setShowOtpPopup(true);
         showToast('⚠️ Please click "Send Phone OTP" and verify your mobile number (Testing code: 123456).');
         return;
       }
@@ -447,6 +528,8 @@ function dataURLtoBlob(dataurl, filename = 'file') {
         formPayload.append('state', formData.state || '');
         formPayload.append('pincode', formData.pincode || '');
         formPayload.append('gstNumber', formData.gstin || '');
+        formPayload.append('msmeRegistrationNumber', formData.msmeRegistrationNumber || '');
+        formPayload.append('cinNumber', formData.cinNumber || '');
         formPayload.append('accountHolderName', formData.bankAccountHolder || '');
         formPayload.append('accountNumber', formData.bankAccountNumber || '');
         formPayload.append('ifscCode', formData.bankIfscCode || '');
@@ -454,6 +537,7 @@ function dataURLtoBlob(dataurl, filename = 'file') {
         formPayload.append('branchName', formData.bankBranch || '');
         formPayload.append('aadhaarNumber', formData.ownerAadhaarLast4 || '');
         formPayload.append('panNumber', formData.ownerPan || formData.businessPan || '');
+        formPayload.append('yearStarted', formData.yearStarted || '');
 
         if (formData.profilePhoto) {
           const profileBlob = dataURLtoBlob(formData.profilePhoto, 'profile-photo.png');
@@ -483,16 +567,6 @@ function dataURLtoBlob(dataurl, filename = 'file') {
     setIsSubmitting(false);
     setStep(11);
     showToast('🎉 Seller Registration Application Submitted! Pending Verification.');
-  };
-
-  const handleSimulateApproval = () => {
-    approveSellerApplication();
-    setStep(12);
-    setFormData(prev => ({
-      ...prev,
-      submissionStatus: 'approved'
-    }));
-    showToast('✅ Verified Seller Badge Activated! Access granted to Seller Hub.');
   };
 
   const progressPercentage = Math.round(((step - 1) / 11) * 100);
@@ -571,6 +645,10 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 <button
                   key={s.id}
                   onClick={() => {
+                    if (!formData.phoneOtpVerified && s.id > 1) {
+                      setShowOtpPopup(true);
+                      return;
+                    }
                     if (isReached || isPast || s.id <= step + 1) {
                       setStep(s.id);
                     }
@@ -1077,55 +1155,110 @@ function dataURLtoBlob(dataurl, filename = 'file') {
           {/* STEP 5: Business Address */}
           {step === 5 && (
             <div className="space-y-4">
-              <div className="border-b border-gray-100 pb-3">
-                <h3 className="font-display font-extrabold text-base text-gray-900 flex items-center gap-2">
-                  <MapPin className="text-teal-700" size={18} /> Step 5: Registered Office & Dispatch Hub Address
-                </h3>
-                <p className="text-gray-500 text-xs mt-0.5">
-                  Pickup address where courier partners will collect orders.
-                </p>
+              <div className="border-b border-gray-100 pb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-display font-extrabold text-base text-gray-900 flex items-center gap-2">
+                    <MapPin className="text-teal-700" size={18} /> Step 5: Registered Office & Dispatch Hub Address
+                  </h3>
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    Physical location formatted as Street, Colony, Landmark, City & State (Uttar Pradesh)
+                  </p>
+                </div>
+
+                {/* Location Picker Buttons */}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    disabled={isDetectingLocation}
+                    className="flex-1 sm:flex-initial px-3.5 py-2 bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    {isDetectingLocation ? <Loader2 size={14} className="animate-spin text-teal-700" /> : <Crosshair size={14} className="text-teal-700" />}
+                    Use Current Location
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMapPickerOpen(true)}
+                    className="flex-1 sm:flex-initial px-3.5 py-2 bg-teal-700 text-white hover:bg-teal-800 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  >
+                    <MapPin size={14} /> Choose on Map
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-3">
+              {locationStatus && (
+                <div className="p-3 bg-teal-50/80 border border-teal-200 rounded-xl text-xs font-semibold text-teal-900 flex items-center gap-2">
+                  <Navigation size={14} className="text-teal-700 shrink-0" />
+                  <span>{locationStatus}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Address Line 1 (Building / Floor / Street) *</label>
+                  <label className="font-bold text-gray-700">Street / House / Shop No *</label>
                   <input
                     type="text"
                     value={formData.addressLine1}
                     onChange={(e) => handleChange('addressLine1', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Shop #14, Main Road, Block B"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <label className="font-bold text-gray-700">City / District *</label>
-                    <input
-                      type="text"
-                      value={formData.city}
-                      onChange={(e) => handleChange('city', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-bold text-gray-700">State *</label>
-                    <input
-                      type="text"
-                      value={formData.state}
-                      onChange={(e) => handleChange('state', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-bold text-gray-700">PIN Code *</label>
-                    <input
-                      type="text"
-                      value={formData.pincode}
-                      onChange={(e) => handleChange('pincode', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
-                      maxLength={6}
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Colony / Area / Locality *</label>
+                  <input
+                    type="text"
+                    value={formData.addressLine2}
+                    onChange={(e) => handleChange('addressLine2', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Hazratganj / Civil Lines / Sector 62"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Landmark</label>
+                  <input
+                    type="text"
+                    value={formData.landmark || ''}
+                    onChange={(e) => handleChange('landmark', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Near Cathedral School / Opp Metro Station"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">City / District *</label>
+                  <input
+                    type="text"
+                    value={formData.city}
+                    onChange={(e) => handleChange('city', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Lucknow / Noida / Varanasi"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">State *</label>
+                  <input
+                    type="text"
+                    value={formData.state || 'Uttar Pradesh'}
+                    onChange={(e) => handleChange('state', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="Uttar Pradesh"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Pincode / Postal Code *</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={formData.pincode}
+                    onChange={(e) => handleChange('pincode', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="226001"
+                  />
                 </div>
               </div>
             </div>
@@ -1300,6 +1433,24 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 </div>
 
                 <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Confirm Account Number *</label>
+                  <input
+                    type="text"
+                    value={formData.confirmBankAccountNumber || ''}
+                    onChange={(e) => handleChange('confirmBankAccountNumber', e.target.value)}
+                    placeholder="Re-enter Account Number to Confirm"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono ${
+                      formData.confirmBankAccountNumber && formData.confirmBankAccountNumber !== formData.bankAccountNumber
+                        ? 'border-red-500 bg-red-50/50'
+                        : 'border-gray-200'
+                    }`}
+                  />
+                  {formData.confirmBankAccountNumber && formData.confirmBankAccountNumber !== formData.bankAccountNumber && (
+                    <p className="text-[11px] font-bold text-red-600 mt-1">⚠️ Bank account numbers do not match!</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
                   <label className="font-bold text-gray-700">IFSC Code *</label>
                   <input
                     type="text"
@@ -1310,12 +1461,24 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Bank Name & Branch *</label>
+                  <label className="font-bold text-gray-700">Bank Name *</label>
                   <input
                     type="text"
-                    value={`${formData.bankName} (${formData.bankBranch})`}
-                    readOnly
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs bg-gray-50"
+                    value={formData.bankName}
+                    onChange={(e) => handleChange('bankName', e.target.value)}
+                    placeholder="e.g. State Bank of India / HDFC Bank"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Branch Name *</label>
+                  <input
+                    type="text"
+                    value={formData.bankBranch}
+                    onChange={(e) => handleChange('bankBranch', e.target.value)}
+                    placeholder="e.g. Hazratganj Branch / Main Branch"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
                   />
                 </div>
               </div>
@@ -1338,24 +1501,14 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Public Store Name *</label>
-                  <input
-                    type="text"
-                    value={formData.storeName}
-                    onChange={(e) => handleChange('storeName', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Store Handle / URL slug</label>
-                  <div className="flex items-center px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 font-mono text-[11px] text-gray-500">
-                    <span>bookvardi.in/seller/</span>
-                    <strong className="text-teal-900">{formData.storeSlug}</strong>
-                  </div>
-                </div>
+              <div className="space-y-1">
+                <label className="font-bold text-gray-700">Public Store Name *</label>
+                <input
+                  type="text"
+                  value={formData.storeName}
+                  onChange={(e) => handleChange('storeName', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold"
+                />
               </div>
 
               <div className="space-y-1">
@@ -1502,19 +1655,6 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 <p className="text-amber-800 leading-relaxed text-xs">
                   All 10 sections have been submitted. Our compliance desk usually reviews GSTIN, Address Proof, and Bank IFSC within 24 hours.
                 </p>
-
-                <div className="pt-2 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-[11px] text-amber-900 font-medium">
-                    Want to test the verified seller experience right away?
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleSimulateApproval}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer"
-                  >
-                    <Sparkles size={14} /> One-Click Approve Application (Demo)
-                  </button>
-                </div>
               </div>
 
               {/* Review Summary Grid */}
@@ -1640,11 +1780,10 @@ function dataURLtoBlob(dataurl, filename = 'file') {
             {step === 11 && (
               <button
                 type="button"
-                onClick={handleSimulateApproval}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer"
+                onClick={onClose}
+                className="px-5 py-2.5 bg-brand-teal text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
               >
-                <span>Activate Verification Badge</span>
-                <CheckCircle2 size={14} />
+                Close & Await Admin Review
               </button>
             )}
 
@@ -1751,6 +1890,45 @@ function dataURLtoBlob(dataurl, filename = 'file') {
           </div>
         </div>
       )}
+
+      {showOtpPopup && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-amber-200 text-center space-y-4">
+            <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto">
+              <ShieldCheck size={32} />
+            </div>
+            <div>
+              <h3 className="font-display font-extrabold text-base text-gray-900">Phone OTP Verification Required</h3>
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                You cannot move to other onboarding steps without verifying your mobile phone number. Please click <strong>"Send Phone OTP"</strong> in Step 1 and enter testing code <strong>123456</strong>.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setShowOtpPopup(false);
+                setStep(1);
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-brand-teal hover:bg-brand-teal-dark text-white font-extrabold text-xs shadow-md transition-all cursor-pointer"
+            >
+              Verify Phone OTP Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      <LocationPickerModal
+        isOpen={isMapPickerOpen}
+        onClose={() => setIsMapPickerOpen(false)}
+        onSelectLocation={handleMapLocationSelect}
+        initialAddress={{
+          street: formData.addressLine1,
+          colony: formData.addressLine2,
+          landmark: formData.landmark,
+          city: formData.city,
+          state: formData.state || 'Uttar Pradesh',
+          pincode: formData.pincode
+        }}
+      />
     </div>
   );
 }

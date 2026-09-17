@@ -50,15 +50,30 @@ export default function AuthModal() {
   const [rememberMe, setRememberMe] = useState(true);
 
   // Register Form State
-  const [registerData, setRegisterData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    institution: '',
-    standard: '',
-    studentId: '',
-    password: ''
+  const [registerData, setRegisterData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_user_reg_draft');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null) return parsed;
+      }
+    } catch {}
+    return {
+      name: '',
+      email: '',
+      phone: '',
+      institution: '',
+      standard: '',
+      studentId: '',
+      password: ''
+    };
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('bv_user_reg_draft', JSON.stringify(registerData));
+    } catch (e) {}
+  }, [registerData]);
   const [registerStep, setRegisterStep] = useState('otp');
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [registerOtp, setRegisterOtp] = useState('');
@@ -70,7 +85,7 @@ export default function AuthModal() {
 
   // Forgot Password / OTP Flow State
   const [forgotMethod, setForgotMethod] = useState('email'); // 'email' | 'phone'
-  const [forgotEmail, setForgotEmail] = useState('ritesh.yadav@example.com');
+  const [forgotEmail, setForgotEmail] = useState('');
   const [forgotPhone, setForgotPhone] = useState('');
   const [forgotStep, setForgotStep] = useState('request'); // 'request' | 'otp' | 'new_password' | 'success'
   const [otpDigits, setOtpDigits] = useState(['', '', '', '']);
@@ -362,15 +377,13 @@ export default function AuthModal() {
       if (updateProfile) {
         await updateProfile(payload);
       }
-      const phone = payload.phone || registerData.phone.trim();
       resetRegisterState();
-      setAuthMode('login');
-      if (phone) setLoginPhone(phone);
-      showToast('Registration complete & profile updated! Please login.');
+      closeAuthModal();
+      showToast(`🎉 Registration complete! Welcome to BookVardi, ${payload.name || 'Student'}! ✨`);
     } catch (err) {
-      showToast(err.message || 'Registration complete! Please login.');
-      setAuthMode('login');
-      if (payload.phone) setLoginPhone(payload.phone);
+      resetRegisterState();
+      closeAuthModal();
+      showToast('🎉 Registration complete! Welcome to BookVardi! ✨');
     }
   };
 
@@ -419,7 +432,7 @@ export default function AuthModal() {
         } catch (e) {}
 
         setRegisterStep('details');
-        showToast('✓ OTP verified & user registered! Please add profile details or skip.');
+        showToast('✓ OTP verified & user logged in! Add profile details or click Done.');
         setIsLoading(false);
         return;
       }
@@ -444,11 +457,9 @@ export default function AuthModal() {
   };
 
   const handleRegisterSkipDetails = async () => {
-    const phone = registerData.phone.trim();
     resetRegisterState();
-    setAuthMode('login');
-    if (phone) setLoginPhone(phone);
-    showToast('Registration successful! Login please');
+    closeAuthModal();
+    showToast('🎉 Registration complete! You are now logged in. ✨');
   };
 
   // ===== OTP FLOW HANDLERS =====

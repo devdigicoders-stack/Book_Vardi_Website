@@ -90,14 +90,29 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     }
   });
 
-  // Re-read on tab focus or change
+  // Re-read on tab focus or change, and listen to real-time status updates
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('bv_seller_reg_data');
-      if (saved) setSellerAppData(JSON.parse(saved));
-    } catch (e) {
-      console.error(e);
-    }
+    const loadSellerData = () => {
+      try {
+        const saved = localStorage.getItem('bv_seller_reg_data');
+        if (saved) setSellerAppData(JSON.parse(saved));
+        else {
+          const profileSaved = localStorage.getItem('book_vardi_seller_profile');
+          if (profileSaved) setSellerAppData(JSON.parse(profileSaved));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    loadSellerData();
+    window.addEventListener('bv_seller_status_updated', loadSellerData);
+    window.addEventListener('storage', loadSellerData);
+
+    return () => {
+      window.removeEventListener('bv_seller_status_updated', loadSellerData);
+      window.removeEventListener('storage', loadSellerData);
+    };
   }, [activeTab]);
 
   // Synchronize tab when navigated externally (e.g. from navbar or footer)
@@ -164,32 +179,52 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   }, [userProfile]);
 
   // Seller Status & Approval Helpers
+  const checkIsApproved = (statusStr) => {
+    if (!statusStr) return false;
+    const s = String(statusStr).toLowerCase().trim();
+    return s === 'approved' || s === 'active' || s === 'verified';
+  };
+
+  const checkIsRejected = (statusStr) => {
+    if (!statusStr) return false;
+    const s = String(statusStr).toLowerCase().trim();
+    return s === 'rejected' || s === 'declined';
+  };
+
+  const checkIsInReview = (statusStr) => {
+    if (!statusStr) return false;
+    const s = String(statusStr).toLowerCase().trim();
+    return s === 'in_review' || s === 'under_review' || s === 'review' || s === 'in review';
+  };
+
   const isApprovedSeller = Boolean(
     isSeller ||
-    sellerStatus === 'approved' ||
-    sellerStatus === 'Approved' ||
-    userProfile?.sellerStatus === 'approved' ||
-    userProfile?.sellerStatus === 'Approved'
+    userProfile?.isSeller === true ||
+    checkIsApproved(sellerStatus) ||
+    checkIsApproved(userProfile?.sellerStatus) ||
+    checkIsApproved(sellerAppData?.submissionStatus) ||
+    checkIsApproved(sellerAppData?.status)
   );
 
   const hasFilledSellerForm = Boolean(
     (sellerStatus && sellerStatus !== 'none') ||
     (userProfile?.sellerStatus && userProfile?.sellerStatus !== 'none') ||
     (sellerAppData && sellerAppData.submissionStatus && sellerAppData.submissionStatus !== 'draft') ||
-    (sellerAppData && (sellerAppData.sellerName || sellerAppData.legalBusinessName) && sellerAppData.highestStepReached >= 11)
+    (sellerAppData && (sellerAppData.sellerName || sellerAppData.legalBusinessName) && (sellerAppData.highestStepReached >= 11 || sellerAppData.currentStep >= 11))
   );
 
   const isSellerRejected = Boolean(
-    sellerStatus === 'rejected' ||
-    sellerStatus === 'Rejected' ||
-    userProfile?.sellerStatus === 'rejected' ||
-    userProfile?.sellerStatus === 'Rejected'
+    checkIsRejected(sellerStatus) ||
+    checkIsRejected(userProfile?.sellerStatus) ||
+    checkIsRejected(sellerAppData?.submissionStatus) ||
+    checkIsRejected(sellerAppData?.status)
   );
 
   const isSellerInReview = Boolean(
-    sellerStatus === 'in_review' ||
-    sellerStatus === 'In Review' ||
-    userProfile?.sellerStatus === 'in_review'
+    checkIsInReview(sellerStatus) ||
+    checkIsInReview(userProfile?.sellerStatus) ||
+    checkIsInReview(sellerAppData?.submissionStatus) ||
+    checkIsInReview(sellerAppData?.status)
   );
 
   const sellerStatusText = isApprovedSeller
@@ -198,7 +233,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     ? 'Rejected'
     : isSellerInReview
     ? 'In Review'
-    : 'Waiting';
+    : 'Pending Approval';
 
   // Order History Filter & Search State
   const [orderSearch, setOrderSearch] = useState('');
@@ -762,14 +797,14 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                   type="button"
                   onClick={() => window.open('http://localhost:5174', '_blank')}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer bg-brand-yellow text-brand-teal-dark hover:bg-brand-yellow-hover shadow-xs"
-                  title="Launch Seller Dashboard on Port 5174"
+                  title="Redirect to Seller Panel Login Page on Port 5174"
                 >
                   <span className="flex items-center gap-2.5">
                     <Store size={18} />
-                    <span>Seller Dashboard</span>
+                    <span>Seller Panel Login</span>
                   </span>
                   <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-brand-teal text-white">
-                    LIVE
+                    LOGIN
                   </span>
                 </button>
               ) : hasFilledSellerForm ? (

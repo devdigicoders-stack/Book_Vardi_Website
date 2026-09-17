@@ -46,8 +46,13 @@ export default function CheckoutPage({ onNavigate }) {
     removeCoupon,
     placeOrder,
     openAuthModal,
-    showToast
+    showToast,
+    setIsCartOpen
   } = useCart();
+
+  React.useEffect(() => {
+    setIsCartOpen(false);
+  }, [setIsCartOpen]);
 
   // Address state
   const [selectedAddressId, setSelectedAddressId] = useState(() => {
@@ -702,34 +707,73 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
               </div>
 
-              {/* Payment Type Selection Tabs (UPI & COD) */}
-              <div className="grid grid-cols-2 gap-3.5">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('upi')}
-                  className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                    paymentMethod === 'upi'
-                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <Smartphone size={20} />
-                  <span className="text-xs font-extrabold">UPI / Online Pay</span>
-                </button>
+              {/* Product Payment Restrictions Notice */}
+              {(() => {
+                const onlineOnlyItem = cartItems.find(item => 
+                  item.paymentMethodAllowed === 'Online_Only' || 
+                  (Array.isArray(item.paymentMethodsAllowed) && item.paymentMethodsAllowed.length === 1 && item.paymentMethodsAllowed[0] === 'Online')
+                );
+                const codOnlyItem = cartItems.find(item => 
+                  item.paymentMethodAllowed === 'COD_Only' || 
+                  (Array.isArray(item.paymentMethodsAllowed) && item.paymentMethodsAllowed.length === 1 && item.paymentMethodsAllowed[0] === 'COD')
+                );
 
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('cod')}
-                  className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                    paymentMethod === 'cod'
-                      ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <Banknote size={20} />
-                  <span className="text-xs font-extrabold">Cash on Delivery (COD)</span>
-                </button>
-              </div>
+                const isCodDisabled = Boolean(onlineOnlyItem);
+                const isOnlineDisabled = Boolean(codOnlyItem);
+
+                return (
+                  <div className="space-y-3">
+                    {isCodDisabled && (
+                      <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl text-xs flex items-center gap-2">
+                        <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                        <span>
+                          <strong>COD Unavailable:</strong> '{onlineOnlyItem.name}' was configured by the seller to accept <strong>Online / Prepaid Payment Only</strong>.
+                        </span>
+                      </div>
+                    )}
+
+                    {isOnlineDisabled && (
+                      <div className="p-3 bg-blue-50 border border-blue-300 text-blue-900 rounded-2xl text-xs flex items-center gap-2">
+                        <AlertTriangle size={16} className="text-blue-600 shrink-0" />
+                        <span>
+                          <strong>Online Payment Disabled:</strong> '{codOnlyItem.name}' was configured by the seller to accept <strong>Cash on Delivery (COD) Only</strong>.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Payment Type Selection Tabs (UPI & COD) */}
+                    <div className="grid grid-cols-2 gap-3.5">
+                      <button
+                        type="button"
+                        disabled={isOnlineDisabled}
+                        onClick={() => setPaymentMethod('upi')}
+                        className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                          paymentMethod === 'upi' && !isOnlineDisabled
+                            ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        <Smartphone size={20} />
+                        <span className="text-xs font-extrabold">UPI / Online Pay</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isCodDisabled}
+                        onClick={() => setPaymentMethod('cod')}
+                        className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                          paymentMethod === 'cod' && !isCodDisabled
+                            ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        <Banknote size={20} />
+                        <span className="text-xs font-extrabold">Cash on Delivery (COD)</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Sub-view for UPI */}
               {paymentMethod === 'upi' && (

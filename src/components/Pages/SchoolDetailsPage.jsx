@@ -1,15 +1,14 @@
 import React, { useMemo } from 'react';
 import { ArrowLeft, Package, Sparkles } from 'lucide-react';
-import { KIT_BUNDLES } from '../../data/mockData';
 import ProductCard from '../Products/ProductCard';
 import KitCard from '../Products/KitCard';
 
-export default function SchoolDetailsPage({ schoolName, onNavigate }) {
+export default function SchoolDetailsPage({ schoolName, onNavigate, kits = [] }) {
   
   // Get all kits for this school
   const schoolKits = useMemo(() => {
-    return KIT_BUNDLES.filter(kit => kit.school === schoolName);
-  }, [schoolName]);
+    return Array.isArray(kits) ? kits.filter(kit => kit.school === schoolName) : [];
+  }, [kits, schoolName]);
 
   // Extract all unique individual assets (kit items) from those kits
   const schoolAssets = useMemo(() => {

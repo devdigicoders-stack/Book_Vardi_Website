@@ -153,7 +153,7 @@ export default function SchoolSelect({
                           {school.classes && (
                             <span className="flex items-center gap-1 shrink-0">
                               <BookOpen size={11} className="shrink-0" />
-                              <span>{school.classes}</span>
+                              <span>{Array.isArray(school.classes) ? `${school.classes[0]} - ${school.classes[school.classes.length - 1]}` : school.classes}</span>
                             </span>
                           )}
                         </div>
@@ -209,7 +209,11 @@ export default function SchoolSelect({
 
                       <div className={`flex items-center gap-3 text-[11px] mt-1 ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
                         <span className="truncate">{school.city || school.address}</span>
-                        {school.classes && <span className="shrink-0">• {school.classes}</span>}
+                        {school.classes && (
+                          <span className="shrink-0">
+                            • {Array.isArray(school.classes) ? `${school.classes[0]} - ${school.classes[school.classes.length - 1]}` : school.classes}
+                          </span>
+                        )}
                       </div>
                     </div>
 

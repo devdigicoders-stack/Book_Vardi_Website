@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck, MapPin, RotateCcw } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
-import { NAV_LINKS } from '../../data/mockData';
+import { NAV_LINKS } from '../../constants/navigation';
 import GlobalSearch from './GlobalSearch';
 import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend, resolveImageUrl } from '../../utils/api';
 
@@ -151,7 +151,7 @@ function DesktopProfileDropdown({
               >
                 <span className="flex items-center gap-2">
                   <Store size={15} />
-                  <span>Seller Dashboard</span>
+                  <span>Seller Login / Portal</span>
                 </span>
                 <ChevronDown size={13} className="-rotate-90 text-gray-400" />
               </button>
@@ -417,6 +417,19 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
     onNavigate(view);
   };
 
+  const defaultCategoryList = [
+    { id: 'uniforms', name: 'Uniforms & Schoolwear', subCategories: MEGA_MENU_DATA['uniforms'] },
+    { id: 'ncert', name: 'NCERT & CBSE Textbooks', subCategories: MEGA_MENU_DATA['ncert'] },
+    { id: 'practice_books', name: 'Practice & Workbooks', subCategories: MEGA_MENU_DATA['practice_books'] },
+    { id: 'drawing_books', name: 'Drawing & Craft Kits', subCategories: MEGA_MENU_DATA['drawing_books'] },
+    { id: 'school_specific', name: 'School Specific Kits', subCategories: MEGA_MENU_DATA['school_specific'] },
+    { id: 'bags', name: 'School Bags & Backpacks', subCategories: MEGA_MENU_DATA['bags'] },
+    { id: 'supplies', name: 'Writing & Supplies', subCategories: MEGA_MENU_DATA['supplies'] },
+    { id: 'kits', name: 'Academic Study Kits', subCategories: MEGA_MENU_DATA['kits'] }
+  ];
+
+  const activeCategoriesTree = categoriesTree && categoriesTree.length > 0 ? categoriesTree : defaultCategoryList;
+
   const renderMegaMenu = (isMobile = false) => {
     return (
       <div 
@@ -427,16 +440,11 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         }`}
       >
         <div className={isMobile ? 'flex flex-col gap-4' : 'container mx-auto px-4 flex flex-wrap gap-8 justify-center'}>
-          {categoriesTree.length === 0 ? (
-            <div className="py-6 text-center text-xs font-semibold text-gray-500 w-full">
-              No categories related found.
-            </div>
-          ) : (
-            categoriesTree.map((category) => {
-              const catId = category.slug || category._id || category.id || category.name?.toLowerCase().replace(/\s+/g, '_');
-              const subList = Array.isArray(category.subCategories) && category.subCategories.length > 0
-                ? category.subCategories
-                : (MEGA_MENU_DATA[catId] || []);
+          {activeCategoriesTree.map((category) => {
+            const catId = category.slug || category._id || category.id || category.name?.toLowerCase().replace(/\s+/g, '_');
+            const subList = Array.isArray(category.subCategories) && category.subCategories.length > 0
+              ? category.subCategories
+              : (MEGA_MENU_DATA[catId] || []);
 
               return (
                 <div key={category._id || category.id || catId} className={isMobile ? 'flex flex-col gap-2' : 'flex flex-col gap-3 min-w-[140px] max-w-[180px]'}>
@@ -472,8 +480,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                   </div>
                 </div>
               );
-            })
-          )}
+            })}
 
           
           {/* Quick View All Link */}
@@ -563,8 +570,8 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         
 
         {/* Global Search Bar (Desktop) */}
-        <div className="hidden lg:flex flex-1 justify-center px-4">
-          <div className="w-full max-w-md">
+        <div className="hidden lg:flex flex-1 justify-center px-4 min-w-[320px]">
+          <div className="w-full max-w-2xl">
             <GlobalSearch
               onNavigate={onNavigate}
               onSearch={onSearchChange}
@@ -851,7 +858,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                     >
                       <span className="flex items-center gap-2.5">
                         <Store size={18} />
-                        <span>Seller Dashboard</span>
+                        <span>Seller Login / Portal</span>
                       </span>
                       <ChevronDown size={14} className="-rotate-90 text-gray-400" />
                     </button>
