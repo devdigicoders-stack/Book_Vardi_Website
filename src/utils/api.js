@@ -325,7 +325,36 @@ export async function fetchCategoriesFromBackend() {
 }
 
 export async function fetchCategoryTreeFromBackend() {
-  return requestApi('/categories/tree', { method: 'GET', fallback: [] });
+  const CACHE_KEY = 'bv_cached_categories_tree';
+  const CACHE_TIME_KEY = 'bv_cached_categories_time';
+
+  let cachedData = null;
+  try {
+    const saved = localStorage.getItem(CACHE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        cachedData = parsed;
+      }
+    }
+  } catch (e) {}
+
+  if (backendEnabled) {
+    try {
+      const freshData = await requestApi('/categories/tree', { method: 'GET' });
+      if (Array.isArray(freshData) && freshData.length > 0) {
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(freshData));
+          localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
+        } catch (e) {}
+        return freshData;
+      }
+    } catch (err) {
+      console.warn('Backend category tree fetch warning:', err);
+    }
+  }
+
+  return cachedData || [];
 }
 
 // Product Catalog & Search API calls

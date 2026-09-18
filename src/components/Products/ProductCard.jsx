@@ -12,7 +12,18 @@ export default function ProductCard({ product }) {
 
   const title = product?.name || 'Product';
   const subtitle = product?.subtitle || product?.description || product?.category || '';
-  const price = product?.price || 0;
+  const basePrice = product?.price || 0;
+  const sizeVariants = Array.isArray(product?.sizeVariants) && product.sizeVariants.length > 0 ? product.sizeVariants : [];
+  const variantPrices = sizeVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+  const minPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : basePrice;
+  const maxPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : basePrice;
+  const hasPriceRange = minPrice < maxPrice;
+
+  const availableSizes = sizeVariants.length > 0
+    ? sizeVariants.map(v => v.size)
+    : (Array.isArray(product?.sizes) ? product.sizes : []);
+
+  const price = minPrice;
   const originalPrice = product?.originalPrice || product?.mrp || (price > 0 && product?.discountPercentage ? Math.round(price / (1 - product.discountPercentage / 100)) : null);
   const image = product?.image || (Array.isArray(product?.images) && product.images[0]) || '/images/gel-pen-set.jpg';
   const rawRating = product?.rating ?? product?.averageRating;
@@ -96,23 +107,44 @@ export default function ProductCard({ product }) {
         >
           {title}
         </h3>
-        <p className="text-[10px] sm:text-xs text-gray-500 line-clamp-1 mb-2">
+        <p className="text-[10px] sm:text-xs text-gray-500 line-clamp-1 mb-1.5">
           {subtitle}
         </p>
+
+        {/* Available Size Badges */}
+        {availableSizes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            {availableSizes.slice(0, 4).map((s, idx) => (
+              <span key={idx} className="text-[9px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded border border-gray-200">
+                {s}
+              </span>
+            ))}
+            {availableSizes.length > 4 && (
+              <span className="text-[9px] font-bold text-gray-400">
+                +{availableSizes.length - 4}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-auto flex flex-col gap-1.5 sm:gap-2">
           {/* Price */}
           <div className="flex items-baseline gap-1.5 sm:gap-2">
-            <span className="text-sm sm:text-base font-extrabold text-brand-teal">
-              ₹{price}
-            </span>
+            {hasPriceRange ? (
+              <span className="text-sm sm:text-base font-extrabold text-brand-teal">
+                ₹{minPrice} - ₹{maxPrice}
+              </span>
+            ) : (
+              <span className="text-sm sm:text-base font-extrabold text-brand-teal">
+                ₹{price}
+              </span>
+            )}
             {originalPrice && originalPrice > price && (
               <span className="text-[10px] sm:text-xs text-gray-400 line-through">
                 ₹{originalPrice}
               </span>
             )}
           </div>
-
 
           {/* Rating */}
           <div className="flex items-center gap-1 text-[11px] text-gray-600">
@@ -133,7 +165,7 @@ export default function ProductCard({ product }) {
             </span>
           </div>
 
-          {/* Add to Cart Button with Live Item Count */}
+          {/* Add to Cart / Select Size Button with Live Item Count */}
           <button
             className={`w-full mt-1.5 sm:mt-2 py-1.5 sm:py-2 px-2 sm:px-3 font-bold rounded-lg text-[11px] sm:text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 ${
               countInCart > 0
@@ -142,13 +174,19 @@ export default function ProductCard({ product }) {
             }`}
             onClick={(e) => {
               e.stopPropagation();
-              addToCart(product);
+              if (sizeVariants.length > 0) {
+                openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount });
+              } else {
+                addToCart(product);
+              }
             }}
             aria-label={`Add ${product.name} to cart`}
           >
             <ShoppingCart size={13} className="shrink-0" />
             <span className="truncate">
-              {countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart'}
+              {sizeVariants.length > 0 
+                ? (countInCart > 0 ? `Select Size (${countInCart})` : 'Select Size')
+                : (countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart')}
             </span>
           </button>
         </div>

@@ -19,7 +19,8 @@ import {
   Ticket,
   Camera,
   UploadCloud,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Store
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
@@ -102,6 +103,51 @@ export default function ProductDetailPage({ onNavigate }) {
   const [selectedCouponForDetails, setSelectedCouponForDetails] = useState(null);
   const [appliedProductCouponMap, setAppliedProductCouponMap] = useState({});
 
+  // Size Variants handling with individual price, MRP and image
+  const sizeVariants = Array.isArray(selectedProduct?.sizeVariants) && selectedProduct.sizeVariants.length > 0
+    ? selectedProduct.sizeVariants
+    : (Array.isArray(selectedProduct?.sizes) && selectedProduct.sizes.length > 0
+        ? selectedProduct.sizes.map(s => ({ size: s, price: selectedProduct.price, mrp: selectedProduct.originalPrice || selectedProduct.mrp }))
+        : []);
+
+  const [selectedSize, setSelectedSize] = useState(() => sizeVariants[0]?.size || null);
+  const [variantImageOverride, setVariantImageOverride] = useState(null);
+
+  useEffect(() => {
+    if (sizeVariants.length > 0) {
+      setSelectedSize(sizeVariants[0].size);
+      if (sizeVariants[0].image) {
+        setVariantImageOverride(sizeVariants[0].image);
+      } else {
+        setVariantImageOverride(null);
+      }
+    } else {
+      setSelectedSize(null);
+      setVariantImageOverride(null);
+    }
+  }, [selectedProduct?.id, selectedProduct?._id]);
+
+  const activeVariant = sizeVariants.find(v => v.size === selectedSize) || (sizeVariants.length > 0 ? sizeVariants[0] : null);
+  const currentPrice = activeVariant?.price !== undefined ? Number(activeVariant.price) : Number(selectedProduct?.price || 0);
+  const currentMrp = activeVariant?.mrp !== undefined ? Number(activeVariant.mrp) : Number(selectedProduct?.originalPrice || selectedProduct?.mrp || 0);
+
+  const handleSelectSize = (variant) => {
+    setSelectedSize(variant.size);
+    if (variant.image) {
+      setVariantImageOverride(variant.image);
+    } else {
+      setVariantImageOverride(null);
+    }
+  };
+
+  const productPayload = {
+    ...selectedProduct,
+    price: currentPrice,
+    originalPrice: currentMrp,
+    selectedSize: selectedSize || undefined,
+    image: variantImageOverride || activeVariant?.image || selectedProduct?.image
+  };
+
   const currentProductIdKey = selectedProduct?.id || selectedProduct?._id || 'default_product';
   const currentAppliedCouponCode = appliedProductCouponMap[currentProductIdKey] || null;
 
@@ -159,7 +205,7 @@ export default function ProductDetailPage({ onNavigate }) {
 
   const handleApplyCouponAndCheckout = (couponCode) => {
     if (selectedProduct) {
-      addToCart(selectedProduct, quantity);
+      addToCart(productPayload, quantity);
     }
     const res = applyCoupon(couponCode);
     if (res && res.success !== false) {
@@ -248,22 +294,64 @@ export default function ProductDetailPage({ onNavigate }) {
     ? (reviewsList.reduce((acc, r) => acc + r.rating, 0) / reviewsList.length).toFixed(1)
     : '0.0';
 
-  // Recommendation products (exclude current)
-  const moreInKit = (products || []).filter(
-    (p) => p.id !== selectedProduct.id && p.category !== selectedProduct.category
-  ).slice(0, 6);
+  // Recommendation products & kits (Strict check: ONLY approved and active products)
+  const currentProdIdStr = String(selectedProduct.id || selectedProduct._id || '');
 
-  const similarProducts = (products || []).filter(
-    (p) => p.id !== selectedProduct.id && p.category === selectedProduct.category
-  ).slice(0, 6);
+  const isApprovedProduct = (p) => {
+    if (!p) return false;
+    if (p.approvalStatus) {
+      const stat = String(p.approvalStatus).toLowerCase().trim();
+      if (stat === 'pending' || stat === 'rejected') return false;
+      if (stat !== 'approved' && stat !== 'verified') return false;
+    }
+    if (p.status) {
+      const st = String(p.status).toLowerCase().trim();
+      if (st === 'inactive' || st === 'deleted' || st === 'draft') return false;
+    }
+    return true;
+  };
 
-  const helpfulProducts = (products || []).filter(
-    (p) => p.id !== selectedProduct.id && p.rating >= 4.8
-  ).slice(0, 6);
+  const approvedCandidates = (products || []).filter((p) => {
+    if (String(p.id || p._id) === currentProdIdStr) return false;
+    return isApprovedProduct(p);
+  });
 
-  const { isSchoolWithinRadius } = useLocation();
+  // 1. Recommended Kits row (Approved kits / bundles only)
+  let recommendedKits = approvedCandidates.filter((p) => {
+    return p.category === 'kits' || p.bundleType === 'kit' || (Array.isArray(p.kitItems) && p.kitItems.length > 0) || p.school;
+  }).slice(0, 8);
 
-  const recommendedKits = [];
+  if (recommendedKits.length === 0) {
+    recommendedKits = approvedCandidates.slice(0, 6);
+  }
+
+  // 2. Complete Your Kit / Featured Products (Approved products from other categories)
+  let moreInKit = approvedCandidates.filter((p) => {
+    return p.category !== selectedProduct.category;
+  }).slice(0, 8);
+
+  if (moreInKit.length === 0) {
+    moreInKit = approvedCandidates.slice(2, 8);
+  }
+
+  // 3. Similar Products (Approved products from the same category)
+  let similarProducts = approvedCandidates.filter((p) => {
+    return p.category === selectedProduct.category;
+  }).slice(0, 8);
+
+  if (similarProducts.length === 0) {
+    similarProducts = approvedCandidates.slice(0, 6);
+  }
+
+  // 4. You Might Find Helpful / Other Products (Approved top-rated student favorites)
+  let helpfulProducts = approvedCandidates.filter((p) => {
+    const r = Number(p.rating || p.averageRating || 0);
+    return r >= 4.0;
+  }).slice(0, 8);
+
+  if (helpfulProducts.length === 0) {
+    helpfulProducts = approvedCandidates.slice(4, 10);
+  }
 
   const handleReviewSubmit = (e) => {
     e.preventDefault();
@@ -306,7 +394,7 @@ export default function ProductDetailPage({ onNavigate }) {
         addToCart({ ...selectedProduct, bundleType: 'kit' }, quantity);
       }
     } else {
-      addToCart(selectedProduct, quantity);
+      addToCart(productPayload, quantity);
     }
     setIsCartOpen(true);
   };
@@ -491,7 +579,7 @@ export default function ProductDetailPage({ onNavigate }) {
                   </button>
 
                   <img
-                    src={productGallery[activeImageIndex] || selectedProduct.image || FALLBACK_IMAGE}
+                    src={variantImageOverride || productGallery[activeImageIndex] || selectedProduct.image || FALLBACK_IMAGE}
                     alt={selectedProduct.name}
                     className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     onError={(e) => {
@@ -506,9 +594,12 @@ export default function ProductDetailPage({ onNavigate }) {
                     <button
                       key={`${selectedProduct.id}-${index}`}
                       type="button"
-                      onClick={() => setActiveImageIndex(index)}
+                      onClick={() => {
+                        setActiveImageIndex(index);
+                        setVariantImageOverride(null);
+                      }}
                       className={`relative overflow-hidden rounded-xl border transition-all cursor-pointer ${
-                        activeImageIndex === index
+                        !variantImageOverride && activeImageIndex === index
                           ? 'border-brand-teal ring-2 ring-brand-teal/20 shadow-xs'
                           : 'border-gray-200 hover:border-brand-teal/30'
                       }`}
@@ -591,16 +682,16 @@ export default function ProductDetailPage({ onNavigate }) {
                 <div className="p-4 rounded-2xl bg-gradient-to-r from-gray-50 to-amber-50/30 border border-gray-200/80">
                   <div className="flex items-baseline gap-3">
                     <span className="font-display text-3xl font-extrabold text-brand-teal">
-                      ₹{selectedProduct.price}
+                      ₹{currentPrice}
                     </span>
-                    {selectedProduct.originalPrice && (
+                    {currentMrp > currentPrice && (
                       <span className="text-base text-gray-400 line-through">
-                        ₹{selectedProduct.originalPrice}
+                        ₹{currentMrp}
                       </span>
                     )}
-                    {selectedProduct.originalPrice && (
+                    {currentMrp > currentPrice && (
                       <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-md">
-                        Save ₹{selectedProduct.originalPrice - selectedProduct.price}
+                        Save ₹{currentMrp - currentPrice}
                       </span>
                     )}
                   </div>
@@ -609,11 +700,51 @@ export default function ProductDetailPage({ onNavigate }) {
                   </p>
                 </div>
 
+                {/* Size Variants Selector */}
+                {sizeVariants.length > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
+                        Select Size: <strong className="text-brand-teal ml-1">{selectedSize}</strong>
+                      </span>
+                      {activeVariant?.stock !== undefined && (
+                        <span className={`text-[11px] font-bold ${activeVariant.stock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                          {activeVariant.stock > 0 ? `${activeVariant.stock} in stock` : 'Out of Stock'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {sizeVariants.map(variant => {
+                        const isSelected = selectedSize === variant.size;
+                        return (
+                          <button
+                            key={variant.size}
+                            type="button"
+                            onClick={() => handleSelectSize(variant)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal/40'
+                            }`}
+                          >
+                            <span>{variant.size}</span>
+                            {variant.price && (
+                              <span className={`text-[10px] ${isSelected ? 'text-teal-100 font-normal' : 'text-gray-400 font-normal'}`}>
+                                ₹{variant.price}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {selectedProduct.category === 'kits' && selectedProduct.kitItems && (
                   <div className="rounded-2xl border border-brand-teal/20 bg-brand-teal/5 p-4">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-brand-teal">Build Your Bundle</span>
-                      <span className="text-[11px] font-bold text-gray-600">₹{bundleTotal || selectedProduct.price}</span>
+                      <span className="text-[11px] font-bold text-gray-600">₹{bundleTotal || currentPrice}</span>
                     </div>
                     <div className="space-y-2">
                       {selectedProduct.kitItems.map((item) => {
@@ -677,7 +808,7 @@ export default function ProductDetailPage({ onNavigate }) {
                   <div className="text-right">
                     <span className="text-[11px] text-gray-500 block">Total Price:</span>
                     <span className="font-display font-extrabold text-xl text-brand-teal">
-                      ₹{selectedProduct.price * quantity}
+                      ₹{currentPrice * quantity}
                     </span>
                   </div>
                 </div>
@@ -686,7 +817,7 @@ export default function ProductDetailPage({ onNavigate }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={() => addToCart(selectedProduct, quantity)}
+                    onClick={() => addToCart(productPayload, quantity)}
                     className="inline-flex items-center justify-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95"
                   >
                     <ShoppingCart size={16} />
@@ -710,7 +841,7 @@ export default function ProductDetailPage({ onNavigate }) {
                 <div className="text-xs text-gray-500 bg-brand-teal/5 border border-brand-teal/15 p-3 rounded-xl flex items-start gap-2">
                   <Sparkles size={15} className="text-brand-ochre shrink-0 mt-0.5" />
                   <span>
-                    Earn <strong>{Math.round(selectedProduct.price / 10)} Reward Points</strong> on this order for student stationary perks.
+                    Earn <strong>{Math.round(currentPrice / 10)} Reward Points</strong> on this order for student stationary perks.
                   </span>
                 </div>
               </div>
@@ -1214,6 +1345,26 @@ export default function ProductDetailPage({ onNavigate }) {
                               <img src={imgUrl} alt={`Review photo ${imgIdx + 1}`} className="w-full h-full object-cover" />
                             </a>
                           ))}
+                        </div>
+                      )}
+
+                      {/* Seller Reply */}
+                      {(review.reply || review.sellerReply) && (
+                        <div className="mt-3 p-3.5 rounded-xl bg-teal-50/70 border border-teal-200/80 space-y-1">
+                          <div className="flex items-center gap-1.5 text-brand-teal font-extrabold text-xs">
+                            <Store size={14} />
+                            <span>
+                              {review.legalBusinessName || review.sellerName || review.storeName || selectedProduct?.legalBusinessName || selectedProduct?.sellerName || selectedProduct?.sellerStoreName || selectedProduct?.storeName || selectedProduct?.seller || "Seller Reply"}
+                            </span>
+                            {review.repliedAt && (
+                              <span className="text-[10px] text-gray-400 font-normal ml-auto">
+                                {new Date(review.repliedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-700 leading-relaxed font-medium pl-5">
+                            {review.reply || review.sellerReply}
+                          </p>
                         </div>
                       )}
 

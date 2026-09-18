@@ -707,15 +707,23 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
               </div>
 
-              {/* Product Payment Restrictions Notice */}
+              {/* Product & Seller Payment Restrictions Notice */}
               {(() => {
                 const onlineOnlyItem = cartItems.find(item => 
                   item.paymentMethodAllowed === 'Online_Only' || 
-                  (Array.isArray(item.paymentMethodsAllowed) && item.paymentMethodsAllowed.length === 1 && item.paymentMethodsAllowed[0] === 'Online')
+                  item.acceptsCod === false ||
+                  item.sellerAcceptsCod === false ||
+                  (Array.isArray(item.paymentMethodsAllowed) && item.paymentMethodsAllowed.length === 1 && item.paymentMethodsAllowed[0] === 'Online') ||
+                  (Array.isArray(item.acceptedPaymentMethods) && !item.acceptedPaymentMethods.includes('COD')) ||
+                  (Array.isArray(item.paymentMethods) && !item.paymentMethods.includes('COD'))
                 );
                 const codOnlyItem = cartItems.find(item => 
                   item.paymentMethodAllowed === 'COD_Only' || 
-                  (Array.isArray(item.paymentMethodsAllowed) && item.paymentMethodsAllowed.length === 1 && item.paymentMethodsAllowed[0] === 'COD')
+                  item.acceptsOnline === false ||
+                  item.sellerAcceptsOnline === false ||
+                  (Array.isArray(item.paymentMethodsAllowed) && item.paymentMethodsAllowed.length === 1 && item.paymentMethodsAllowed[0] === 'COD') ||
+                  (Array.isArray(item.acceptedPaymentMethods) && !item.acceptedPaymentMethods.includes('Online')) ||
+                  (Array.isArray(item.paymentMethods) && !item.paymentMethods.includes('Online'))
                 );
 
                 const isCodDisabled = Boolean(onlineOnlyItem);
@@ -727,7 +735,7 @@ export default function CheckoutPage({ onNavigate }) {
                       <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl text-xs flex items-center gap-2">
                         <AlertTriangle size={16} className="text-amber-600 shrink-0" />
                         <span>
-                          <strong>COD Unavailable:</strong> '{onlineOnlyItem.name}' was configured by the seller to accept <strong>Online / Prepaid Payment Only</strong>.
+                          <strong>Cash on Delivery (COD) Disabled:</strong> '{onlineOnlyItem.name}' seller has not enabled COD for this product. <strong>Online / Prepaid Payment Required</strong>.
                         </span>
                       </div>
                     )}
@@ -736,7 +744,7 @@ export default function CheckoutPage({ onNavigate }) {
                       <div className="p-3 bg-blue-50 border border-blue-300 text-blue-900 rounded-2xl text-xs flex items-center gap-2">
                         <AlertTriangle size={16} className="text-blue-600 shrink-0" />
                         <span>
-                          <strong>Online Payment Disabled:</strong> '{codOnlyItem.name}' was configured by the seller to accept <strong>Cash on Delivery (COD) Only</strong>.
+                          <strong>Online Payment Disabled:</strong> '{codOnlyItem.name}' seller has configured <strong>Cash on Delivery (COD) Only</strong>.
                         </span>
                       </div>
                     )}

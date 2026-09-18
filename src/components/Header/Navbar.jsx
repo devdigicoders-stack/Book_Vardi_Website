@@ -216,18 +216,25 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
   } = useCart();
   const { locationLabel, userSubdistrict, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen, requestBrowserLocation, isLocating } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [categoriesTree, setCategoriesTree] = useState([]);
+  const [categoriesTree, setCategoriesTree] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_cached_categories_tree');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
 
   useEffect(() => {
     fetchCategoryTreeFromBackend()
       .then((data) => {
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           setCategoriesTree(data);
-        } else {
-          setCategoriesTree([]);
         }
       })
-      .catch(() => setCategoriesTree([]));
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -570,8 +577,8 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         
 
         {/* Global Search Bar (Desktop) */}
-        <div className="hidden lg:flex flex-1 justify-center px-4 min-w-[320px]">
-          <div className="w-full max-w-2xl">
+        <div className="hidden lg:flex justify-center px-2 min-w-[180px] max-w-xs xl:max-w-sm w-full">
+          <div className="w-full max-w-xs xl:max-w-sm">
             <GlobalSearch
               onNavigate={onNavigate}
               onSearch={onSearchChange}
@@ -650,14 +657,14 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
 
           {isAuthenticated ? (
             <div
-              className="hidden lg:flex items-center gap-1 relative"
+              className="flex items-center gap-1 relative"
               ref={actionProfileRef}
               onMouseEnter={handleActionProfileEnter}
               onMouseLeave={handleActionProfileLeave}
             >
               <button
                 type="button"
-                className={`flex items-center gap-2.5 rounded-full border transition-all cursor-pointer ${
+                className={`flex items-center gap-2 rounded-full border transition-all cursor-pointer ${
                   currentPage === 'profile' || actionProfileOpen
                     ? 'border-brand-teal bg-brand-teal text-white shadow-xs'
                     : 'border-gray-200 bg-white text-brand-teal hover:bg-brand-teal/5'
@@ -667,18 +674,16 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                   onNavigate('profile', null, 'profile');
                   setActionProfileOpen(!actionProfileOpen);
                 }}
-
               >
-                <div className="relative flex items-center justify-center">
+                <div className="relative flex items-center justify-center shrink-0">
                   {userProfile?.avatar ? (
                     <img
                       src={resolveImageUrl(userProfile.avatar)}
                       alt={displayName}
-                      className="w-8 h-8 rounded-full object-cover ring-2 ring-white/80"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover ring-2 ring-white/80"
                     />
-
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-current/10 flex items-center justify-center text-[11px] font-extrabold ring-2 ring-white/80">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-current/10 flex items-center justify-center text-[11px] font-extrabold ring-2 ring-white/80">
                       {displayName.charAt(0).toUpperCase()}
                     </div>
                   )}
@@ -686,17 +691,17 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                 </div>
 
                 <div className="hidden xl:flex flex-col text-left leading-tight min-w-0">
-                  <span className="text-[10px] font-extrabold truncate max-w-[120px]">
+                  <span className="text-[10px] font-extrabold truncate max-w-[110px]">
                     {displayName}
                   </span>
-                  <span className={`text-[9px] truncate max-w-[120px] ${currentPage === 'profile' || actionProfileOpen ? 'text-white/80' : 'text-gray-500'}`}>
+                  <span className={`text-[9px] truncate max-w-[110px] ${currentPage === 'profile' || actionProfileOpen ? 'text-white/80' : 'text-gray-500'}`}>
                     {displayEmail}
                   </span>
                 </div>
 
                 <ChevronDown
                   size={14}
-                  className={`hidden xl:block transition-transform duration-200 ${actionProfileOpen ? 'rotate-180' : ''} ${currentPage === 'profile' || actionProfileOpen ? 'text-white' : 'text-gray-400'}`}
+                  className={`hidden sm:block transition-transform duration-200 ${actionProfileOpen ? 'rotate-180' : ''} ${currentPage === 'profile' || actionProfileOpen ? 'text-white' : 'text-gray-400'}`}
                 />
               </button>
               {actionProfileOpen && (
@@ -734,17 +739,25 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
             </div>
           )}
 
-          {isAuthenticated && (
-            <button
-              className="relative p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 transition-colors cursor-pointer"
-              onClick={() => setIsCartOpen(true)}
-            >
-              <ShoppingCart size={20} />
-              <span className="absolute top-1 right-1 bg-brand-yellow text-brand-teal-dark text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-xs">
+          {/* Cart Icon Button - Positioned right after Profile Card (Icon & Badge only) */}
+          <button
+            type="button"
+            className="relative p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 transition-all active:scale-95 cursor-pointer ml-1"
+            onClick={() => setIsCartOpen(true)}
+            title="Open Shopping Cart"
+            aria-label="Open Shopping Cart"
+          >
+            <ShoppingCart size={22} className="text-brand-teal" />
+            {totalItemsCount > 0 ? (
+              <span className="absolute top-0.5 right-0.5 bg-brand-yellow text-brand-teal-dark text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-white shadow-xs">
                 {totalItemsCount}
               </span>
-            </button>
-          )}
+            ) : (
+              <span className="absolute top-0.5 right-0.5 bg-gray-200 text-gray-700 text-[9px] font-bold min-w-[14px] h-[14px] rounded-full flex items-center justify-center border border-white">
+                0
+              </span>
+            )}
+          </button>
 
           <button
             className="p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 lg:hidden cursor-pointer"

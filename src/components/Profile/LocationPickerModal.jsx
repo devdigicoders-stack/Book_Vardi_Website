@@ -17,6 +17,23 @@ export default function LocationPickerModal({ isOpen, onClose, onSelectLocation,
     pincode: initialAddress.pincode || ''
   });
 
+  // Re-sync addressDetails whenever modal opens with new initialAddress
+  useEffect(() => {
+    if (isOpen) {
+      setAddressDetails({
+        street: initialAddress.street || initialAddress.addressLine1 || '',
+        colony: initialAddress.colony || initialAddress.addressLine2 || '',
+        landmark: initialAddress.landmark || '',
+        city: initialAddress.city || 'Lucknow',
+        state: initialAddress.state || 'Uttar Pradesh',
+        pincode: initialAddress.pincode || ''
+      });
+      if (initialAddress.lat && initialAddress.lng) {
+        setCurrentCoords({ lat: parseFloat(initialAddress.lat), lng: parseFloat(initialAddress.lng) });
+      }
+    }
+  }, [isOpen, initialAddress]);
+
   const mapContainerRef = useRef(null);
   const leafletMapRef = useRef(null);
   const markerRef = useRef(null);
@@ -117,14 +134,14 @@ export default function LocationPickerModal({ isOpen, onClose, onSelectLocation,
         const state = addr.state || 'Uttar Pradesh';
         const pincode = addr.postcode || '';
 
-        setAddressDetails({
-          street: street || addressDetails.street,
-          colony: colony || addressDetails.colony,
-          landmark: landmark || addressDetails.landmark,
-          city: city || addressDetails.city,
-          state: state || addressDetails.state,
-          pincode: pincode || addressDetails.pincode
-        });
+        setAddressDetails(prev => ({
+          street: street || prev.street,
+          colony: colony || prev.colony,
+          landmark: landmark || prev.landmark,
+          city: city || prev.city,
+          state: state || prev.state,
+          pincode: pincode || prev.pincode
+        }));
       }
     } catch (err) {
       console.warn('Reverse geocode error:', err);
@@ -173,14 +190,14 @@ export default function LocationPickerModal({ isOpen, onClose, onSelectLocation,
     const state = addr.state || 'Uttar Pradesh';
     const pincode = addr.postcode || '';
 
-    setAddressDetails({
-      street: street || searchQuery,
-      colony: colony || addressDetails.colony,
-      landmark: landmark || addressDetails.landmark,
-      city: city || addressDetails.city,
-      state: state || addressDetails.state,
-      pincode: pincode || addressDetails.pincode
-    });
+    setAddressDetails(prev => ({
+      street: street || searchQuery || prev.street,
+      colony: colony || prev.colony,
+      landmark: landmark || prev.landmark,
+      city: city || prev.city,
+      state: state || prev.state,
+      pincode: pincode || prev.pincode
+    }));
   };
 
   // Use current device GPS location

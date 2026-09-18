@@ -542,25 +542,26 @@ export function CartProvider({ children }) {
     }
     const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
     const prodId = product?.id !== undefined ? product.id : product?._id;
+    const variantKey = `${prodId}_${product?.selectedSize || ''}`;
     const inWishlist = wishlist.some((item) => String(item) === String(prodId));
 
     setCartItems((prev) => {
-      const existing = prev.find((item) => String(item.id) === String(product.id));
+      const existing = prev.find((item) => `${item.id || item._id}_${item.selectedSize || ''}` === variantKey);
       if (existing) {
         return prev.map((item) =>
-          String(item.id) === String(product.id)
+          `${item.id || item._id}_${item.selectedSize || ''}` === variantKey
             ? { ...item, quantity: item.quantity + qtyToAdd }
             : item
         );
       }
-      return [...prev, { ...product, quantity: qtyToAdd }];
+      return [...prev, { ...product, id: prodId, quantity: qtyToAdd }];
     });
 
     if (inWishlist) {
       setWishlist((prev) => prev.filter((item) => String(item) !== String(prodId)));
-      showToast(`Moved "${product.name}" from wishlist to your cart! 🛍️`);
+      showToast(`Moved "${product.name}${product.selectedSize ? ` (${product.selectedSize})` : ''}" from wishlist to your cart! 🛍️`);
     } else {
-      showToast(`Added ${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}"${product.name}" to your cart!`);
+      showToast(`Added ${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}"${product.name}${product.selectedSize ? ` (${product.selectedSize})` : ''}" to your cart!`);
     }
 
     if (backendEnabled) {
@@ -1172,32 +1173,100 @@ export function CartProvider({ children }) {
     showToast('Logged out successfully. See you soon! 👋');
   };
 
-  const applyCoupon = (codeRaw) => {
+  const applyCoupon = async (codeRaw) => {
     const code = (codeRaw || '').trim().toUpperCase();
     if (!code) {
       showToast('Please enter a coupon code.');
       return { success: false, message: 'Please enter a coupon code.' };
     }
 
-    // Check dynamic promotions synced from Admin & Seller portals
+    // Try Backend API verification if backend is enabled
+    if (backendEnabled) {
+      try {
+        const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const res = await fetch(`${SERVER_URL}/coupons/apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code,
+            cartTotal: subtotal,
+            cartItems: displayedCartItems
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.coupon) {
+          const couponObj = {
+            code: data.coupon.code,
+            type: data.coupon.type === 'fixed' ? 'flat' : 'percent',
+            value: data.coupon.discount,
+            discountAmount: data.discountAmount,
+            label: `${data.coupon.code} Applied (${data.coupon.discount}${data.coupon.type === 'percentage' ? '%' : '₹'} off eligible items)`
+          };
+          setAppliedCoupon(couponObj);
+          showToast(`🎉 Coupon ${code} applied! ₹${data.discountAmount} discount added.`);
+          return { success: true, message: `Discount of ₹${data.discountAmount} applied!`, discountAmount: data.discountAmount };
+        } else if (data.message) {
+          showToast(`⚠️ ${data.message}`);
+          return { success: false, message: data.message };
+        }
+      } catch (err) {
+        console.warn('Backend coupon apply error, falling back to local evaluation:', err);
+      }
+    }
+
+    // Local fallback evaluation
     const dynamicPromo = promotions.find(
       (p) => (p.code || '').toUpperCase() === code && p.status !== 'expired'
     );
     if (dynamicPromo) {
-      if (dynamicPromo.minOrderValue && subtotal < dynamicPromo.minOrderValue) {
-        showToast(`⚠️ ${code} requires a minimum order of ₹${dynamicPromo.minOrderValue}.`);
-        return { success: false, message: `Minimum cart value of ₹${dynamicPromo.minOrderValue} required.` };
+      const isSeller = Boolean(dynamicPromo.sellerId || dynamicPromo.storeId || dynamicPromo.createdRole === 'seller');
+      const targetSeller = dynamicPromo.sellerId || dynamicPromo.storeId;
+      const applicableProds = dynamicPromo.specificProductId
+        ? [String(dynamicPromo.specificProductId)]
+        : (Array.isArray(dynamicPromo.applicableProducts) ? dynamicPromo.applicableProducts.map(String) : []);
+
+      const eligibleItems = displayedCartItems.filter((item) => {
+        const itemSeller = item.sellerId || item.seller || item.storeId;
+        const itemProd = item.id || item._id || item.productId;
+        if (isSeller) {
+          if (targetSeller && String(itemSeller) !== String(targetSeller)) return false;
+          if (applicableProds.length > 0 && !applicableProds.includes(String(itemProd))) return false;
+          return true;
+        } else {
+          if (applicableProds.length > 0 && !applicableProds.includes(String(itemProd))) return false;
+          return true;
+        }
+      });
+
+      if (eligibleItems.length === 0) {
+        showToast('⚠️ This coupon is not applicable to any items in your cart.');
+        return { success: false, message: 'Coupon not applicable to items in cart.' };
       }
+
+      const eligibleSubtotal = eligibleItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const minVal = dynamicPromo.minOrderValue || dynamicPromo.minOrderAmount || dynamicPromo.minAmount || 0;
+
+      if (eligibleSubtotal < minVal) {
+        showToast(`⚠️ ${code} requires minimum ₹${minVal} purchase of eligible items.`);
+        return { success: false, message: `Minimum cart value of ₹${minVal} required for eligible items.` };
+      }
+
       const isPercent = dynamicPromo.discountType === 'percentage' || dynamicPromo.type === 'percent';
+      const discountVal = Number(dynamicPromo.discountValue) || Number(dynamicPromo.discount) || Number(dynamicPromo.value) || 0;
+      const calculatedDiscount = isPercent
+        ? Math.round(((eligibleSubtotal * discountVal) / 100) * 100) / 100
+        : Math.min(eligibleSubtotal, discountVal);
+
       const coupon = {
         code: dynamicPromo.code,
         type: isPercent ? 'percent' : 'flat',
-        value: Number(dynamicPromo.discountValue) || Number(dynamicPromo.value) || 10,
+        value: discountVal,
+        discountAmount: calculatedDiscount,
         label: dynamicPromo.title || `${code} Applied!`
       };
       setAppliedCoupon(coupon);
-      showToast(`🎉 Coupon ${code} applied! Discount added.`);
-      return { success: true, message: `${coupon.label} applied!` };
+      showToast(`🎉 Coupon ${code} applied! ₹${calculatedDiscount} off.`);
+      return { success: true, message: `${coupon.label} applied!`, discountAmount: calculatedDiscount };
     }
 
     if (code === 'SCHOOL10') {
@@ -1205,6 +1274,7 @@ export function CartProvider({ children }) {
         code: 'SCHOOL10',
         type: 'percent',
         value: 10,
+        discountAmount: Math.round((subtotal * 0.1) * 100) / 100,
         label: '10% Student Discount'
       };
       setAppliedCoupon(coupon);
@@ -1221,6 +1291,7 @@ export function CartProvider({ children }) {
         code: 'STUDENT50',
         type: 'flat',
         value: 50,
+        discountAmount: 50,
         label: '₹50 Flat Student Discount'
       };
       setAppliedCoupon(coupon);
@@ -1233,6 +1304,7 @@ export function CartProvider({ children }) {
         code: 'FREESHIP',
         type: 'freeship',
         value: 0,
+        discountAmount: 0,
         label: '100% Free Shipping'
       };
       setAppliedCoupon(coupon);
@@ -1240,7 +1312,7 @@ export function CartProvider({ children }) {
       return { success: true, message: 'Free shipping applied!' };
     }
 
-    showToast('❌ Invalid coupon code. Try SCHOOL10 or STUDENT50.');
+    showToast('❌ Invalid or expired coupon code.');
     return { success: false, message: 'Invalid or expired coupon code.' };
   };
 

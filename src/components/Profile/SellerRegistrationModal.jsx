@@ -198,6 +198,11 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [locationStatus, setLocationStatus] = useState('');
 
+  // Drag & drop file upload states
+  const [isDraggingAddressProof, setIsDraggingAddressProof] = useState(false);
+  const [isDraggingProfilePhoto, setIsDraggingProfilePhoto] = useState(false);
+  const [isDraggingStoreLogo, setIsDraggingStoreLogo] = useState(false);
+
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser.');
@@ -280,6 +285,16 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       [field]: value,
       highestStepReached: Math.max(prev.highestStepReached, step)
     }));
+
+    // Invalidate phone OTP verification when user alters seller phone or email
+    if (field === 'sellerPhone' || field === 'sellerEmail') {
+      setFormData(prev => ({
+        ...prev,
+        phoneOtpVerified: false,
+        emailOtpVerified: false
+      }));
+      setOtpSent(false);
+    }
 
     // Invalidate verification when user alters PAN or Aadhaar
     if (field === 'ownerPan') {
@@ -370,9 +385,6 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     showToast('✅ Mobile number verified successfully via OTP!');
   };
 
-  const [isDraggingAddressProof, setIsDraggingAddressProof] = useState(false);
-  const [isDraggingProfilePhoto, setIsDraggingProfilePhoto] = useState(false);
-
   const processProfilePhotoFile = (file) => {
     if (!file) return;
 
@@ -403,6 +415,38 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     setIsDraggingProfilePhoto(false);
     const file = e.dataTransfer.files && e.dataTransfer.files[0];
     processProfilePhotoFile(file);
+  };
+
+  const processStoreLogoFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('⚠️ Logo image file is too large. Please select an image under 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({
+        ...prev,
+        storeLogo: event.target.result
+      }));
+      showToast('🖼️ Store Logo uploaded successfully!');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleStoreLogoSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    processStoreLogoFile(file);
+  };
+
+  const handleStoreLogoDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingStoreLogo(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    processStoreLogoFile(file);
   };
 
   const processAddressProofFile = (file) => {
@@ -514,6 +558,13 @@ function dataURLtoBlob(dataurl, filename = 'file') {
 }
 
   const handleFinalSubmit = async () => {
+    if (!formData.phoneOtpVerified) {
+      setStep(1);
+      setShowOtpPopup(true);
+      showToast('⚠️ Mobile OTP verification is required to complete seller registration!');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       if (backendEnabled) {
@@ -524,20 +575,48 @@ function dataURLtoBlob(dataurl, filename = 'file') {
         formPayload.append('phone', formData.sellerPhone || '');
         formPayload.append('password', 'BookVardiSeller@123');
         formPayload.append('address', `${formData.addressLine1 || ''} ${formData.addressLine2 || ''}`.trim());
+        formPayload.append('addressLine1', formData.addressLine1 || '');
+        formPayload.append('addressLine2', formData.addressLine2 || '');
+        formPayload.append('landmark', formData.landmark || '');
         formPayload.append('city', formData.city || '');
         formPayload.append('state', formData.state || '');
         formPayload.append('pincode', formData.pincode || '');
+        formPayload.append('country', formData.country || 'India');
         formPayload.append('gstNumber', formData.gstin || '');
         formPayload.append('msmeRegistrationNumber', formData.msmeRegistrationNumber || '');
         formPayload.append('cinNumber', formData.cinNumber || '');
+        formPayload.append('yearStarted', formData.yearStarted || '');
+        formPayload.append('businessType', formData.businessType || 'Proprietorship');
+        formPayload.append('annualTurnoverEstimate', formData.annualTurnoverEstimate || '');
+        formPayload.append('ownerFullName', formData.ownerFullName || formData.sellerName || '');
+        formPayload.append('ownerDesignation', formData.ownerDesignation || 'Proprietor');
+        formPayload.append('ownerPan', formData.ownerPan || formData.businessPan || '');
+        formPayload.append('ownerAadhaarLast4', formData.ownerAadhaarLast4 || '');
+        formPayload.append('addressProofType', formData.addressProofType || '');
+        formPayload.append('addressProofDocNumber', formData.addressProofDocNumber || '');
         formPayload.append('accountHolderName', formData.bankAccountHolder || '');
         formPayload.append('accountNumber', formData.bankAccountNumber || '');
         formPayload.append('ifscCode', formData.bankIfscCode || '');
         formPayload.append('bankName', formData.bankName || '');
         formPayload.append('branchName', formData.bankBranch || '');
+        formPayload.append('accountType', formData.accountType || 'Savings Account');
+        formPayload.append('storeTagline', formData.storeTagline || '');
+        formPayload.append('storeDescription', formData.storeDescription || '');
         formPayload.append('aadhaarNumber', formData.ownerAadhaarLast4 || '');
         formPayload.append('panNumber', formData.ownerPan || formData.businessPan || '');
-        formPayload.append('yearStarted', formData.yearStarted || '');
+        formPayload.append('estimatedSkuCount', formData.estimatedSkuCount || '');
+        formPayload.append('sampleProductTitle', formData.sampleProductTitle || '');
+        formPayload.append('acceptedTerms', formData.acceptedTerms ? 'true' : 'false');
+        formPayload.append('acceptedCommissionRate', formData.acceptedCommissionRate ? 'true' : 'false');
+        formPayload.append('acceptedReturnPolicy', formData.acceptedReturnPolicy ? 'true' : 'false');
+        formPayload.append('authorizedSignatoryConfirmation', formData.authorizedSignatoryConfirmation ? 'true' : 'false');
+
+        if (Array.isArray(formData.selectedCategories)) {
+          formData.selectedCategories.forEach(cat => formPayload.append('selectedCategories', cat));
+        }
+        if (Array.isArray(formData.primaryBrands)) {
+          formData.primaryBrands.forEach(b => formPayload.append('primaryBrands', b));
+        }
 
         if (formData.profilePhoto) {
           const profileBlob = dataURLtoBlob(formData.profilePhoto, 'profile-photo.png');
@@ -891,6 +970,22 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                     placeholder="2021"
                   />
                 </div>
+
+                <div className="space-y-1 md:col-span-2">
+                  <label className="font-bold text-gray-700">Estimated Annual Business Turnover *</label>
+                  <select
+                    value={formData.annualTurnoverEstimate}
+                    onChange={(e) => handleChange('annualTurnoverEstimate', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                  >
+                    <option value="">Select Annual Turnover Estimate</option>
+                    <option value="Below ₹10 Lakhs">Below ₹10 Lakhs</option>
+                    <option value="₹10 Lakhs - ₹25 Lakhs">₹10 Lakhs - ₹25 Lakhs</option>
+                    <option value="₹25 Lakhs - ₹50 Lakhs">₹25 Lakhs - ₹50 Lakhs</option>
+                    <option value="₹50 Lakhs - ₹1 Crore">₹50 Lakhs - ₹1 Crore</option>
+                    <option value="Above ₹1 Crore">Above ₹1 Crore</option>
+                  </select>
+                </div>
               </div>
             </div>
           )}
@@ -1120,12 +1215,20 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Goods & Service Tax Number (GSTIN) *</label>
+                  <label className="font-bold text-gray-700">
+                    Goods & Service Tax Number (GSTIN) {formData.hasGstExemption ? '(Exempted)' : '*'}
+                  </label>
                   <input
                     type="text"
-                    value={formData.gstin}
+                    value={formData.hasGstExemption ? 'EXEMPT' : formData.gstin}
+                    disabled={formData.hasGstExemption}
                     onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono uppercase"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono uppercase transition-colors ${
+                      formData.hasGstExemption
+                        ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed opacity-75'
+                        : 'border-gray-200 focus:ring-2 focus:ring-brand-yellow'
+                    }`}
+                    placeholder={formData.hasGstExemption ? 'GSTIN Exempted' : '22AAAAA0000A1Z5'}
                   />
                 </div>
 
@@ -1147,6 +1250,31 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                     onChange={(e) => handleChange('cinNumber', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
                   />
+                </div>
+
+                <div className="space-y-1 md:col-span-2 bg-gray-50 p-3.5 rounded-xl border border-gray-200">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-gray-800 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={formData.hasGstExemption}
+                      onChange={(e) => {
+                        const isExempt = e.target.checked;
+                        handleChange('hasGstExemption', isExempt);
+                        if (isExempt) {
+                          handleChange('gstin', 'EXEMPT');
+                        } else if (formData.gstin === 'EXEMPT') {
+                          handleChange('gstin', '');
+                        }
+                      }}
+                      className="rounded text-brand-teal focus:ring-brand-yellow"
+                    />
+                    <span>My entity operates under GST Exemption / Threshold Limit (No GSTIN required)</span>
+                  </label>
+                  {formData.hasGstExemption && (
+                    <p className="text-[11px] text-emerald-700 font-semibold mt-1 pl-6">
+                      ✓ GSTIN requirement disabled for GST exempted business entities.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1260,6 +1388,16 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                     placeholder="226001"
                   />
                 </div>
+              </div>
+
+              {/* Formatted Live Address Preview Box */}
+              <div className="p-3.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-1 text-xs">
+                <span className="font-extrabold text-teal-900 flex items-center gap-1.5 uppercase text-[11px]">
+                  <Navigation size={14} className="text-teal-700" /> Formatted Business Address Preview:
+                </span>
+                <p className="font-bold text-gray-800 text-xs leading-relaxed">
+                  {[formData.addressLine1, formData.addressLine2, formData.landmark, formData.city, formData.state].filter(Boolean).join(', ')} {formData.pincode ? `- ${formData.pincode}` : ''}
+                </p>
               </div>
             </div>
           )}
@@ -1481,10 +1619,23 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
                   />
                 </div>
+
+                <div className="space-y-1 md:col-span-2">
+                  <label className="font-bold text-gray-700">Bank Account Type *</label>
+                  <select
+                    value={formData.accountType}
+                    onChange={(e) => handleChange('accountType', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                  >
+                    <option value="Current Account">Current Account</option>
+                    <option value="Savings Account">Savings Account</option>
+                    <option value="Overdraft Account">Overdraft Account (OD)</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 font-semibold">
-                <CheckCircle2 size={16} /> Penny Drop Verification Successful: Beneficiary name matches legal entity.
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 font-semibold text-xs">
+                <CheckCircle2 size={16} className="shrink-0 text-emerald-600" /> Penny Drop Verification Successful: Beneficiary details & bank info will be verified.
               </div>
             </div>
           )}
@@ -1501,13 +1652,94 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 </p>
               </div>
 
-              <div className="space-y-1">
-                <label className="font-bold text-gray-700">Public Store Name *</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Public Store Name *</label>
+                  <input
+                    type="text"
+                    value={formData.storeName}
+                    onChange={(e) => handleChange('storeName', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold"
+                    placeholder="e.g. Apex Uniforms & Stationery Store"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Store Tagline / Slogan</label>
+                  <input
+                    type="text"
+                    value={formData.storeTagline}
+                    onChange={(e) => handleChange('storeTagline', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="e.g. Official School Wear & Educational Supplies"
+                  />
+                </div>
+              </div>
+
+              {/* Drag & Drop Store Logo / Banner Image Upload */}
+              <div className="space-y-2">
+                <label className="font-bold text-gray-700 text-xs block">
+                  Store Logo / Banner Image (Upload File or Enter Image URL)
+                </label>
+                
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingStoreLogo(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingStoreLogo(false); }}
+                  onDrop={handleStoreLogoDrop}
+                  className={`p-4 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${
+                    isDraggingStoreLogo 
+                      ? 'bg-teal-100 border-teal-400 ring-2 ring-teal-400 scale-[1.01]' 
+                      : 'bg-teal-50/70 border-teal-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="relative group shrink-0">
+                      <img
+                        src={formData.storeLogo || "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=150&auto=format&fit=crop&q=80"}
+                        alt="Store Logo Preview"
+                        className="w-16 h-16 rounded-2xl object-cover border-2 border-brand-yellow shadow-xs bg-white"
+                      />
+                      {formData.storeLogo && (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('storeLogo', '')}
+                          className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full p-1 shadow-xs hover:bg-rose-700 cursor-pointer"
+                          title="Remove Store Logo"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-teal-950 text-xs sm:text-sm">
+                        {isDraggingStoreLogo ? 'Drop Store Logo Here!' : 'Store Banner & Logo'}
+                      </h4>
+                      <p className="text-[11px] text-teal-700 leading-snug">
+                        Drag & drop logo image file (PNG, JPG, WEBP) or paste image URL below.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                    <label className="w-full sm:w-auto cursor-pointer bg-brand-teal hover:bg-brand-teal-dark text-white px-3.5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                      <UploadCloud size={14} />
+                      <span>{formData.storeLogo ? 'Change Logo' : 'Upload Logo'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleStoreLogoSelect}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 <input
                   type="text"
-                  value={formData.storeName}
-                  onChange={(e) => handleChange('storeName', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold"
+                  value={formData.storeLogo}
+                  onChange={(e) => handleChange('storeLogo', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
+                  placeholder="Or paste image URL (https://...)"
                 />
               </div>
 
@@ -1518,6 +1750,7 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                   value={formData.storeDescription}
                   onChange={(e) => handleChange('storeDescription', e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                  placeholder="Describe your store history, authorized school partnerships, and catalog specialties..."
                 />
               </div>
             </div>
@@ -1558,14 +1791,15 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <div className="space-y-1">
                   <label className="font-bold text-gray-700">Authorized Brands (Comma Separated)</label>
                   <input
                     type="text"
-                    value={formData.primaryBrands.join(', ')}
+                    value={Array.isArray(formData.primaryBrands) ? formData.primaryBrands.join(', ') : (formData.primaryBrands || '')}
                     onChange={(e) => handleChange('primaryBrands', e.target.value.split(',').map(s => s.trim()))}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="NCERT, Classmate, Action, Speedo"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1575,6 +1809,17 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                     value={formData.estimatedSkuCount}
                     onChange={(e) => handleChange('estimatedSkuCount', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="e.g. 50-100 Products"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Sample Product / Flagship Item Title</label>
+                  <input
+                    type="text"
+                    value={formData.sampleProductTitle}
+                    onChange={(e) => handleChange('sampleProductTitle', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="e.g. DPS Navy Blazer (Size 34)"
                   />
                 </div>
               </div>
