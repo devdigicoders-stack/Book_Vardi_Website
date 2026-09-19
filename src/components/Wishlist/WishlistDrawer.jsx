@@ -103,7 +103,7 @@ export default function WishlistDrawer({ onNavigate }) {
                         {product.name}
                       </h4>
                       <button
-                        onClick={() => toggleWishlist(product.id)}
+                        onClick={() => toggleWishlist(product.id, product)}
                         className="text-gray-400 hover:text-brand-pink p-1 transition-colors cursor-pointer shrink-0"
                         title="Remove from Liked Items"
                         aria-label="Remove item"

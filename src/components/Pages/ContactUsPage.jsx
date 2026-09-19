@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Mail, Phone, MapPin, Send, MessageCircle } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { submitContactMessageApi } from '../../utils/api';
 
 export default function ContactUsPage() {
-  const { isAuthenticated, userProfile, addToast } = useCart();
+  const { isAuthenticated, userProfile, showToast } = useCart();
   const [formData, setFormData] = useState({
     name: isAuthenticated ? userProfile?.name || '' : '',
     email: isAuthenticated ? userProfile?.email || '' : '',
+    phone: isAuthenticated ? userProfile?.phone || '' : '',
     subject: '',
     message: ''
   });
@@ -17,15 +19,23 @@ export default function ContactUsPage() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const res = await submitContactMessageApi(formData);
+      if (res && res.success !== false) {
+        showToast(res.message || 'Message sent successfully! Saved to database.');
+        setFormData((prev) => ({ ...prev, subject: '', message: '' }));
+      } else {
+        showToast(res?.message || 'Failed to send message. Please try again.');
+      }
+    } catch (err) {
+      console.error('Contact message submission error:', err);
+      showToast('Error sending message. Please try again.');
+    } finally {
       setIsSubmitting(false);
-      addToast('Message sent successfully! We will get back to you soon.', 'success');
-      setFormData((prev) => ({ ...prev, subject: '', message: '' })); // clear just the message parts
-    }, 1200);
+    }
   };
 
   return (

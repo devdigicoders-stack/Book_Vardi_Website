@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import * as MockData from '../data/mockData';
-import { usePlatformSyncListener } from '../utils/syncBridge';
+import { backendEnabled, fetchSchoolsFromBackend } from '../utils/api';
 
 const FALLBACK_SCHOOLS = [
   {
@@ -9,11 +8,13 @@ const FALLBACK_SCHOOLS = [
     shortName: "Delhi Public School",
     board: "CBSE",
     city: "New Delhi",
+    district: "New Delhi",
+    subdistrict: "RK Puram",
     address: "Sector 12, R.K. Puram, New Delhi",
     pincode: "110022",
     lat: 28.5684,
     lng: 77.1834,
-    classes: "Nursery to 12th",
+    classes: ["Nursery", "LKG", "UKG", "Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"],
     studentCount: 4200,
     contactPerson: "Mrs. Sunita Chawla",
     email: "admin@dpsrkp.net",
@@ -29,11 +30,13 @@ const FALLBACK_SCHOOLS = [
     shortName: "The Mother’s International School",
     board: "CBSE",
     city: "New Delhi",
+    district: "New Delhi",
+    subdistrict: "Vijay Mandal",
     address: "Sri Aurobindo Marg, Vijay Mandal Enclave, New Delhi",
     pincode: "110016",
     lat: 28.5398,
     lng: 77.1994,
-    classes: "Class 1 to 12th",
+    classes: ["Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"],
     studentCount: 2600,
     contactPerson: "Dr. Arvind Menon",
     email: "principal@mis.org.in",
@@ -48,12 +51,14 @@ const FALLBACK_SCHOOLS = [
     name: "St. Xavier Senior Secondary School",
     shortName: "St. Xavier Senior Secondary",
     board: "ICSE",
-    city: "Gurugram, Haryana",
+    city: "Gurugram",
+    district: "Gurugram",
+    subdistrict: "Sector 14",
     address: "Sector 49, Rosewood City, Gurugram, Haryana",
     pincode: "122018",
     lat: 28.4195,
     lng: 77.0566,
-    classes: "KG to 12th",
+    classes: ["LKG", "UKG", "Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"],
     studentCount: 3100,
     contactPerson: "Fr. Matthew D’Souza",
     email: "contact@stxaviersgurugram.in",
@@ -68,12 +73,14 @@ const FALLBACK_SCHOOLS = [
     name: "Kendriya Vidyalaya No. 1",
     shortName: "Kendriya Vidyalaya",
     board: "CBSE",
-    city: "Pune, Maharashtra",
+    city: "Pune",
+    district: "Pune",
+    subdistrict: "Ganeshkhind",
     address: "Ganeshkhind Road, Armament Colony, Pune, Maharashtra",
     pincode: "411007",
     lat: 18.5402,
     lng: 73.8340,
-    classes: "Class 1 to 12th",
+    classes: ["Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"],
     studentCount: 1850,
     contactPerson: "Mr. Satish Waghmare",
     email: "kv1pune@kvsedu.gov.in",
@@ -89,11 +96,13 @@ const FALLBACK_SCHOOLS = [
     shortName: "Modern School, Barakhamba",
     board: "CBSE",
     city: "New Delhi",
+    district: "New Delhi",
+    subdistrict: "Central Delhi",
     address: "Barakhamba Road, Connaught Place, New Delhi",
     pincode: "110001",
     lat: 28.6304,
     lng: 77.2285,
-    classes: "Class 6 to 12th",
+    classes: ["Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"],
     studentCount: 2900,
     contactPerson: "Col. Rajesh Verma",
     email: "admin@modernschool.net",
@@ -109,11 +118,13 @@ const FALLBACK_SCHOOLS = [
     shortName: "Ryan International",
     board: "CBSE",
     city: "New Delhi",
+    district: "New Delhi",
+    subdistrict: "Mayur Vihar",
     address: "Mayur Vihar Phase 3, Delhi NCR",
     pincode: "110096",
     lat: 28.6094,
     lng: 77.2982,
-    classes: "Montessori to 12th",
+    classes: ["Nursery", "LKG", "UKG", "Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"],
     studentCount: 3400,
     contactPerson: "Mrs. Kavita Saxena",
     email: "info@ryanmayurvihar.edu",
@@ -125,9 +136,7 @@ const FALLBACK_SCHOOLS = [
   }
 ];
 
-export const DEFAULT_SCHOOLS = (MockData && Array.isArray(MockData.SCHOOLS) && MockData.SCHOOLS.length > 0)
-  ? MockData.SCHOOLS
-  : FALLBACK_SCHOOLS;
+export const DEFAULT_SCHOOLS = FALLBACK_SCHOOLS;
 
 // Standard known cities and subdistrict localities with coordinates
 export const POPULAR_CITIES = [
@@ -247,6 +256,19 @@ export function LocationProvider({ children }) {
     return DEFAULT_SCHOOLS;
   });
 
+  useEffect(() => {
+    if (backendEnabled && typeof fetchSchoolsFromBackend === 'function') {
+      fetchSchoolsFromBackend()
+        .then((res) => {
+          const list = res?.schools || res || [];
+          if (Array.isArray(list) && list.length > 0) {
+            setSchools(list);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   // 3. User Location state
   // Permission state: 'prompt' | 'granted' | 'denied' | 'manual'
   const [permissionStatus, setPermissionStatus] = useState(() => {
@@ -286,22 +308,7 @@ export function LocationProvider({ children }) {
   const [locationError, setLocationError] = useState(null);
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
 
-  // Sync listener for cross-portal admin changes (e.g. radius or schools changed)
-  usePlatformSyncListener((incoming) => {
-    if (incoming?.schoolRadiusKm != null) {
-      const validKm = Number(incoming.schoolRadiusKm);
-      setSchoolRadiusKm(validKm);
-      try {
-        localStorage.setItem('bv_school_radius_km', String(validKm));
-      } catch {}
-    }
-    if (incoming?.schools && Array.isArray(incoming.schools)) {
-      setSchools(incoming.schools);
-      try {
-        localStorage.setItem('bv_schools', JSON.stringify(incoming.schools));
-      } catch {}
-    }
-  });
+
 
   // Check on initial load if user needs to be prompted
   useEffect(() => {

@@ -19,7 +19,38 @@ import {
   TwitterIcon,
   FacebookIcon
 } from '../Common/SocialIcons';
-import { ABOUT_DATA } from '../../data/mockData';
+
+const ABOUT_DATA = {
+  mission: 'To make authentic, school-approved uniforms, textbooks, and kits accessible to every parent and student across India.',
+  story: 'Book Vardi was founded with a clear objective: simplify the school shopping experience for families. By partnering directly with educational institutions and verified manufacturers, we deliver genuine uniforms and syllabus-aligned books right to your doorstep.',
+  stats: [
+    { label: 'Partner Schools', value: '50+' },
+    { label: 'Students Served', value: '10,000+' },
+    { label: 'Genuine Products', value: '100%' },
+    { label: 'Cities Covered', value: '25+' }
+  ],
+  milestones: [
+    { year: '2021', title: 'Book Vardi Founded', description: 'Started with a vision to simplify school uniform and book purchasing for families.' },
+    { year: '2022', title: '50+ School Partnerships', description: 'Expanded partnerships with premier schools to offer syllabus-aligned kits directly.' },
+    { year: '2023', title: '10,000+ Happy Students', description: 'Delivered authentic kits across 25+ cities with 100% genuine product guarantee.' },
+    { year: '2024', title: 'Digital Platform Launch', description: 'Launched seamless web and mobile ordering with instant seller dispatch.' }
+  ],
+  values: [
+    { id: 1, title: 'Authenticity Guarantee', desc: '100% genuine NCERT books and school-approved uniforms.', icon: 'ShieldCheck', badge: 'Verified' },
+    { id: 2, title: 'Student-Centric Care', desc: 'Tailored kit bundles to save parents time and expense.', icon: 'Smile', badge: 'Popular' },
+    { id: 3, title: 'Quality Assurance', desc: 'Durable, breathable fabrics designed for daily school life.', icon: 'Leaf', badge: 'Premium' },
+    { id: 4, title: 'Reliable Support', desc: 'Dedicated customer support for sizing and order inquiries.', icon: 'HeartHandshake', badge: '24/7' }
+  ],
+  team: [
+    { name: 'Gaurav Gupta', role: 'Founder & CEO', bio: 'Passionate about modernizing educational logistics and student experience.', image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80' },
+    { name: 'Ananya Sharma', role: 'Head of Operations', bio: 'Ensuring seamless school onboarding and supply chain quality control.', image: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&auto=format&fit=crop&q=80' },
+    { name: 'Rahul Verma', role: 'Lead Product Manager', bio: 'Creating intuitive digital tools for parents, sellers, and school admins.', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80' }
+  ],
+  testimonials: [
+    { quote: 'Book Vardi saved me hours of standing in uniform shop queues. The kit arrived perfectly fitted!', author: 'Priya Sharma', role: 'Parent of Class 6 Student' },
+    { quote: 'Getting official NCERT books along with the exact school dress code bundle in one click is amazing.', author: 'Rajesh Kumar', role: 'Parent of Class 9 Student' }
+  ]
+};
 
 const ICON_MAP = {
   Leaf: Leaf,
@@ -168,7 +199,7 @@ export default function AboutUsPage({ onNavigate }) {
             <div className="hidden md:block absolute left-1/2 top-0 bottom-0 w-0.5 bg-gradient-to-b from-brand-yellow via-brand-pink to-brand-teal transform -translate-x-1/2" />
 
             <div className="space-y-12">
-              {ABOUT_DATA.milestones.map((item, idx) => {
+              {(ABOUT_DATA.milestones || []).map((item, idx) => {
                 const isEven = idx % 2 === 0;
                 return (
                   <div

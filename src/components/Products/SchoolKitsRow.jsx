@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import ProductCarouselRow from './ProductCarouselRow';
 import KitCard from './KitCard';
-import { useLocation } from '../../context/LocationContext';
 import { fetchKitsFromBackend } from '../../utils/api';
 
 export default function SchoolKitsRow({ onNavigate }) {
-  const { isSchoolWithinRadius } = useLocation();
   const [kits, setKits] = useState([]);
   const [filterSchool, setFilterSchool] = useState('');
   const [filterClass, setFilterClass] = useState('all');
@@ -13,7 +11,7 @@ export default function SchoolKitsRow({ onNavigate }) {
   useEffect(() => {
     fetchKitsFromBackend()
       .then((res) => {
-        const list = res?.kits || res || [];
+        const list = res?.kits || [];
         setKits(Array.isArray(list) ? list : []);
       })
       .catch(() => setKits([]));
@@ -21,44 +19,86 @@ export default function SchoolKitsRow({ onNavigate }) {
 
   useEffect(() => {
     // Check local storage on initial load
-    const savedSchool = localStorage.getItem('grabKitSchool');
-    const savedClass = localStorage.getItem('grabKitClass');
-    if (savedSchool) setFilterSchool(savedSchool);
-    if (savedClass) setFilterClass(savedClass);
+    const savedSchool = localStorage.getItem('grabKitSchool') || '';
+    const savedClass = localStorage.getItem('grabKitClass') || 'all';
+
+    // Ignore placeholder strings stored in localStorage
+    const isPlaceholderSchool = ['select school', 'all schools', 'any school'].includes(savedSchool.toLowerCase().trim());
+    if (savedSchool && !isPlaceholderSchool) {
+      setFilterSchool(savedSchool);
+    }
+    if (savedClass) {
+      setFilterClass(savedClass);
+    }
 
     const handleSearchUpdate = (e) => {
-      setFilterSchool(e.detail.school);
-      setFilterClass(e.detail.className);
+      const incomingSchool = e?.detail?.school || '';
+      const incomingClass = e?.detail?.className || 'all';
+      setFilterSchool(incomingSchool);
+      setFilterClass(incomingClass);
     };
 
     window.addEventListener('kitSearchUpdate', handleSearchUpdate);
     return () => window.removeEventListener('kitSearchUpdate', handleSearchUpdate);
   }, []);
 
-  const filteredKits = useMemo(() => {
-    return kits.filter((kit) => {
-      const kitSchool = kit.schoolName || kit.school || 'Any School';
-      const kitClass = kit.classGrade || kit.className || 'all';
-      const kitTitle = kit.title || kit.name || '';
+  const { filteredKits, hasFilter } = useMemo(() => {
+    const sourceKits = Array.isArray(kits) ? kits : [];
 
-      const withinRadius = kitSchool === 'Any School' || isSchoolWithinRadius(kitSchool);
-      if (!withinRadius) return false;
+    const cleanSchool = (filterSchool || '').trim().toLowerCase();
+    const isSchoolBlank = !cleanSchool || ['all', 'any school', 'select school', 'all schools'].includes(cleanSchool);
 
-      const matchSchool = filterSchool === '' || kitSchool.toLowerCase().includes(filterSchool.toLowerCase()) || kitTitle.toLowerCase().includes(filterSchool.toLowerCase());
-      const matchClass = filterClass === 'all' || kitClass === filterClass;
+    const cleanClass = (filterClass || 'all').trim().toLowerCase();
+    const isClassBlank = !cleanClass || ['all', 'any class', 'select class'].includes(cleanClass);
+
+    const activeFilter = !isSchoolBlank || !isClassBlank;
+
+    if (!activeFilter) {
+      return { filteredKits: sourceKits, hasFilter: false };
+    }
+
+    const matches = sourceKits.filter((kit) => {
+      const kSchool = (kit.school || kit.schoolName || 'Any School').trim().toLowerCase();
+      const kClass = (kit.className || kit.classGrade || 'all').trim().toLowerCase();
+      const kTitle = (kit.name || kit.title || '').trim().toLowerCase();
+      const kSubtitle = (kit.subtitle || kit.description || '').trim().toLowerCase();
+
+      let matchSchool = true;
+      if (!isSchoolBlank) {
+        matchSchool =
+          kSchool === 'any school' ||
+          kSchool.includes(cleanSchool) ||
+          cleanSchool.includes(kSchool) ||
+          kTitle.includes(cleanSchool) ||
+          kSubtitle.includes(cleanSchool);
+      }
+
+      let matchClass = true;
+      if (!isClassBlank) {
+        matchClass =
+          kClass === 'all' ||
+          kClass === 'any class' ||
+          kClass.includes(cleanClass) ||
+          cleanClass.includes(kClass);
+      }
+
       return matchSchool && matchClass;
     });
-  }, [kits, filterSchool, filterClass, isSchoolWithinRadius]);
 
+    // If specific filter yielded zero results, fallback to showing general "Any School" kits or full list so row is never blank
+    if (matches.length === 0) {
+      const fallbackKits = sourceKits.filter(k => (k.school || '').toLowerCase().includes('any school')) || sourceKits;
+      return { filteredKits: fallbackKits.length > 0 ? fallbackKits : sourceKits, hasFilter: activeFilter };
+    }
 
-  const hasFilter = filterSchool !== '' || filterClass !== 'all';
+    return { filteredKits: matches, hasFilter: activeFilter };
+  }, [kits, filterSchool, filterClass]);
 
   const resetFilter = () => {
     setFilterSchool('');
     setFilterClass('all');
     localStorage.removeItem('grabKitSchool');
     localStorage.removeItem('grabKitClass');
-    // Notify GrabKitSection to reset its UI
     window.dispatchEvent(new CustomEvent('kitSearchUpdate', { detail: { school: '', className: 'all' } }));
   };
 

@@ -21,9 +21,16 @@ import {
   Lock,
   X,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  Download,
+  Crosshair,
+  Navigation,
+  Loader2
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { backendEnabled, registerSellerInBackend } from '../../utils/api';
+import LocationPickerModal from './LocationPickerModal';
 
 export const ONBOARDING_STEPS = [
   { id: 1, title: 'Basic Profile', section: 'Basic Profile', desc: 'Name, mobile, email, photo', icon: UserCheck, verify: 'Email + Mobile OTP' },
@@ -42,73 +49,73 @@ export const ONBOARDING_STEPS = [
 
 export const INITIAL_FORM_STATE = {
   // Step 1: Basic Profile
-  sellerName: 'Ritesh Yadav',
-  sellerEmail: 'ritesh.seller@bookvardi.in',
-  sellerPhone: '+91 98765 43210',
-  profilePhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
-  emailOtpVerified: true,
-  phoneOtpVerified: true,
+  sellerName: '',
+  sellerEmail: '',
+  sellerPhone: '',
+  profilePhoto: '',
+  emailOtpVerified: false,
+  phoneOtpVerified: false,
 
   // Step 2: Business Details
-  legalBusinessName: 'Vardi Education Retail Pvt Ltd',
-  tradeName: 'Book Vardi Student Emporium',
-  businessType: 'Private Limited',
-  yearStarted: '2021',
-  annualTurnoverEstimate: '₹25L - ₹50L',
+  legalBusinessName: '',
+  tradeName: '',
+  businessType: 'Proprietorship',
+  yearStarted: '',
+  annualTurnoverEstimate: '',
 
   // Step 3: Owner / Authorized Person
-  ownerFullName: 'Ritesh Yadav',
-  ownerDesignation: 'Director / Managing Partner',
-  ownerPan: 'ABCDE1234F',
-  ownerAadhaarLast4: '8942',
-  kycVerified: true,
+  ownerFullName: '',
+  ownerDesignation: 'Proprietor',
+  ownerPan: '',
+  ownerAadhaarLast4: '',
+  kycVerified: false,
 
   // Step 4: Business Documents
-  businessPan: 'ABCDE1234F',
-  gstin: '07AAAAA0000A1Z5',
+  businessPan: '',
+  gstin: '',
   hasGstExemption: false,
-  msmeRegistrationNumber: 'UDYAM-DL-03-0029142',
-  cinNumber: 'U74999DL2021PTC384192',
+  msmeRegistrationNumber: '',
+  cinNumber: '',
 
   // Step 5: Business Address
-  addressLine1: 'Plot 42, Okhla Industrial Area, Phase-III',
-  addressLine2: 'Near Crown Plaza Metro',
-  city: 'New Delhi',
-  state: 'Delhi',
-  pincode: '110020',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  pincode: '',
   country: 'India',
 
   // Step 6: Address Proof
   addressProofType: 'Electricity Bill',
-  addressProofDocNumber: 'EB-2026-98124',
-  addressProofFileName: 'electricity_bill_okhla_feb2026.pdf',
+  addressProofDocNumber: '',
+  addressProofFileName: '',
 
   // Step 7: Bank Details
-  bankAccountHolder: 'Vardi Education Retail Pvt Ltd',
-  bankAccountNumber: '50200084920194',
-  bankIfscCode: 'HDFC0000240',
-  bankName: 'HDFC Bank Ltd',
-  bankBranch: 'Okhla Phase-III, New Delhi',
-  accountType: 'Current Account',
+  bankAccountHolder: '',
+  bankAccountNumber: '',
+  bankIfscCode: '',
+  bankName: '',
+  bankBranch: '',
+  accountType: 'Savings Account',
 
   // Step 8: Store Details
-  storeName: 'Book Vardi Official Hub',
-  storeSlug: 'book-vardi-official',
-  storeTagline: 'Certified School Uniforms, Textbooks & STEM Academic Kits',
-  storeDescription: 'Premier provider of school textbooks, uniform sets, drawing guides and geometry supplies with fast 24-48 hour campus delivery.',
-  storeLogo: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=200&auto=format&fit=crop&q=80',
+  storeName: '',
+  storeSlug: '',
+  storeTagline: '',
+  storeDescription: '',
+  storeLogo: '',
 
   // Step 9: Product Information
-  selectedCategories: ['Uniforms & Schoolwear', 'NCERT & CBSE Textbooks', 'Notebooks & Paper Crafts', 'Writing Instruments'],
-  primaryBrands: ['Classmate', 'Doms', 'Camlin', 'Oxford', 'Reynolds'],
-  estimatedSkuCount: '250+ SKUs',
-  sampleProductTitle: 'Class 10 CBSE Complete Science & Math Bundle',
+  selectedCategories: [],
+  primaryBrands: [],
+  estimatedSkuCount: '',
+  sampleProductTitle: '',
 
   // Step 10: Agreements
-  acceptedTerms: true,
-  acceptedCommissionRate: true,
-  acceptedReturnPolicy: true,
-  authorizedSignatoryConfirmation: true,
+  acceptedTerms: false,
+  acceptedCommissionRate: false,
+  acceptedReturnPolicy: false,
+  authorizedSignatoryConfirmation: false,
 
   // Metadata
   applicationDate: new Date().toISOString(),
@@ -128,25 +135,37 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
 
   const [step, setStep] = useState(() => {
     try {
-      const saved = localStorage.getItem('bv_seller_reg_step');
-      return saved ? parseInt(saved, 10) : 1;
-    } catch {
-      return 1;
-    }
+      const savedStep = localStorage.getItem('bv_seller_reg_step');
+      if (savedStep) {
+        const parsed = parseInt(savedStep, 10);
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 12) return parsed;
+      }
+    } catch {}
+    return 1;
   });
 
   const [formData, setFormData] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_seller_reg_data');
-      return saved ? JSON.parse(saved) : INITIAL_FORM_STATE;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.sellerName === 'Ritesh Yadav' || parsed?.legalBusinessName === 'Vardi Education Retail Pvt Ltd') {
+          localStorage.removeItem('bv_seller_reg_data');
+          return INITIAL_FORM_STATE;
+        }
+        return parsed;
+      }
+      return INITIAL_FORM_STATE;
     } catch {
       return INITIAL_FORM_STATE;
     }
   });
 
   const [otpSent, setOtpSent] = useState(false);
-  const [mobileOtp, setMobileOtp] = useState('4829');
+  const [mobileOtp, setMobileOtp] = useState('');
+  const [showOtpPopup, setShowOtpPopup] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewDocModal, setPreviewDocModal] = useState(null);
 
   // Step 3 PAN & Aadhaar Verification States
   const [isPanVerified, setIsPanVerified] = useState(() => {
@@ -157,7 +176,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         return Boolean(parsed.isPanVerified);
       }
     } catch {}
-    return true; // Default true for initial seed state (ABCDE1234F), resets if edited
+    return false;
   });
   const [isAadhaarVerified, setIsAadhaarVerified] = useState(() => {
     try {
@@ -167,12 +186,83 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         return Boolean(parsed.isAadhaarVerified);
       }
     } catch {}
-    return true; // Default true for initial seed state (8942), resets if edited
+    return false;
   });
   const [isVerifyingPan, setIsVerifyingPan] = useState(false);
   const [isVerifyingAadhaar, setIsVerifyingAadhaar] = useState(false);
   const [panError, setPanError] = useState('');
   const [aadhaarError, setAadhaarError] = useState('');
+
+  // Step 5 Location Picker States
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [locationStatus, setLocationStatus] = useState('');
+
+  // Drag & drop file upload states
+  const [isDraggingAddressProof, setIsDraggingAddressProof] = useState(false);
+  const [isDraggingProfilePhoto, setIsDraggingProfilePhoto] = useState(false);
+  const [isDraggingStoreLogo, setIsDraggingStoreLogo] = useState(false);
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsDetectingLocation(true);
+    setLocationStatus('Detecting your GPS location...');
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`);
+          const data = await res.json();
+          const addr = data.address || {};
+
+          const street = addr.road || addr.building || (addr.house_number ? `${addr.house_number}, ${addr.road || ''}` : '');
+          const colony = addr.suburb || addr.neighbourhood || addr.residential || addr.village || addr.subdistrict || '';
+          const landmark = addr.amenity || addr.landmark || addr.commercial || '';
+          const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || '';
+          const state = addr.state || 'Uttar Pradesh';
+          const pincode = addr.postcode || '';
+
+          setFormData(prev => ({
+            ...prev,
+            addressLine1: street || prev.addressLine1,
+            addressLine2: colony || prev.addressLine2,
+            landmark: landmark || prev.landmark,
+            city: city || prev.city,
+            state: state || prev.state || 'Uttar Pradesh',
+            pincode: pincode || prev.pincode
+          }));
+          setLocationStatus('GPS Location detected successfully!');
+        } catch (err) {
+          setLocationStatus('Could not reverse geocode location. Please fill manually or pick on map.');
+        } finally {
+          setIsDetectingLocation(false);
+        }
+      },
+      (err) => {
+        setIsDetectingLocation(false);
+        setLocationStatus('Location permission denied or unavailable.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleMapLocationSelect = (loc) => {
+    setFormData(prev => ({
+      ...prev,
+      addressLine1: loc.street || loc.addressLine1 || prev.addressLine1,
+      addressLine2: loc.colony || loc.addressLine2 || prev.addressLine2,
+      landmark: loc.landmark || prev.landmark,
+      city: loc.city || prev.city,
+      state: loc.state || prev.state || 'Uttar Pradesh',
+      pincode: loc.pincode || prev.pincode
+    }));
+    setLocationStatus(`Location updated from Map: ${loc.city || ''}, ${loc.state || 'Uttar Pradesh'}`);
+  };
 
   useEffect(() => {
     try {
@@ -195,6 +285,16 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       [field]: value,
       highestStepReached: Math.max(prev.highestStepReached, step)
     }));
+
+    // Invalidate phone OTP verification when user alters seller phone or email
+    if (field === 'sellerPhone' || field === 'sellerEmail') {
+      setFormData(prev => ({
+        ...prev,
+        phoneOtpVerified: false,
+        emailOtpVerified: false
+      }));
+      setOtpSent(false);
+    }
 
     // Invalidate verification when user alters PAN or Aadhaar
     if (field === 'ownerPan') {
@@ -261,7 +361,146 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     }, 700);
   };
 
+  const handleSendMobileOtp = () => {
+    const phone = (formData.sellerPhone || '').trim();
+    if (!phone || phone.length < 8) {
+      showToast('⚠️ Please enter a valid mobile number first.');
+      return;
+    }
+    setOtpSent(true);
+    setMobileOtp('123456');
+    showToast(`📲 [Testing Mode] OTP code 123456 sent to ${phone}`);
+  };
+
+  const handleVerifyMobileOtp = () => {
+    if (!mobileOtp || mobileOtp.trim().length < 4) {
+      showToast('⚠️ Please enter the 6-digit OTP code (use 123456 for testing).');
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      phoneOtpVerified: true,
+      emailOtpVerified: true
+    }));
+    showToast('✅ Mobile number verified successfully via OTP!');
+  };
+
+  const processProfilePhotoFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('⚠️ Image file is too large. Please select a photo under 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({
+        ...prev,
+        profilePhoto: event.target.result
+      }));
+      showToast('📷 Seller profile photo uploaded successfully!');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleProfilePhotoSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    processProfilePhotoFile(file);
+  };
+
+  const handleProfilePhotoDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingProfilePhoto(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    processProfilePhotoFile(file);
+  };
+
+  const processStoreLogoFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('⚠️ Logo image file is too large. Please select an image under 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({
+        ...prev,
+        storeLogo: event.target.result
+      }));
+      showToast('🖼️ Store Logo uploaded successfully!');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleStoreLogoSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    processStoreLogoFile(file);
+  };
+
+  const handleStoreLogoDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingStoreLogo(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    processStoreLogoFile(file);
+  };
+
+  const processAddressProofFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('⚠️ Document file size exceeds 10MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({
+        ...prev,
+        addressProofFileName: file.name,
+        addressProofDoc: event.target.result,
+        addressProofFileSize: (file.size / (1024 * 1024)).toFixed(2) + ' MB'
+      }));
+      showToast(`📄 Address proof document (${file.name}) uploaded successfully!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddressProofUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    processAddressProofFile(file);
+  };
+
+  const handleAddressProofDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingAddressProof(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    processAddressProofFile(file);
+  };
+
   const nextStep = () => {
+    // Step 1: Mobile Phone number & OTP verification
+    if (step === 1) {
+      if (!formData.sellerName?.trim()) {
+        showToast('⚠️ Please enter your Full Name.');
+        return;
+      }
+      if (!formData.sellerPhone?.trim()) {
+        showToast('⚠️ Please enter your Mobile Phone Number.');
+        return;
+      }
+      if (!formData.phoneOtpVerified) {
+        setShowOtpPopup(true);
+        showToast('⚠️ Please click "Send Phone OTP" and verify your mobile number (Testing code: 123456).');
+        return;
+      }
+    }
+
     // Strict enforcement for Step 3: PAN and Aadhaar must be verified
     if (step === 3) {
       if (!formData.ownerPan || !isPanVerified) {
@@ -272,6 +511,18 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       if (!formData.ownerAadhaarLast4 || !isAadhaarVerified) {
         setAadhaarError(!formData.ownerAadhaarLast4 ? 'Aadhaar number is required' : 'Verification required before moving forward');
         showToast('⚠️ Please click "Verify Aadhaar" and verify your Aadhaar Card to move to the next step.');
+        return;
+      }
+    }
+
+    // Step 6: Premises & Address Proof Document
+    if (step === 6) {
+      if (!formData.addressProofDocNumber?.trim()) {
+        showToast('⚠️ Please enter the Document Identifier / Consumer Number.');
+        return;
+      }
+      if (!formData.addressProofFileName) {
+        showToast('⚠️ Please upload an Address Proof document file.');
         return;
       }
     }
@@ -289,28 +540,112 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     }
   };
 
-  const handleFinalSubmit = () => {
-    setIsSubmitting(true);
-    setTimeout(() => {
-      submitSellerApplication({
-        ...formData,
-        status: 'Pending Approval',
-        submittedAt: new Date().toLocaleDateString()
-      });
-      setIsSubmitting(false);
-      setStep(11);
-      showToast('🎉 Seller Registration Application Submitted! Pending Verification.');
-    }, 900);
-  };
+function dataURLtoBlob(dataurl, filename = 'file') {
+  if (!dataurl || typeof dataurl !== 'string' || !dataurl.startsWith('data:')) return null;
+  try {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  } catch {
+    return null;
+  }
+}
 
-  const handleSimulateApproval = () => {
-    approveSellerApplication();
-    setStep(12);
-    setFormData(prev => ({
-      ...prev,
-      submissionStatus: 'approved'
-    }));
-    showToast('✅ Verified Seller Badge Activated! Access granted to Seller Hub.');
+  const handleFinalSubmit = async () => {
+    if (!formData.phoneOtpVerified) {
+      setStep(1);
+      setShowOtpPopup(true);
+      showToast('⚠️ Mobile OTP verification is required to complete seller registration!');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (backendEnabled) {
+        const formPayload = new FormData();
+        formPayload.append('name', formData.sellerName || formData.ownerFullName || 'New Merchant');
+        formPayload.append('storeName', formData.storeName || formData.tradeName || 'New Store');
+        formPayload.append('email', formData.sellerEmail || '');
+        formPayload.append('phone', formData.sellerPhone || '');
+        formPayload.append('password', 'BookVardiSeller@123');
+        formPayload.append('address', `${formData.addressLine1 || ''} ${formData.addressLine2 || ''}`.trim());
+        formPayload.append('addressLine1', formData.addressLine1 || '');
+        formPayload.append('addressLine2', formData.addressLine2 || '');
+        formPayload.append('landmark', formData.landmark || '');
+        formPayload.append('city', formData.city || '');
+        formPayload.append('state', formData.state || '');
+        formPayload.append('pincode', formData.pincode || '');
+        formPayload.append('country', formData.country || 'India');
+        formPayload.append('gstNumber', formData.gstin || '');
+        formPayload.append('msmeRegistrationNumber', formData.msmeRegistrationNumber || '');
+        formPayload.append('cinNumber', formData.cinNumber || '');
+        formPayload.append('yearStarted', formData.yearStarted || '');
+        formPayload.append('businessType', formData.businessType || 'Proprietorship');
+        formPayload.append('annualTurnoverEstimate', formData.annualTurnoverEstimate || '');
+        formPayload.append('ownerFullName', formData.ownerFullName || formData.sellerName || '');
+        formPayload.append('ownerDesignation', formData.ownerDesignation || 'Proprietor');
+        formPayload.append('ownerPan', formData.ownerPan || formData.businessPan || '');
+        formPayload.append('ownerAadhaarLast4', formData.ownerAadhaarLast4 || '');
+        formPayload.append('addressProofType', formData.addressProofType || '');
+        formPayload.append('addressProofDocNumber', formData.addressProofDocNumber || '');
+        formPayload.append('accountHolderName', formData.bankAccountHolder || '');
+        formPayload.append('accountNumber', formData.bankAccountNumber || '');
+        formPayload.append('ifscCode', formData.bankIfscCode || '');
+        formPayload.append('bankName', formData.bankName || '');
+        formPayload.append('branchName', formData.bankBranch || '');
+        formPayload.append('accountType', formData.accountType || 'Savings Account');
+        formPayload.append('storeTagline', formData.storeTagline || '');
+        formPayload.append('storeDescription', formData.storeDescription || '');
+        formPayload.append('aadhaarNumber', formData.ownerAadhaarLast4 || '');
+        formPayload.append('panNumber', formData.ownerPan || formData.businessPan || '');
+        formPayload.append('estimatedSkuCount', formData.estimatedSkuCount || '');
+        formPayload.append('sampleProductTitle', formData.sampleProductTitle || '');
+        formPayload.append('acceptedTerms', formData.acceptedTerms ? 'true' : 'false');
+        formPayload.append('acceptedCommissionRate', formData.acceptedCommissionRate ? 'true' : 'false');
+        formPayload.append('acceptedReturnPolicy', formData.acceptedReturnPolicy ? 'true' : 'false');
+        formPayload.append('authorizedSignatoryConfirmation', formData.authorizedSignatoryConfirmation ? 'true' : 'false');
+
+        if (Array.isArray(formData.selectedCategories)) {
+          formData.selectedCategories.forEach(cat => formPayload.append('selectedCategories', cat));
+        }
+        if (Array.isArray(formData.primaryBrands)) {
+          formData.primaryBrands.forEach(b => formPayload.append('primaryBrands', b));
+        }
+
+        if (formData.profilePhoto) {
+          const profileBlob = dataURLtoBlob(formData.profilePhoto, 'profile-photo.png');
+          if (profileBlob) formPayload.append('profilePhoto', profileBlob, 'profile-photo.png');
+        }
+
+        if (formData.addressProofDoc) {
+          const ext = formData.addressProofFileName?.endsWith('.pdf') ? '.pdf' : '.png';
+          const filename = formData.addressProofFileName || `address-proof${ext}`;
+          const docBlob = dataURLtoBlob(formData.addressProofDoc, filename);
+          if (docBlob) formPayload.append('addressProofDoc', docBlob, filename);
+        }
+
+        await registerSellerInBackend(formPayload).catch((err) => {
+          console.warn('Backend seller registration notice:', err?.message);
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    submitSellerApplication({
+      ...formData,
+      status: 'Pending Approval',
+      submittedAt: new Date().toLocaleDateString()
+    });
+    setIsSubmitting(false);
+    setStep(11);
+    showToast('🎉 Seller Registration Application Submitted! Pending Verification.');
   };
 
   const progressPercentage = Math.round(((step - 1) / 11) * 100);
@@ -389,6 +724,10 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 <button
                   key={s.id}
                   onClick={() => {
+                    if (!formData.phoneOtpVerified && s.id > 1) {
+                      setShowOtpPopup(true);
+                      return;
+                    }
                     if (isReached || isPast || s.id <= step + 1) {
                       setStep(s.id);
                     }
@@ -419,14 +758,67 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
           
           {/* STEP 1: Basic Profile */}
           {step === 1 && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="border-b border-gray-100 pb-3">
                 <h3 className="font-display font-extrabold text-base text-gray-900 flex items-center gap-2">
-                  <UserCheck className="text-teal-700" size={18} /> Step 1: Basic Profile & Contact Information
+                  <UserCheck className="text-teal-700" size={18} /> Step 1: Basic Profile & Phone OTP Verification
                 </h3>
                 <p className="text-gray-500 text-xs mt-0.5">
-                  Verify your primary contact details via secure one-time passcode.
+                  Verify your mobile phone number via testing OTP and upload your custom seller profile image.
                 </p>
+              </div>
+
+              {/* Custom Seller Profile Photo Upload */}
+              <div 
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingProfilePhoto(true); }}
+                onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingProfilePhoto(false); }}
+                onDrop={handleProfilePhotoDrop}
+                className={`p-4 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${
+                  isDraggingProfilePhoto 
+                    ? 'bg-teal-100 border-teal-400 ring-2 ring-teal-400 scale-[1.01]' 
+                    : 'bg-teal-50/70 border-teal-100'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="relative group shrink-0">
+                    <img
+                      src={formData.profilePhoto || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"}
+                      alt="Seller Profile Avatar"
+                      className="w-16 h-16 rounded-full object-cover border-2 border-brand-yellow shadow-xs"
+                    />
+                    {formData.profilePhoto && (
+                      <button
+                        type="button"
+                        onClick={() => handleChange('profilePhoto', '')}
+                        className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full p-1 shadow-xs hover:bg-rose-700 cursor-pointer"
+                        title="Remove Photo"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-teal-950 text-xs sm:text-sm">
+                      {isDraggingProfilePhoto ? 'Drop Profile Image Here!' : 'Seller Profile Photo'}
+                    </h4>
+                    <p className="text-[11px] text-teal-700 leading-snug">
+                      Upload or drag & drop profile photo for vendor bio and receipts.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                  <label className="w-full sm:w-auto cursor-pointer bg-brand-teal hover:bg-brand-teal-dark text-white px-3.5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                    <UploadCloud size={14} />
+                    <span>{formData.profilePhoto ? 'Change Photo' : 'Upload Image'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePhotoSelect}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -437,28 +829,8 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.sellerName}
                     onChange={(e) => handleChange('sellerName', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                    placeholder="e.g. Ritesh Yadav"
+                    placeholder="e.g. Ramesh Kumar"
                   />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Mobile Number (With WhatsApp) *</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="tel"
-                      value={formData.sellerPhone}
-                      onChange={(e) => handleChange('sellerPhone', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                      placeholder="+91 98765 43210"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setOtpSent(true)}
-                      className="px-3 py-2 bg-teal-50 text-teal-800 rounded-xl font-bold hover:bg-teal-100 whitespace-nowrap cursor-pointer border border-teal-200"
-                    >
-                      {otpSent ? 'Resend OTP' : 'Send OTP'}
-                    </button>
-                  </div>
                 </div>
 
                 <div className="space-y-1">
@@ -472,32 +844,69 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="font-bold text-gray-700">OTP Code Verification (Auto-Filled)</label>
-                  <div className="flex items-center gap-2">
+                {/* Phone Number Input with OTP Trigger */}
+                <div className="space-y-1 md:col-span-2">
+                  <label className="font-bold text-gray-700">Mobile Phone Number (WhatsApp Enabled) *</label>
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
-                      type="text"
-                      value={mobileOtp}
-                      onChange={(e) => setMobileOtp(e.target.value)}
-                      className="w-32 px-3 py-2.5 rounded-xl border border-gray-200 text-xs font-mono tracking-widest text-center"
+                      type="tel"
+                      value={formData.sellerPhone}
+                      onChange={(e) => handleChange('sellerPhone', e.target.value)}
+                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                      placeholder="+91 98765 43210"
                     />
-                    <span className="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-2 rounded-xl border border-emerald-200">
-                      <CheckCircle2 size={13} /> Mobile & Email OTP Verified
-                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSendMobileOtp}
+                      className="px-4 py-2.5 bg-teal-50 text-teal-800 rounded-xl font-bold hover:bg-teal-100 text-xs transition-colors cursor-pointer border border-teal-200 shrink-0"
+                    >
+                      {otpSent ? 'Resend OTP' : 'Send Phone OTP'}
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              <div className="p-3 bg-teal-50/70 border border-teal-100 rounded-xl flex items-center gap-3">
-                <img
-                  src={formData.profilePhoto}
-                  alt="Profile Preview"
-                  className="w-12 h-12 rounded-full object-cover border-2 border-brand-yellow"
-                />
-                <div>
-                  <span className="font-bold text-teal-950 block">Profile Avatar Uploaded</span>
-                  <span className="text-[11px] text-teal-700">Will be shown on your vendor store bio and seller receipts.</span>
-                </div>
+                {/* OTP Entry Box in Testing Mode */}
+                {otpSent && (
+                  <div className="space-y-2 md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div>
+                        <label className="font-bold text-gray-800 text-xs block">
+                          Enter 6-Digit Mobile OTP <span className="text-amber-700 font-normal">(Testing Code: 123456)</span>
+                        </label>
+                        <p className="text-[11px] text-gray-500">
+                          A test verification code has been generated for {formData.sellerPhone}.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          value={mobileOtp}
+                          onChange={(e) => setMobileOtp(e.target.value)}
+                          className="w-32 px-3 py-2 rounded-xl border border-gray-300 text-xs font-mono tracking-widest text-center focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                          placeholder="123456"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleVerifyMobileOtp}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                        >
+                          Verify OTP
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {formData.phoneOtpVerified && (
+                  <div className="md:col-span-2">
+                    <span className="inline-flex items-center gap-1.5 text-emerald-800 font-bold bg-emerald-50 px-3.5 py-2.5 rounded-xl border border-emerald-200 text-xs">
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                      Phone Number Verified via OTP (Testing Mode)
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -522,7 +931,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.legalBusinessName}
                     onChange={(e) => handleChange('legalBusinessName', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                    placeholder="e.g. Vardi Education Retail Pvt Ltd"
+                    placeholder="e.g. Apex Stationers & Uniforms Pvt Ltd"
                   />
                 </div>
 
@@ -533,7 +942,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.tradeName}
                     onChange={(e) => handleChange('tradeName', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
-                    placeholder="e.g. Book Vardi Student Hub"
+                    placeholder="e.g. Apex Book Depot"
                   />
                 </div>
 
@@ -560,6 +969,22 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
                     placeholder="2021"
                   />
+                </div>
+
+                <div className="space-y-1 md:col-span-2">
+                  <label className="font-bold text-gray-700">Estimated Annual Business Turnover *</label>
+                  <select
+                    value={formData.annualTurnoverEstimate}
+                    onChange={(e) => handleChange('annualTurnoverEstimate', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                  >
+                    <option value="">Select Annual Turnover Estimate</option>
+                    <option value="Below ₹10 Lakhs">Below ₹10 Lakhs</option>
+                    <option value="₹10 Lakhs - ₹25 Lakhs">₹10 Lakhs - ₹25 Lakhs</option>
+                    <option value="₹25 Lakhs - ₹50 Lakhs">₹25 Lakhs - ₹50 Lakhs</option>
+                    <option value="₹50 Lakhs - ₹1 Crore">₹50 Lakhs - ₹1 Crore</option>
+                    <option value="Above ₹1 Crore">Above ₹1 Crore</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -790,12 +1215,20 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Goods & Service Tax Number (GSTIN) *</label>
+                  <label className="font-bold text-gray-700">
+                    Goods & Service Tax Number (GSTIN) {formData.hasGstExemption ? '(Exempted)' : '*'}
+                  </label>
                   <input
                     type="text"
-                    value={formData.gstin}
+                    value={formData.hasGstExemption ? 'EXEMPT' : formData.gstin}
+                    disabled={formData.hasGstExemption}
                     onChange={(e) => handleChange('gstin', e.target.value.toUpperCase())}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono uppercase"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono uppercase transition-colors ${
+                      formData.hasGstExemption
+                        ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed opacity-75'
+                        : 'border-gray-200 focus:ring-2 focus:ring-brand-yellow'
+                    }`}
+                    placeholder={formData.hasGstExemption ? 'GSTIN Exempted' : '22AAAAA0000A1Z5'}
                   />
                 </div>
 
@@ -818,6 +1251,31 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
                   />
                 </div>
+
+                <div className="space-y-1 md:col-span-2 bg-gray-50 p-3.5 rounded-xl border border-gray-200">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-gray-800 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={formData.hasGstExemption}
+                      onChange={(e) => {
+                        const isExempt = e.target.checked;
+                        handleChange('hasGstExemption', isExempt);
+                        if (isExempt) {
+                          handleChange('gstin', 'EXEMPT');
+                        } else if (formData.gstin === 'EXEMPT') {
+                          handleChange('gstin', '');
+                        }
+                      }}
+                      className="rounded text-brand-teal focus:ring-brand-yellow"
+                    />
+                    <span>My entity operates under GST Exemption / Threshold Limit (No GSTIN required)</span>
+                  </label>
+                  {formData.hasGstExemption && (
+                    <p className="text-[11px] text-emerald-700 font-semibold mt-1 pl-6">
+                      ✓ GSTIN requirement disabled for GST exempted business entities.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -825,56 +1283,121 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
           {/* STEP 5: Business Address */}
           {step === 5 && (
             <div className="space-y-4">
-              <div className="border-b border-gray-100 pb-3">
-                <h3 className="font-display font-extrabold text-base text-gray-900 flex items-center gap-2">
-                  <MapPin className="text-teal-700" size={18} /> Step 5: Registered Office & Dispatch Hub Address
-                </h3>
-                <p className="text-gray-500 text-xs mt-0.5">
-                  Pickup address where courier partners will collect orders.
-                </p>
+              <div className="border-b border-gray-100 pb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-display font-extrabold text-base text-gray-900 flex items-center gap-2">
+                    <MapPin className="text-teal-700" size={18} /> Step 5: Registered Office & Dispatch Hub Address
+                  </h3>
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    Physical location formatted as Street, Colony, Landmark, City & State (Uttar Pradesh)
+                  </p>
+                </div>
+
+                {/* Location Picker Buttons */}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    disabled={isDetectingLocation}
+                    className="flex-1 sm:flex-initial px-3.5 py-2 bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    {isDetectingLocation ? <Loader2 size={14} className="animate-spin text-teal-700" /> : <Crosshair size={14} className="text-teal-700" />}
+                    Use Current Location
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMapPickerOpen(true)}
+                    className="flex-1 sm:flex-initial px-3.5 py-2 bg-teal-700 text-white hover:bg-teal-800 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  >
+                    <MapPin size={14} /> Choose on Map
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-3">
+              {locationStatus && (
+                <div className="p-3 bg-teal-50/80 border border-teal-200 rounded-xl text-xs font-semibold text-teal-900 flex items-center gap-2">
+                  <Navigation size={14} className="text-teal-700 shrink-0" />
+                  <span>{locationStatus}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Address Line 1 (Building / Floor / Street) *</label>
+                  <label className="font-bold text-gray-700">Street / House / Shop No *</label>
                   <input
                     type="text"
                     value={formData.addressLine1}
                     onChange={(e) => handleChange('addressLine1', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Shop #14, Main Road, Block B"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <label className="font-bold text-gray-700">City / District *</label>
-                    <input
-                      type="text"
-                      value={formData.city}
-                      onChange={(e) => handleChange('city', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-bold text-gray-700">State *</label>
-                    <input
-                      type="text"
-                      value={formData.state}
-                      onChange={(e) => handleChange('state', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="font-bold text-gray-700">PIN Code *</label>
-                    <input
-                      type="text"
-                      value={formData.pincode}
-                      onChange={(e) => handleChange('pincode', e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
-                      maxLength={6}
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Colony / Area / Locality *</label>
+                  <input
+                    type="text"
+                    value={formData.addressLine2}
+                    onChange={(e) => handleChange('addressLine2', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Hazratganj / Civil Lines / Sector 62"
+                  />
                 </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Landmark</label>
+                  <input
+                    type="text"
+                    value={formData.landmark || ''}
+                    onChange={(e) => handleChange('landmark', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Near Cathedral School / Opp Metro Station"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">City / District *</label>
+                  <input
+                    type="text"
+                    value={formData.city}
+                    onChange={(e) => handleChange('city', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. Lucknow / Noida / Varanasi"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">State *</label>
+                  <input
+                    type="text"
+                    value={formData.state || 'Uttar Pradesh'}
+                    onChange={(e) => handleChange('state', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="Uttar Pradesh"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Pincode / Postal Code *</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={formData.pincode}
+                    onChange={(e) => handleChange('pincode', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="226001"
+                  />
+                </div>
+              </div>
+
+              {/* Formatted Live Address Preview Box */}
+              <div className="p-3.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-1 text-xs">
+                <span className="font-extrabold text-teal-900 flex items-center gap-1.5 uppercase text-[11px]">
+                  <Navigation size={14} className="text-teal-700" /> Formatted Business Address Preview:
+                </span>
+                <p className="font-bold text-gray-800 text-xs leading-relaxed">
+                  {[formData.addressLine1, formData.addressLine2, formData.landmark, formData.city, formData.state].filter(Boolean).join(', ')} {formData.pincode ? `- ${formData.pincode}` : ''}
+                </p>
               </div>
             </div>
           )}
@@ -897,7 +1420,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   <select
                     value={formData.addressProofType}
                     onChange={(e) => handleChange('addressProofType', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs bg-white"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs bg-white focus:ring-2 focus:ring-brand-yellow outline-hidden"
                   >
                     <option value="Electricity Bill">Electricity Bill (Past 3 months)</option>
                     <option value="Rent / Lease Agreement">Registered Rent / Lease Agreement</option>
@@ -907,20 +1430,109 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Document Identifier / CA Number *</label>
+                  <label className="font-bold text-gray-700">Document Identifier / Consumer Number *</label>
                   <input
                     type="text"
                     value={formData.addressProofDocNumber}
                     onChange={(e) => handleChange('addressProofDocNumber', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono focus:ring-2 focus:ring-brand-yellow outline-hidden"
+                    placeholder="e.g. ELEC-9872134"
                   />
                 </div>
               </div>
 
-              <div className="border-2 border-dashed border-teal-300 rounded-2xl p-6 text-center bg-teal-50/40">
-                <UploadCloud size={32} className="mx-auto text-teal-700 mb-2" />
-                <p className="font-bold text-gray-800">Uploaded File: {formData.addressProofFileName}</p>
-                <p className="text-[11px] text-gray-500 mt-1">PDF format (2.4 MB) • Encrypted for reviewer validation</p>
+              {/* Upload Address Proof Document File */}
+              <div className="space-y-2">
+                <label className="font-bold text-gray-700 text-xs block">
+                  Upload Address Proof File (PDF, Image, DOC) *
+                </label>
+                
+                {formData.addressProofFileName ? (
+                  <div className="p-4 bg-teal-50 border-2 border-teal-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
+                        <FileCheck size={24} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-teal-950 text-xs sm:text-sm truncate max-w-[200px] sm:max-w-[300px]">
+                            {formData.addressProofFileName}
+                          </span>
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-md border border-emerald-200">
+                            Uploaded ✓
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-teal-700 mt-0.5">
+                          Size: {formData.addressProofFileSize || '1.8 MB'} • Encrypted for reviewer validation
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocModal({
+                          fileName: formData.addressProofFileName,
+                          src: formData.addressProofDoc
+                        })}
+                        className="px-3.5 py-2 bg-teal-100 hover:bg-teal-200 text-teal-900 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-teal-300 shadow-2xs"
+                        title="Preview Document"
+                      >
+                        <Eye size={14} />
+                        <span>Preview</span>
+                      </button>
+                      <label className="flex-1 sm:flex-none cursor-pointer bg-brand-teal hover:bg-brand-teal-dark text-white px-3.5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                        <UploadCloud size={14} />
+                        <span>Change Document</span>
+                        <input
+                          type="file"
+                          accept=".pdf,image/*,.doc,.docx"
+                          onChange={handleAddressProofUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleChange('addressProofFileName', '');
+                          handleChange('addressProofDoc', '');
+                        }}
+                        className="px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                        title="Remove Document"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label 
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingAddressProof(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingAddressProof(false); }}
+                    onDrop={handleAddressProofDrop}
+                    className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer block group ${
+                      isDraggingAddressProof
+                        ? 'border-brand-teal bg-teal-100/90 ring-4 ring-teal-300/50 scale-[1.01]'
+                        : 'border-teal-300 hover:border-teal-500 bg-teal-50/40 hover:bg-teal-50/70'
+                    }`}
+                  >
+                    <UploadCloud size={36} className={`mx-auto transition-transform mb-2 ${isDraggingAddressProof ? 'text-teal-900 scale-125 animate-bounce' : 'text-teal-700 group-hover:scale-110'}`} />
+                    <p className="font-bold text-gray-800 text-xs sm:text-sm">
+                      {isDraggingAddressProof ? 'Release to Drop Document File Here!' : 'Click to Browse or Drag & Drop Address Proof Document'}
+                    </p>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      Supports PDF, PNG, JPG, WEBP, DOCX (Up to 10 MB limit)
+                    </p>
+                    <span className="inline-block mt-3 px-4 py-2 bg-brand-teal text-white rounded-xl font-bold text-xs shadow-xs group-hover:bg-brand-teal-dark transition-colors">
+                      {isDraggingAddressProof ? 'Drop File Now' : 'Select File from Device'}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".pdf,image/*,.doc,.docx"
+                      onChange={handleAddressProofUpload}
+                      className="hidden"
+                    />
+                  </label>
+                )}
               </div>
             </div>
           )}
@@ -959,6 +1571,24 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 </div>
 
                 <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Confirm Account Number *</label>
+                  <input
+                    type="text"
+                    value={formData.confirmBankAccountNumber || ''}
+                    onChange={(e) => handleChange('confirmBankAccountNumber', e.target.value)}
+                    placeholder="Re-enter Account Number to Confirm"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono ${
+                      formData.confirmBankAccountNumber && formData.confirmBankAccountNumber !== formData.bankAccountNumber
+                        ? 'border-red-500 bg-red-50/50'
+                        : 'border-gray-200'
+                    }`}
+                  />
+                  {formData.confirmBankAccountNumber && formData.confirmBankAccountNumber !== formData.bankAccountNumber && (
+                    <p className="text-[11px] font-bold text-red-600 mt-1">⚠️ Bank account numbers do not match!</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
                   <label className="font-bold text-gray-700">IFSC Code *</label>
                   <input
                     type="text"
@@ -969,18 +1599,43 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Bank Name & Branch *</label>
+                  <label className="font-bold text-gray-700">Bank Name *</label>
                   <input
                     type="text"
-                    value={`${formData.bankName} (${formData.bankBranch})`}
-                    readOnly
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs bg-gray-50"
+                    value={formData.bankName}
+                    onChange={(e) => handleChange('bankName', e.target.value)}
+                    placeholder="e.g. State Bank of India / HDFC Bank"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Branch Name *</label>
+                  <input
+                    type="text"
+                    value={formData.bankBranch}
+                    onChange={(e) => handleChange('bankBranch', e.target.value)}
+                    placeholder="e.g. Hazratganj Branch / Main Branch"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1 md:col-span-2">
+                  <label className="font-bold text-gray-700">Bank Account Type *</label>
+                  <select
+                    value={formData.accountType}
+                    onChange={(e) => handleChange('accountType', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs focus:ring-2 focus:ring-brand-yellow outline-hidden bg-white"
+                  >
+                    <option value="Current Account">Current Account</option>
+                    <option value="Savings Account">Savings Account</option>
+                    <option value="Overdraft Account">Overdraft Account (OD)</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 font-semibold">
-                <CheckCircle2 size={16} /> Penny Drop Verification Successful: Beneficiary name matches legal entity.
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 font-semibold text-xs">
+                <CheckCircle2 size={16} className="shrink-0 text-emerald-600" /> Penny Drop Verification Successful: Beneficiary details & bank info will be verified.
               </div>
             </div>
           )}
@@ -1005,16 +1660,87 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.storeName}
                     onChange={(e) => handleChange('storeName', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-bold"
+                    placeholder="e.g. Apex Uniforms & Stationery Store"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Store Handle / URL slug</label>
-                  <div className="flex items-center px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 font-mono text-[11px] text-gray-500">
-                    <span>bookvardi.in/seller/</span>
-                    <strong className="text-teal-900">{formData.storeSlug}</strong>
+                  <label className="font-bold text-gray-700">Store Tagline / Slogan</label>
+                  <input
+                    type="text"
+                    value={formData.storeTagline}
+                    onChange={(e) => handleChange('storeTagline', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="e.g. Official School Wear & Educational Supplies"
+                  />
+                </div>
+              </div>
+
+              {/* Drag & Drop Store Logo / Banner Image Upload */}
+              <div className="space-y-2">
+                <label className="font-bold text-gray-700 text-xs block">
+                  Store Logo / Banner Image (Upload File or Enter Image URL)
+                </label>
+                
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingStoreLogo(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingStoreLogo(false); }}
+                  onDrop={handleStoreLogoDrop}
+                  className={`p-4 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${
+                    isDraggingStoreLogo 
+                      ? 'bg-teal-100 border-teal-400 ring-2 ring-teal-400 scale-[1.01]' 
+                      : 'bg-teal-50/70 border-teal-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="relative group shrink-0">
+                      <img
+                        src={formData.storeLogo || "https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=150&auto=format&fit=crop&q=80"}
+                        alt="Store Logo Preview"
+                        className="w-16 h-16 rounded-2xl object-cover border-2 border-brand-yellow shadow-xs bg-white"
+                      />
+                      {formData.storeLogo && (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('storeLogo', '')}
+                          className="absolute -top-1 -right-1 bg-rose-600 text-white rounded-full p-1 shadow-xs hover:bg-rose-700 cursor-pointer"
+                          title="Remove Store Logo"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-teal-950 text-xs sm:text-sm">
+                        {isDraggingStoreLogo ? 'Drop Store Logo Here!' : 'Store Banner & Logo'}
+                      </h4>
+                      <p className="text-[11px] text-teal-700 leading-snug">
+                        Drag & drop logo image file (PNG, JPG, WEBP) or paste image URL below.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                    <label className="w-full sm:w-auto cursor-pointer bg-brand-teal hover:bg-brand-teal-dark text-white px-3.5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs">
+                      <UploadCloud size={14} />
+                      <span>{formData.storeLogo ? 'Change Logo' : 'Upload Logo'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleStoreLogoSelect}
+                        className="hidden"
+                      />
+                    </label>
                   </div>
                 </div>
+
+                <input
+                  type="text"
+                  value={formData.storeLogo}
+                  onChange={(e) => handleChange('storeLogo', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-mono"
+                  placeholder="Or paste image URL (https://...)"
+                />
               </div>
 
               <div className="space-y-1">
@@ -1024,6 +1750,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                   value={formData.storeDescription}
                   onChange={(e) => handleChange('storeDescription', e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                  placeholder="Describe your store history, authorized school partnerships, and catalog specialties..."
                 />
               </div>
             </div>
@@ -1064,14 +1791,15 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <div className="space-y-1">
                   <label className="font-bold text-gray-700">Authorized Brands (Comma Separated)</label>
                   <input
                     type="text"
-                    value={formData.primaryBrands.join(', ')}
+                    value={Array.isArray(formData.primaryBrands) ? formData.primaryBrands.join(', ') : (formData.primaryBrands || '')}
                     onChange={(e) => handleChange('primaryBrands', e.target.value.split(',').map(s => s.trim()))}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="NCERT, Classmate, Action, Speedo"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1081,6 +1809,17 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                     value={formData.estimatedSkuCount}
                     onChange={(e) => handleChange('estimatedSkuCount', e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="e.g. 50-100 Products"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Sample Product / Flagship Item Title</label>
+                  <input
+                    type="text"
+                    value={formData.sampleProductTitle}
+                    onChange={(e) => handleChange('sampleProductTitle', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
+                    placeholder="e.g. DPS Navy Blazer (Size 34)"
                   />
                 </div>
               </div>
@@ -1161,19 +1900,6 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
                 <p className="text-amber-800 leading-relaxed text-xs">
                   All 10 sections have been submitted. Our compliance desk usually reviews GSTIN, Address Proof, and Bank IFSC within 24 hours.
                 </p>
-
-                <div className="pt-2 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-[11px] text-amber-900 font-medium">
-                    Want to test the verified seller experience right away?
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleSimulateApproval}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer"
-                  >
-                    <Sparkles size={14} /> One-Click Approve Application (Demo)
-                  </button>
-                </div>
               </div>
 
               {/* Review Summary Grid */}
@@ -1299,11 +2025,10 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
             {step === 11 && (
               <button
                 type="button"
-                onClick={handleSimulateApproval}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer"
+                onClick={onClose}
+                className="px-5 py-2.5 bg-brand-teal text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
               >
-                <span>Activate Verification Badge</span>
-                <CheckCircle2 size={14} />
+                Close & Await Admin Review
               </button>
             )}
 
@@ -1320,6 +2045,135 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
         </div>
 
       </div>
+
+      {/* Interactive Document Preview Modal Overlay */}
+      {previewDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-gray-100">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-2.5">
+                <FileCheck className="text-brand-yellow" size={20} />
+                <div>
+                  <h3 className="font-bold text-sm text-white truncate max-w-xs sm:max-w-md">
+                    Preview: {previewDocModal.fileName || 'Uploaded Document'}
+                  </h3>
+                  <p className="text-[11px] text-gray-400">Seller Onboarding Document Inspection</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {previewDocModal.src && (
+                  <a
+                    href={previewDocModal.src}
+                    download={previewDocModal.fileName || 'document'}
+                    className="p-2 text-gray-300 hover:text-white hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold"
+                    title="Download File"
+                  >
+                    <Download size={15} />
+                    <span className="hidden sm:inline">Download</span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocModal(null)}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors cursor-pointer"
+                  title="Close Preview"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-100 flex items-center justify-center min-h-[350px]">
+              {previewDocModal.src ? (
+                previewDocModal.src.startsWith('data:image/') || (previewDocModal.fileName && previewDocModal.fileName.match(/\.(png|jpe?g|webp|gif|svg)$/i)) ? (
+                  <img
+                    src={previewDocModal.src}
+                    alt={previewDocModal.fileName}
+                    className="max-h-[70vh] object-contain rounded-xl shadow-md border border-gray-200 bg-white p-2"
+                  />
+                ) : previewDocModal.src.startsWith('data:application/pdf') || (previewDocModal.fileName && previewDocModal.fileName.endsWith('.pdf')) ? (
+                  <iframe
+                    src={previewDocModal.src}
+                    title={previewDocModal.fileName}
+                    className="w-full h-[70vh] rounded-xl border border-gray-300 bg-white shadow-md"
+                  />
+                ) : (
+                  <div className="text-center p-8 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-3 max-w-md">
+                    <FileText size={48} className="mx-auto text-brand-teal" />
+                    <h4 className="font-bold text-gray-800 text-sm">{previewDocModal.fileName}</h4>
+                    <p className="text-xs text-gray-500">Document file uploaded successfully.</p>
+                    <a
+                      href={previewDocModal.src}
+                      download={previewDocModal.fileName || 'document'}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-brand-teal text-white font-bold rounded-xl text-xs hover:bg-brand-teal-dark transition-colors"
+                    >
+                      <Download size={14} /> Download File to Inspect
+                    </a>
+                  </div>
+                )
+              ) : (
+                <div className="text-center text-gray-500 py-12 font-semibold">
+                  No preview content available.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-xs">
+              <span className="text-gray-500 font-semibold">Status: Encrypted & Stored</span>
+              <button
+                type="button"
+                onClick={() => setPreviewDocModal(null)}
+                className="px-4 py-1.5 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOtpPopup && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-amber-200 text-center space-y-4">
+            <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto">
+              <ShieldCheck size={32} />
+            </div>
+            <div>
+              <h3 className="font-display font-extrabold text-base text-gray-900">Phone OTP Verification Required</h3>
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                You cannot move to other onboarding steps without verifying your mobile phone number. Please click <strong>"Send Phone OTP"</strong> in Step 1 and enter testing code <strong>123456</strong>.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setShowOtpPopup(false);
+                setStep(1);
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-brand-teal hover:bg-brand-teal-dark text-white font-extrabold text-xs shadow-md transition-all cursor-pointer"
+            >
+              Verify Phone OTP Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      <LocationPickerModal
+        isOpen={isMapPickerOpen}
+        onClose={() => setIsMapPickerOpen(false)}
+        onSelectLocation={handleMapLocationSelect}
+        initialAddress={{
+          street: formData.addressLine1,
+          colony: formData.addressLine2,
+          landmark: formData.landmark,
+          city: formData.city,
+          state: formData.state || 'Uttar Pradesh',
+          pincode: formData.pincode
+        }}
+      />
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   TwitterIcon,
   YoutubeIcon
 } from '../Common/SocialIcons';
-import { CATEGORIES } from '../../data/mockData';
+import { CATEGORIES } from '../../constants/categories';
 import { useCart } from '../../context/CartContext';
 
 export default function Footer({ onNavigate }) {
@@ -67,16 +67,20 @@ export default function Footer({ onNavigate }) {
                   All Products
                 </button>
               </li>
-              {(showAllCategories ? CATEGORIES : CATEGORIES.slice(0, 8)).map((cat) => (
-                <li key={cat.id}>
-                  <button
-                    onClick={() => onNavigate && onNavigate('products', cat.id)}
-                    className="hover:text-brand-yellow transition-colors cursor-pointer text-left truncate max-w-full block"
-                  >
-                    {cat.name}
-                  </button>
-                </li>
-              ))}
+              {(showAllCategories ? CATEGORIES : CATEGORIES.slice(0, 8)).map((cat, idx) => {
+                const catName = typeof cat === 'string' ? cat : (cat.name || cat.id);
+                const catId = typeof cat === 'string' ? cat : (cat.id || cat.name);
+                return (
+                  <li key={catId || idx}>
+                    <button
+                      onClick={() => onNavigate && onNavigate('products', catId)}
+                      className="hover:text-brand-yellow transition-colors cursor-pointer text-left truncate max-w-full block"
+                    >
+                      {catName}
+                    </button>
+                  </li>
+                );
+              })}
               {CATEGORIES.length > 8 && (
                 <li>
                   <button
@@ -115,7 +119,14 @@ export default function Footer({ onNavigate }) {
               <li><a href="#" className="hover:text-brand-yellow transition-colors">Help Center</a></li>
               <li><a href="#" className="hover:text-brand-yellow transition-colors">Shipping & Delivery</a></li>
               <li><a href="#" className="hover:text-brand-yellow transition-colors">Returns & Refunds</a></li>
-              <li><a href="#" className="hover:text-brand-yellow transition-colors">Contact Support</a></li>
+              <li>
+                <button
+                  onClick={() => onNavigate && onNavigate('contact')}
+                  className="hover:text-brand-yellow transition-colors cursor-pointer text-left"
+                >
+                  Contact Support
+                </button>
+              </li>
             </ul>
           </div>
 
@@ -176,7 +187,22 @@ export default function Footer({ onNavigate }) {
                   </button>
                 </li>
               )}
-              <li><a href="#" className="hover:text-brand-yellow transition-colors">School Partners</a></li>
+              <li>
+                <button
+                  onClick={() => onNavigate && onNavigate('school-bulk-order')}
+                  className="hover:text-brand-yellow transition-colors text-left cursor-pointer flex items-center gap-1 font-semibold text-brand-yellow"
+                >
+                  <span>School Bulk Orders</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onNavigate && onNavigate('school-directory')}
+                  className="hover:text-brand-yellow transition-colors text-left cursor-pointer"
+                >
+                  School Partners
+                </button>
+              </li>
               <li><a href="#" className="hover:text-brand-yellow transition-colors">Privacy Policy</a></li>
               <li><a href="#" className="hover:text-brand-yellow transition-colors">Terms of Service</a></li>
             </ul>

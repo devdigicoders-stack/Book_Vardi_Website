@@ -37,8 +37,12 @@ import SellerApplicationReviewCard from '../Profile/SellerApplicationReviewCard'
 import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
+import { compressImageToWebP } from '../../utils/imageCompressor';
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl } from '../../utils/api';
+
 
 export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
+
   const {
     userProfile,
     updateProfile,
@@ -86,14 +90,29 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     }
   });
 
-  // Re-read on tab focus or change
+  // Re-read on tab focus or change, and listen to real-time status updates
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('bv_seller_reg_data');
-      if (saved) setSellerAppData(JSON.parse(saved));
-    } catch (e) {
-      console.error(e);
-    }
+    const loadSellerData = () => {
+      try {
+        const saved = localStorage.getItem('bv_seller_reg_data');
+        if (saved) setSellerAppData(JSON.parse(saved));
+        else {
+          const profileSaved = localStorage.getItem('book_vardi_seller_profile');
+          if (profileSaved) setSellerAppData(JSON.parse(profileSaved));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    loadSellerData();
+    window.addEventListener('bv_seller_status_updated', loadSellerData);
+    window.addEventListener('storage', loadSellerData);
+
+    return () => {
+      window.removeEventListener('bv_seller_status_updated', loadSellerData);
+      window.removeEventListener('storage', loadSellerData);
+    };
   }, [activeTab]);
 
   // Synchronize tab when navigated externally (e.g. from navbar or footer)
@@ -158,6 +177,63 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       });
     }
   }, [userProfile]);
+
+  // Seller Status & Approval Helpers
+  const checkIsApproved = (statusStr) => {
+    if (!statusStr) return false;
+    const s = String(statusStr).toLowerCase().trim();
+    return s === 'approved' || s === 'active' || s === 'verified';
+  };
+
+  const checkIsRejected = (statusStr) => {
+    if (!statusStr) return false;
+    const s = String(statusStr).toLowerCase().trim();
+    return s === 'rejected' || s === 'declined';
+  };
+
+  const checkIsInReview = (statusStr) => {
+    if (!statusStr) return false;
+    const s = String(statusStr).toLowerCase().trim();
+    return s === 'in_review' || s === 'under_review' || s === 'review' || s === 'in review';
+  };
+
+  const isApprovedSeller = Boolean(
+    isSeller ||
+    userProfile?.isSeller === true ||
+    checkIsApproved(sellerStatus) ||
+    checkIsApproved(userProfile?.sellerStatus) ||
+    checkIsApproved(sellerAppData?.submissionStatus) ||
+    checkIsApproved(sellerAppData?.status)
+  );
+
+  const hasFilledSellerForm = Boolean(
+    (sellerStatus && sellerStatus !== 'none') ||
+    (userProfile?.sellerStatus && userProfile?.sellerStatus !== 'none') ||
+    (sellerAppData && sellerAppData.submissionStatus && sellerAppData.submissionStatus !== 'draft') ||
+    (sellerAppData && (sellerAppData.sellerName || sellerAppData.legalBusinessName) && (sellerAppData.highestStepReached >= 11 || sellerAppData.currentStep >= 11))
+  );
+
+  const isSellerRejected = Boolean(
+    checkIsRejected(sellerStatus) ||
+    checkIsRejected(userProfile?.sellerStatus) ||
+    checkIsRejected(sellerAppData?.submissionStatus) ||
+    checkIsRejected(sellerAppData?.status)
+  );
+
+  const isSellerInReview = Boolean(
+    checkIsInReview(sellerStatus) ||
+    checkIsInReview(userProfile?.sellerStatus) ||
+    checkIsInReview(sellerAppData?.submissionStatus) ||
+    checkIsInReview(sellerAppData?.status)
+  );
+
+  const sellerStatusText = isApprovedSeller
+    ? 'Approved'
+    : isSellerRejected
+    ? 'Rejected'
+    : isSellerInReview
+    ? 'In Review'
+    : 'Pending Approval';
 
   // Order History Filter & Search State
   const [orderSearch, setOrderSearch] = useState('');
@@ -283,21 +359,37 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     setIsEditingProfile(false);
   };
 
-  const handleAvatarUpload = (event) => {
+  const handleAvatarUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const avatarUrl = typeof reader.result === 'string' ? reader.result : '';
-      if (!avatarUrl) return;
+    try {
+      // 1. Compress image to WebP (512x512 max dimensions, 0.85 quality)
+      const compressed = await compressImageToWebP(file, 512, 512, 0.85);
+      let finalAvatarUrl = compressed.dataUrl;
 
-      setFormData((prev) => ({ ...prev, avatar: avatarUrl }));
-      updateProfile({ avatar: avatarUrl });
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
+      // 2. Upload to backend if backend is enabled
+      if (backendEnabled) {
+        try {
+          const res = await uploadAvatarToBackend(compressed.file, userProfile?.phone || '');
+          if (res?.avatarUrl) {
+            finalAvatarUrl = res.avatarUrl;
+          }
+        } catch (apiErr) {
+          console.warn('Backend avatar file upload failed, using WebP DataURL fallback:', apiErr?.message);
+        }
+      }
+
+      // 3. Update local form state and persistent user profile
+      setFormData((prev) => ({ ...prev, avatar: finalAvatarUrl }));
+      updateProfile({ avatar: finalAvatarUrl });
+    } catch (err) {
+      console.error('Avatar WebP compression error:', err);
+    } finally {
+      event.target.value = '';
+    }
   };
+
 
   const handleAddressSubmit = (e) => {
     e.preventDefault();
@@ -505,10 +597,15 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               <div className="relative">
                 <div className="group relative w-18 h-18 sm:w-22 sm:h-22 rounded-2xl border-2 border-brand-yellow p-1 bg-white/10 shadow-lg">
                   <img
-                    src={formData.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
+                    src={resolveImageUrl(formData.avatar) || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
                     alt={formData.name || 'Profile Avatar'}
                     className="w-full h-full object-cover rounded-xl"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
+                    }}
                   />
+
                   {/* Top-Right Corner Pencil Button for Avatar Editing */}
                   <button
                     type="button"
@@ -523,7 +620,8 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 <input
                   ref={avatarInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/png, image/jpeg, image/jpg, image/webp"
+
                   onChange={handleAvatarUpload}
                   className="hidden"
                 />
@@ -696,44 +794,51 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 <ChevronRight size={14} className={activeTab === 'addresses' ? 'opacity-100' : 'opacity-40'} />
               </button>
 
-              {/* SELLER APPLICATION REVIEW TAB (Available for sellers or registered applicants) */}
-              {(isSeller || sellerStatus === 'pending' || sellerStatus === 'approved' || localStorage.getItem('bv_seller_reg_data')) && (
+              {/* SELLER SECTION IN SIDEBAR */}
+              {isApprovedSeller ? (
+                /* 1. Approved Seller: ONLY show Seller Dashboard button */
                 <button
-                  onClick={() => setActiveTab('seller-data')}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                    activeTab === 'seller-data'
-                      ? 'bg-teal-900 text-white shadow-xs'
-                      : 'bg-teal-50/80 text-teal-950 border border-teal-200/80 hover:bg-teal-100/80'
-                  }`}
-                  title="View complete data filled during all 12 registration steps"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <Store size={18} className={activeTab === 'seller-data' ? 'text-brand-yellow' : 'text-teal-700'} />
-                    <span>Seller Profile (12 Steps)</span>
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white">
-                    VERIFIED
-                  </span>
-                </button>
-              )}
-
-              {/* SELLER HUB / SELLER APPLICATION TAB */}
-              {isSeller ? (
-                <button
+                  type="button"
                   onClick={() => window.open('http://localhost:5174', '_blank')}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer bg-brand-yellow text-brand-teal-dark hover:bg-brand-yellow-hover shadow-xs"
-                  title="Launch Seller Dashboard on Port 5174"
+                  title="Redirect to Seller Panel Login Page on Port 5174"
                 >
                   <span className="flex items-center gap-2.5">
                     <Store size={18} />
-                    <span>Seller Dashboard (Hub)</span>
+                    <span>Seller Panel Login</span>
                   </span>
                   <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-brand-teal text-white">
-                    LIVE
+                    LOGIN
+                  </span>
+                </button>
+              ) : hasFilledSellerForm ? (
+                /* 2. Registered & Filled Form: SHOW ONLY STATUS BUTTON (Waiting / In Review / Rejected). Click opens detailed card! */
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('seller-data')}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer border ${
+                    activeTab === 'seller-data'
+                      ? 'bg-teal-900 text-white shadow-xs'
+                      : isSellerRejected
+                      ? 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                      : isSellerInReview
+                      ? 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                      : 'bg-blue-50 text-blue-900 border-blue-200 hover:bg-blue-100'
+                  }`}
+                  title="Click to view detailed seller application card"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Clock size={18} className={activeTab === 'seller-data' ? 'text-brand-yellow' : isSellerRejected ? 'text-rose-600' : isSellerInReview ? 'text-amber-600' : 'text-blue-600'} />
+                    <span>Status: {sellerStatusText}</span>
+                  </span>
+                  <span className="text-[10px] font-extrabold underline">
+                    View Card
                   </span>
                 </button>
               ) : (
+                /* 3. Unapplied User: Become a Seller button */
                 <button
+                  type="button"
                   onClick={() => onNavigate && onNavigate('seller-registration')}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer bg-amber-50 text-amber-900 border border-amber-200/80 hover:bg-amber-100"
                   title="Apply to become an authorized seller"
@@ -748,6 +853,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               {/* ADMIN DASHBOARD TAB (Only visible if user has an approved admin role in mockData) */}
               {isAdmin && (
                 <button
+                  type="button"
                   onClick={() => window.open('http://localhost:5175', '_blank')}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer bg-teal-800 text-white hover:bg-teal-900 shadow-xs"
                   title="Launch Admin Dashboard on Port 5175"
@@ -765,6 +871,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               {/* Log Out Action */}
               <div className="pt-2 border-t border-gray-100">
                 <button
+                  type="button"
                   onClick={() => {
                     logout();
                     onNavigate('home');
@@ -776,36 +883,6 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     <span>Log Out</span>
                   </span>
                 </button>
-              </div>
-
-              {/* Switch Role Account from mockData */}
-              <div className="pt-3 border-t border-gray-100">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400 mb-1.5 px-1 flex items-center justify-between">
-                  <span>Switch Mock User</span>
-                  <span className="text-[9px] text-teal-700 bg-teal-50 px-1.5 py-0.2 rounded font-bold">mockData</span>
-                </div>
-                <div className="space-y-1">
-                  {(USERS || []).slice(0, 5).map((u) => {
-                    const isCurrent = userProfile?.email?.toLowerCase() === u.email?.toLowerCase();
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => switchUser(u.id)}
-                        className={`w-full text-left p-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-between ${
-                          isCurrent
-                            ? 'bg-teal-50 border border-teal-200 text-teal-950 font-bold'
-                            : 'hover:bg-gray-50 text-gray-600'
-                        }`}
-                      >
-                        <span className="truncate">{u.name}</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-gray-100 text-gray-700 shrink-0 font-bold">
-                          {u.role}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
             </div>
           </div>

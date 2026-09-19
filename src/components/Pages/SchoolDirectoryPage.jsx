@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { ArrowRight, School as SchoolIcon, MapPin, Navigation, Compass, AlertCircle } from 'lucide-react';
-import { KIT_BUNDLES } from '../../data/mockData';
 import { useLocation } from '../../context/LocationContext';
 
 export default function SchoolDirectoryPage({ onNavigate }) {
@@ -80,12 +79,7 @@ export default function SchoolDirectoryPage({ onNavigate }) {
         {displayedSchools.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {displayedSchools.map((school) => {
-              const kitForSchool = KIT_BUNDLES.find(
-                (k) =>
-                  k.school.toLowerCase().includes(school.name.toLowerCase()) ||
-                  school.name.toLowerCase().includes(k.school.toLowerCase()) ||
-                  (school.shortName && k.school.toLowerCase().includes(school.shortName.toLowerCase()))
-              );
+              const kitForSchool = null;
 
               return (
                 <button

@@ -432,11 +432,22 @@ export default function AllProductsPage({
 
       {/* Product Grid Content */}
       <div className="container mx-auto px-4 mt-8">
-        {displayedProducts.length > 0 ? (
+        {loading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
+            {[...Array(8)].map((_, idx) => (
+              <div key={idx} className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 animate-pulse">
+                <div className="w-full aspect-square bg-gray-200 rounded-lg sm:rounded-xl mb-3 sm:mb-4" />
+                <div className="h-3.5 sm:h-4 bg-gray-200 rounded w-3/4 mb-2" />
+                <div className="h-2.5 sm:h-3 bg-gray-100 rounded w-1/2 mb-3 sm:mb-4" />
+                <div className="h-4 sm:h-5 bg-gray-200 rounded w-1/3" />
+              </div>
+            ))}
+          </div>
+        ) : displayedProducts.length > 0 ? (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
-              {displayedProducts.map((product) => (
-                <ProductCard key={product.id} product={product} />
+              {displayedProducts.map((product, index) => (
+                <ProductCard key={product.id || product._id || `product-${index}`} product={product} />
               ))}
             </div>
 

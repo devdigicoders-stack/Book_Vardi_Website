@@ -1,15 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Sparkles } from 'lucide-react';
-import { ALL_PRODUCTS } from '../../data/mockData';
+import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
 
 export default function NewArrivalsPage({ onNavigate }) {
-  const [products, setProducts] = useState([]);
+  const { products: contextProducts = [] } = useCart();
+  const products = contextProducts.filter(p => p.discountBadge === 'NEW' || p.isNew || p.badge === 'NEW');
 
   useEffect(() => {
-    // Filter products that have the 'NEW' badge
-    const newItems = ALL_PRODUCTS.filter(p => p.discountBadge === 'NEW');
-    setProducts(newItems);
     window.scrollTo(0, 0);
   }, []);
 

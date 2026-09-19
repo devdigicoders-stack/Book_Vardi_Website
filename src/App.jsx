@@ -30,6 +30,7 @@ import NotFoundPage from './components/Pages/NotFoundPage';
 import SchoolDirectoryPage from './components/Pages/SchoolDirectoryPage';
 import SchoolDetailsPage from './components/Pages/SchoolDetailsPage';
 import SellerRegistrationPage from './components/Pages/SellerRegistrationPage';
+import SchoolBulkOrderPage from './components/Pages/SchoolBulkOrderPage';
 
 function getInitialPage() {
   try {
@@ -45,8 +46,8 @@ function getInitialPage() {
     if (candidate) {
       const validPages = [
         'home', 'products', 'product-detail', 'about', 'contact', 'offers', 'new-arrivals',
-        'all-categories', 'profile', 'checkout', 'order-success', 'seller-dashboard',
-        'seller-registration', 'school-directory', 'school-details'
+        'all-categories', 'profile', 'checkout', 'cart', 'order-success', 'seller-dashboard',
+        'seller-registration', 'school-directory', 'school-details', 'school-bulk-order'
       ];
       const match = validPages.find(p => candidate.startsWith(p));
       if (match) return match;
@@ -83,8 +84,7 @@ function MainStore() {
     }
   }, [selectedProduct]);
 
-  // If user is logged out, active profile page falls back to home
-  const activePage = (currentPage === 'profile' && !isAuthenticated) ? 'home' : currentPage;
+  const activePage = currentPage;
 
   const [orderSuccessOptions, setOrderSuccessOptions] = useState(null);
 
@@ -130,12 +130,8 @@ function MainStore() {
       return;
     }
 
-    if (page === 'profile' && !isAuthenticated) {
-      openAuthModal('login');
-      return;
-    }
-
     setCurrentPage(page);
+
     try {
       const newUrl = page === 'home' 
         ? window.location.pathname 
@@ -231,11 +227,12 @@ function MainStore() {
           <AllCategoriesPage onNavigate={navigateTo} />
         )}
 
-        {activePage === 'profile' && isAuthenticated && (
+        {activePage === 'profile' && (
           <ProfilePage onNavigate={navigateTo} initialTab={activeProfileTab} />
         )}
 
-        {activePage === 'checkout' && (
+
+        {(activePage === 'checkout' || activePage === 'cart') && (
           <CheckoutPage onNavigate={navigateTo} />
         )}
 
@@ -259,11 +256,15 @@ function MainStore() {
           <SellerRegistrationPage onNavigate={navigateTo} />
         )}
 
+        {activePage === 'school-bulk-order' && (
+          <SchoolBulkOrderPage onNavigate={navigateTo} />
+        )}
+
         {/* 404 Fallback */}
         {![
           'home', 'products', 'product-detail', 'about', 'contact', 'offers', 'new-arrivals',
           'all-categories', 'profile', 'checkout', 'order-success', 'seller-registration',
-          'school-directory', 'school-details'
+          'school-directory', 'school-details', 'school-bulk-order'
         ].includes(activePage) && (
             <NotFoundPage onNavigate={navigateTo} />
           )}
