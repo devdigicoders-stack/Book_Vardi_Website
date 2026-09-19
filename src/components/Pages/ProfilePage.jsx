@@ -600,6 +600,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     src={resolveImageUrl(formData.avatar) || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80'}
                     alt={formData.name || 'Profile Avatar'}
                     className="w-full h-full object-cover rounded-xl"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
+                    }}
                   />
 
                   {/* Top-Right Corner Pencil Button for Avatar Editing */}

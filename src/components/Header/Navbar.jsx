@@ -681,6 +681,10 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                       src={resolveImageUrl(userProfile.avatar)}
                       alt={displayName}
                       className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover ring-2 ring-white/80"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
+                      }}
                     />
                   ) : (
                     <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-current/10 flex items-center justify-center text-[11px] font-extrabold ring-2 ring-white/80">
