@@ -7,7 +7,7 @@ export const backendEnabled = import.meta.env.VITE_USE_BACKEND !== 'false';
 
 export const apiClient = axios.create({
   baseURL: apiBaseUrl,
-  timeout: 15000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }
