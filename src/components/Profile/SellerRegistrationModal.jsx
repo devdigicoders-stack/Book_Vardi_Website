@@ -1948,7 +1948,8 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                 <button
                   type="button"
                   onClick={() => {
-                    window.open('http://localhost:5174', '_blank');
+                    const sellerUrl = import.meta.env.VITE_SELLER_PANEL_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5174' : 'https://book-vardi-seller-panel-new.vercel.app');
+                    window.open(sellerUrl, '_blank');
                     onClose();
                   }}
                   className="px-6 py-3 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold rounded-xl shadow-md text-xs sm:text-sm flex items-center gap-2 cursor-pointer"

@@ -111,8 +111,8 @@ function MainStore() {
 
     if (page === 'seller-dashboard' || page === 'seller') {
       if (isSeller) {
-        // Open the independent bookvardiseller project on port 5174
-        window.open('http://localhost:5174', '_blank');
+        const sellerUrl = import.meta.env.VITE_SELLER_PANEL_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5174' : 'https://book-vardi-seller-panel-new.vercel.app');
+        window.open(sellerUrl, '_blank');
       } else {
         // Navigate directly to the 12-step onboarding registration page
         setCurrentPage('seller-registration');
@@ -125,8 +125,8 @@ function MainStore() {
     }
 
     if (page === 'admin-dashboard' || page === 'admin') {
-      // Open the independent bookvardiadmin project on port 5175
-      window.open('http://localhost:5175', '_blank');
+      const adminUrl = import.meta.env.VITE_ADMIN_PANEL_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5175' : 'https://book-vardi-admin-panel.vercel.app');
+      window.open(adminUrl, '_blank');
       return;
     }
 
