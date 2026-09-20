@@ -799,7 +799,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 /* 1. Approved Seller: ONLY show Seller Dashboard button */
                 <button
                   type="button"
-                  onClick={() => window.open('http://localhost:5174', '_blank')}
+                  onClick={() => {
+                    const sellerUrl = import.meta.env.VITE_SELLER_PANEL_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5174' : 'https://book-vardi-seller-panel-new.vercel.app');
+                    window.open(sellerUrl, '_blank');
+                  }}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer bg-brand-yellow text-brand-teal-dark hover:bg-brand-yellow-hover shadow-xs"
                   title="Redirect to Seller Panel Login Page on Port 5174"
                 >
@@ -854,7 +857,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               {isAdmin && (
                 <button
                   type="button"
-                  onClick={() => window.open('http://localhost:5175', '_blank')}
+                  onClick={() => {
+                    const adminUrl = import.meta.env.VITE_ADMIN_PANEL_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5175' : 'https://book-vardi-admin-panel.vercel.app');
+                    window.open(adminUrl, '_blank');
+                  }}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer bg-teal-800 text-white hover:bg-teal-900 shadow-xs"
                   title="Launch Admin Dashboard on Port 5175"
                 >
@@ -2267,7 +2273,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                     onNavigate('seller-registration');
                   }
                 }}
-                onOpenSellerDashboard={isSeller ? () => window.open('http://localhost:5174', '_blank') : null}
+                onOpenSellerDashboard={isSeller ? () => {
+                  const sellerUrl = import.meta.env.VITE_SELLER_PANEL_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5174' : 'https://book-vardi-seller-panel-new.vercel.app');
+                  window.open(sellerUrl, '_blank');
+                } : null}
               />
             )}
           </div>
