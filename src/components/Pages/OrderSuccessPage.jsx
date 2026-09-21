@@ -13,13 +13,17 @@ import {
   Sparkles,
   ShoppingBag,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  FileText,
+  Download
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import TaxInvoiceModal from '../Common/TaxInvoiceModal';
 
 export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, selectedOrder = null }) {
   const { lastPlacedOrder, userProfile, isAuthenticated } = useCart();
   const [copied, setCopied] = useState(false);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
 
   // Lazy-initialized fallback order for standalone preview or guest landing
   const [fallbackOrder] = useState(() => ({
@@ -145,6 +149,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                     <span>Copy</span>
                   </>
                 )}
+              </button>
+              <button
+                onClick={() => setIsInvoiceModalOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark transition-colors cursor-pointer bg-brand-teal/10 hover:bg-brand-teal/20 px-3 py-1 rounded-lg border border-brand-teal/20 shadow-2xs"
+                title="View & Download Tax Invoice / Bill of Order"
+              >
+                <FileText size={13} />
+                <span>Tax Invoice & Bill</span>
               </button>
             </div>
 
@@ -381,11 +393,11 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200">
           <button
             type="button"
-            onClick={handlePrint}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-white border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer"
+            onClick={() => setIsInvoiceModalOpen(true)}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 border-brand-teal text-brand-teal hover:bg-brand-teal/5 font-extrabold text-xs transition-colors cursor-pointer"
           >
             <Printer size={15} />
-            Print Tax Invoice
+            Print Tax Invoice & Bill
           </button>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
@@ -412,6 +424,15 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
         </div>
 
       </div>
+
+      {/* GST Tax Invoice & Bill of Order Modal */}
+      <TaxInvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        order={order}
+        userProfile={userProfile}
+        role="user"
+      />
     </div>
   );
 }

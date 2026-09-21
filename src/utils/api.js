@@ -579,3 +579,20 @@ export async function submitContactMessageApi(formData) {
     data: formData
   });
 }
+
+export async function fetchAnnouncementsFromBackend() {
+  return requestApi('/announcements', {
+    method: 'GET',
+    fallback: { success: true, data: [] }
+  });
+}
+
+export async function downloadInvoiceApi(orderId, phone = '') {
+  return requestApi(`/orders/${orderId}/invoice`, {
+    method: 'GET',
+    headers: phone ? { 'x-user-phone': phone } : {},
+    fallback: { success: true, message: 'Downloading invoice PDF...' }
+  });
+}
+
+

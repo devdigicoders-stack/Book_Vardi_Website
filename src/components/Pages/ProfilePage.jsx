@@ -2213,7 +2213,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                         <div>
                           <div className="flex items-center justify-between gap-2 mb-2">
                             <span className="font-bold text-xs text-brand-teal uppercase tracking-wider bg-brand-teal/10 px-2.5 py-0.5 rounded-md">
-                              {addr.type}
+                              {typeof addr.type === 'object' ? 'Home' : (addr.type || 'Home')}
                             </span>
                             {addr.isDefault && (
                               <span className="text-[10px] font-extrabold text-brand-yellow bg-brand-teal-dark px-2 py-0.5 rounded-full">
@@ -2223,13 +2223,13 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           </div>
 
                           <h4 className="text-sm font-bold text-gray-900 mt-2">
-                            {addr.name}
+                            {typeof addr.name === 'object' ? (addr.name?.name || 'Customer') : (addr.name || 'Customer')}
                           </h4>
                           <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                            {addr.addressLine || addr.street}, {addr.city} - {addr.pincode}
+                            {typeof (addr.addressLine || addr.street) === 'object' ? 'Delivery Address' : (addr.addressLine || addr.street)}, {typeof addr.city === 'object' ? 'Lucknow' : (addr.city || 'Lucknow')} - {typeof addr.pincode === 'object' ? '226001' : (addr.pincode || '226001')}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
-                            Phone: {addr.phone}
+                            Phone: {typeof addr.phone === 'object' ? (addr.phone?.phone || '') : (addr.phone || '')}
                           </p>
                         </div>
 
