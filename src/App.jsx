@@ -31,12 +31,16 @@ import SchoolDirectoryPage from './components/Pages/SchoolDirectoryPage';
 import SchoolDetailsPage from './components/Pages/SchoolDetailsPage';
 import SellerRegistrationPage from './components/Pages/SellerRegistrationPage';
 import SchoolBulkOrderPage from './components/Pages/SchoolBulkOrderPage';
+import DeliveryPartnerPage from './components/Pages/DeliveryPartnerPage';
 
 function getInitialPage() {
   try {
     const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
     const path = window.location.pathname.replace(/^\/+/, '').toLowerCase();
     const candidate = hash || path;
+    if (candidate.includes('delivery-partner')) {
+      return 'delivery-partner';
+    }
     if (candidate.includes('seller-registration')) {
       return 'seller-registration';
     }
@@ -47,7 +51,7 @@ function getInitialPage() {
       const validPages = [
         'home', 'products', 'product-detail', 'about', 'contact', 'offers', 'new-arrivals',
         'all-categories', 'profile', 'checkout', 'cart', 'order-success', 'seller-dashboard',
-        'seller-registration', 'school-directory', 'school-details', 'school-bulk-order'
+        'seller-registration', 'school-directory', 'school-details', 'school-bulk-order', 'delivery-partner'
       ];
       const match = validPages.find(p => candidate.startsWith(p));
       if (match) return match;
@@ -260,11 +264,15 @@ function MainStore() {
           <SchoolBulkOrderPage onNavigate={navigateTo} />
         )}
 
+        {activePage === 'delivery-partner' && (
+          <DeliveryPartnerPage onNavigate={navigateTo} />
+        )}
+
         {/* 404 Fallback */}
         {![
           'home', 'products', 'product-detail', 'about', 'contact', 'offers', 'new-arrivals',
           'all-categories', 'profile', 'checkout', 'order-success', 'seller-registration',
-          'school-directory', 'school-details', 'school-bulk-order'
+          'school-directory', 'school-details', 'school-bulk-order', 'delivery-partner'
         ].includes(activePage) && (
             <NotFoundPage onNavigate={navigateTo} />
           )}

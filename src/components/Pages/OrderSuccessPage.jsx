@@ -13,15 +13,20 @@ import {
   Sparkles,
   ShoppingBag,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  FileText,
+  Download
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import TaxInvoiceModal from '../Common/TaxInvoiceModal';
+import OrderTrackingModal from '../Common/OrderTrackingModal';
 
 export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, selectedOrder = null }) {
   const { lastPlacedOrder, userProfile, isAuthenticated } = useCart();
   const [copied, setCopied] = useState(false);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
 
-  // Lazy-initialized fallback order for standalone preview or guest landing
   const [fallbackOrder] = useState(() => ({
     id: 'SC-99824',
     date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -79,8 +84,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   return (
     <div className="min-h-screen bg-gray-50/60 pt-2 pb-2 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto space-y-4">
-        
-        {/* Back Navigation Bar if opened in details-only mode */}
         {isDetailsOnly && (
           <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-2xs flex items-center justify-between">
             <button
@@ -96,15 +99,12 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           </div>
         )}
 
-        {/* Celebration Header Card (Only visible when NOT in details-only mode) */}
         {!isDetailsOnly && (
           <div className="bg-white rounded-3xl p-8 sm:p-10 border border-teal-100 shadow-sm text-center relative overflow-hidden">
-            {/* Subtle background decoration */}
             <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-brand-teal via-brand-yellow to-brand-pink" />
             <div className="absolute -top-16 -right-16 w-36 h-36 bg-brand-teal/5 rounded-full blur-2xl pointer-events-none" />
             <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-brand-yellow/10 rounded-full blur-2xl pointer-events-none" />
 
-            {/* Success Icon */}
             <div className="relative inline-flex mb-5">
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-50 border-4 border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
                 <CheckCircle2 size={46} className="animate-bounce-subtle" />
@@ -121,7 +121,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               Thank you for shopping with <span className="font-bold text-brand-teal">BookVardi</span>. We’ve received your order and our campus dispatch team is packing your stationery!
             </p>
 
-            {/* Order ID & Student Email notification */}
             <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-3 bg-gray-50 border border-gray-200/80 rounded-2xl px-5 py-3">
               <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">
                 Order ID:
@@ -146,9 +145,25 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                   </>
                 )}
               </button>
+              <button
+                onClick={() => setIsInvoiceModalOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark transition-colors cursor-pointer bg-brand-teal/10 hover:bg-brand-teal/20 px-3 py-1 rounded-lg border border-brand-teal/20 shadow-2xs"
+                title="View & Download Tax Invoice / Bill of Order"
+              >
+                <FileText size={13} />
+                <span>Tax Invoice & Bill</span>
+              </button>
+
+              <button
+                onClick={() => setIsTrackingModalOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-brand-teal hover:bg-brand-teal-light transition-colors cursor-pointer px-3 py-1 rounded-lg shadow-2xs"
+                title="Track Live Courier Shipment AWB"
+              >
+                <Truck size={13} />
+                <span>Track Live Courier Shipment</span>
+              </button>
             </div>
 
-            {/* Confirmation email note */}
             <p className="text-xs text-gray-500 mt-3">
               Invoice & tracking updates dispatched to{' '}
               <strong className="text-gray-700">
@@ -156,7 +171,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               </strong>
             </p>
 
-            {/* Student Rewards Banner */}
             <div className="mt-6 max-w-md mx-auto bg-amber-50/80 border border-amber-200/70 rounded-2xl p-3.5 flex items-center justify-center gap-2.5 text-amber-900 text-xs font-bold">
               <Sparkles size={16} className="text-amber-600 shrink-0" />
               <span>
@@ -166,7 +180,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           </div>
         )}
 
-        {/* Live Order Tracker */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2">
             <div>
@@ -183,7 +196,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             </div>
           </div>
 
-          {/* Live Order Tracker (Icon Only - Highlighted iff status updated, No line) */}
           <div className="relative py-0">
             <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
               {[
@@ -221,10 +233,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           </div>
         </div>
 
-        {/* Two-Column Details Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Left Column: Items Ordered (2 Cols) */}
           <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm space-y-5">
             <div className="flex items-center justify-between border-b border-gray-100 pb-4">
               <h3 className="font-display text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
@@ -268,7 +277,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               ))}
             </div>
 
-            {/* Price Calculation Summary */}
             <div className="pt-4 border-t border-gray-100 space-y-2 text-xs">
               <div className="flex justify-between text-gray-600">
                 <span>Items Subtotal:</span>
@@ -299,10 +307,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             </div>
           </div>
 
-          {/* Right Column: Delivery & Payment Details (1 Col) */}
           <div className="space-y-6">
-            
-            {/* Delivery Address Details */}
             <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-3">
               <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
                 <MapPin size={16} className="text-brand-teal" />
@@ -336,7 +341,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               </div>
             </div>
 
-            {/* Payment Method Details */}
             <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-3">
               <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
                 <CreditCard size={16} className="text-brand-teal" />
@@ -364,7 +368,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               </div>
             </div>
 
-            {/* Support Note */}
             <div className="bg-brand-teal/5 rounded-2xl p-4 border border-brand-teal/10 text-xs text-gray-600 space-y-1">
               <p className="font-bold text-brand-teal flex items-center gap-1">
                 <Calendar size={13} />
@@ -377,15 +380,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           </div>
         </div>
 
-        {/* Bottom Actions Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200">
           <button
             type="button"
-            onClick={handlePrint}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-white border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer"
+            onClick={() => setIsInvoiceModalOpen(true)}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 border-brand-teal text-brand-teal hover:bg-brand-teal/5 font-extrabold text-xs transition-colors cursor-pointer"
           >
             <Printer size={15} />
-            Print Tax Invoice
+            Print Tax Invoice & Bill
           </button>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
@@ -410,8 +412,21 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             </button>
           </div>
         </div>
-
       </div>
+
+      <TaxInvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        order={order}
+        userProfile={userProfile}
+        role="user"
+      />
+
+      <OrderTrackingModal
+        isOpen={isTrackingModalOpen}
+        onClose={() => setIsTrackingModalOpen(false)}
+        order={order}
+      />
     </div>
   );
 }

@@ -1524,13 +1524,34 @@ export function CartProvider({ children }) {
 
     // Update product stock quantities locally and broadcast
     const updatedProducts = products.map((prod) => {
-      const cartMatch = cartItems.find((c) => Number(c.id) === Number(prod.id));
+      const prodIdStr = String(prod.id || prod._id || '');
+      const cartMatch = cartItems.find((c) => {
+        const cartIdStr = String(c.id || c._id || c.productId || '');
+        return (cartIdStr && prodIdStr && cartIdStr === prodIdStr) || (c.name && prod.name && c.name.trim().toLowerCase() === prod.name.trim().toLowerCase());
+      });
       if (cartMatch) {
-        const remaining = Math.max(0, (Number(prod.stockQuantity) || 50) - cartMatch.quantity);
+        const orderedQty = Math.max(1, Number(cartMatch.quantity) || 1);
+        const currentStock = Number(prod.stock !== undefined ? prod.stock : (prod.stockQuantity || 50));
+        const remaining = Math.max(0, currentStock - orderedQty);
+
+        let updatedVariants = prod.sizeVariants;
+        const targetSize = String(cartMatch.selectedSize || cartMatch.size || '').trim();
+        if (targetSize && Array.isArray(prod.sizeVariants)) {
+          updatedVariants = prod.sizeVariants.map((v) => {
+            if (String(v.size || '').trim().toLowerCase() === targetSize.toLowerCase()) {
+              return { ...v, stock: Math.max(0, (Number(v.stock) || 0) - orderedQty) };
+            }
+            return v;
+          });
+        }
+
         return {
           ...prod,
+          stock: remaining,
           stockQuantity: remaining,
-          inStock: remaining > 0
+          inStock: remaining > 0,
+          status: remaining > 0 ? (prod.status || 'active') : 'out-of-stock',
+          sizeVariants: updatedVariants
         };
       }
       return prod;

@@ -20,12 +20,68 @@ import {
   Camera,
   UploadCloud,
   Image as ImageIcon,
-  Store
+  Store,
+  AlertTriangle,
+  CreditCard,
+  Banknote
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import GrabKitSection from './GrabKitSection';
+
+export const getProductPaymentRestrictions = (product) => {
+  if (!product) return { acceptsCod: true, acceptsOnline: true, allDisabled: false };
+
+  const pma = String(product.paymentMethodAllowed || product.payment_method_allowed || '').toLowerCase();
+
+  const allowedMethodsArray = (
+    Array.isArray(product.paymentMethodsAllowed) ? product.paymentMethodsAllowed :
+    Array.isArray(product.acceptedPaymentMethods) ? product.acceptedPaymentMethods :
+    Array.isArray(product.paymentMethods) ? product.paymentMethods :
+    Array.isArray(product.seller?.paymentMethods) ? product.seller.paymentMethods :
+    null
+  );
+
+  let acceptsCod = true;
+  let acceptsOnline = true;
+
+  if (pma === 'online_only' || pma === 'prepaid_only') {
+    acceptsCod = false;
+  } else if (pma === 'cod_only' || pma === 'cash_only') {
+    acceptsOnline = false;
+  } else if (pma === 'none' || pma === 'disabled' || pma === 'neither') {
+    acceptsCod = false;
+    acceptsOnline = false;
+  }
+
+  if (product.acceptsCod === false || product.sellerAcceptsCod === false || product.seller?.acceptsCod === false || product.seller?.paymentMethods?.cod === false) {
+    acceptsCod = false;
+  }
+
+  if (product.acceptsOnline === false || product.sellerAcceptsOnline === false || product.seller?.acceptsOnline === false || product.seller?.paymentMethods?.online === false) {
+    acceptsOnline = false;
+  }
+
+  if (allowedMethodsArray !== null) {
+    const upperList = allowedMethodsArray.map((m) => String(m).toUpperCase().trim());
+    if (upperList.length === 0) {
+      acceptsCod = false;
+      acceptsOnline = false;
+    } else {
+      const hasCod = upperList.some((m) => m.includes('COD') || m.includes('CASH'));
+      const hasOnline = upperList.some((m) => m.includes('ONLINE') || m.includes('UPI') || m.includes('CARD') || m.includes('PREPAID') || m.includes('RAZORPAY'));
+      if (!hasCod) acceptsCod = false;
+      if (!hasOnline) acceptsOnline = false;
+    }
+  }
+
+  return {
+    acceptsCod,
+    acceptsOnline,
+    allDisabled: !acceptsCod && !acceptsOnline
+  };
+};
 
 const FALLBACK_IMAGE = '/images/gel-pen-set.jpg';
 
@@ -700,12 +756,52 @@ export default function ProductDetailPage({ onNavigate }) {
                   </p>
                 </div>
 
-                {/* Size Variants Selector */}
+                {/* Seller Payment Restrictions Badge */}
+                {(() => {
+                  const { acceptsCod, acceptsOnline, allDisabled } = getProductPaymentRestrictions(selectedProduct);
+                  if (allDisabled) {
+                    return (
+                      <div className="p-3 bg-red-50 border border-red-200 text-red-900 rounded-xl text-xs flex items-center gap-2 font-medium">
+                        <AlertTriangle size={16} className="text-red-600 shrink-0" />
+                        <span>
+                          <strong>Payment Method Disabled:</strong> The seller has not chosen or enabled any payment method for this product.
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (!acceptsCod && acceptsOnline) {
+                    return (
+                      <div className="p-2.5 bg-purple-50 border border-purple-200 text-purple-900 rounded-xl text-xs flex items-center gap-2 font-medium">
+                        <CreditCard size={15} className="text-purple-600 shrink-0" />
+                        <span><strong>Prepaid / Online Only:</strong> Seller does not accept Cash on Delivery (COD) for this item.</span>
+                      </div>
+                    );
+                  }
+                  if (acceptsCod && !acceptsOnline) {
+                    return (
+                      <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs flex items-center gap-2 font-medium">
+                        <Banknote size={15} className="text-amber-600 shrink-0" />
+                        <span><strong>COD Only:</strong> Seller accepts Cash on Delivery only (Online Payment disabled).</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Size / Scale Variants Selector */}
                 {sizeVariants.length > 0 && (
                   <div className="space-y-2 pt-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
-                        Select Size: <strong className="text-brand-teal ml-1">{selectedSize}</strong>
+                        {(() => {
+                          const scale = (activeVariant?.measureScale || sizeVariants[0]?.measureScale || '').toLowerCase();
+                          if (scale === 'count') return 'Select Pack / Count:';
+                          if (scale === 'meter') return 'Select Fabric Length:';
+                          if (scale === 'kg' || scale === 'gram') return 'Select Weight:';
+                          if (scale === 'box') return 'Select Packaging:';
+                          if (scale === 'unit') return 'Select Option:';
+                          return 'Select Size:';
+                        })()} <strong className="text-brand-teal ml-1">{selectedSize}</strong>
                       </span>
                       {activeVariant?.stock !== undefined && (
                         <span className={`text-[11px] font-bold ${activeVariant.stock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
@@ -715,10 +811,11 @@ export default function ProductDetailPage({ onNavigate }) {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {sizeVariants.map(variant => {
-                        const isSelected = selectedSize === variant.size;
+                        const variantVal = variant.size || variant.measureValue;
+                        const isSelected = selectedSize === variantVal;
                         return (
                           <button
-                            key={variant.size}
+                            key={variantVal}
                             type="button"
                             onClick={() => handleSelectSize(variant)}
                             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
@@ -727,7 +824,7 @@ export default function ProductDetailPage({ onNavigate }) {
                                 : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal/40'
                             }`}
                           >
-                            <span>{variant.size}</span>
+                            <span>{variantVal}</span>
                             {variant.price && (
                               <span className={`text-[10px] ${isSelected ? 'text-teal-100 font-normal' : 'text-gray-400 font-normal'}`}>
                                 ₹{variant.price}
@@ -814,28 +911,47 @@ export default function ProductDetailPage({ onNavigate }) {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => addToCart(productPayload, quantity)}
-                    className="inline-flex items-center justify-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95"
-                  >
-                    <ShoppingCart size={16} />
-                    <span>
-                      Add {quantity > 1 ? `${quantity} Items` : 'to Cart'}
-                      {countInCart > 0 && ` (${countInCart})`}
-                    </span>
-                  </button>
+                {(() => {
+                  const { allDisabled } = getProductPaymentRestrictions(selectedProduct);
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                      <button
+                        type="button"
+                        disabled={allDisabled}
+                        onClick={() => {
+                          if (allDisabled) {
+                            showToast('⚠️ Payment disabled by seller for this product');
+                            return;
+                          }
+                          addToCart(productPayload, quantity);
+                        }}
+                        className="inline-flex items-center justify-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ShoppingCart size={16} />
+                        <span>
+                          {allDisabled ? 'Payment Unset' : `Add ${quantity > 1 ? `${quantity} Items` : 'to Cart'}`}
+                          {!allDisabled && countInCart > 0 && ` (${countInCart})`}
+                        </span>
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={handleBuyNow}
-                    className="inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95 hover:shadow-md"
-                  >
-                    <Zap size={16} />
-                    <span>Buy Now</span>
-                  </button>
-                </div>
+                      <button
+                        type="button"
+                        disabled={allDisabled}
+                        onClick={() => {
+                          if (allDisabled) {
+                            showToast('⚠️ Payment disabled by seller for this product');
+                            return;
+                          }
+                          handleBuyNow();
+                        }}
+                        className="inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Zap size={16} />
+                        <span>{allDisabled ? 'Unavailable' : 'Buy Now'}</span>
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* Student Perks Note */}
                 <div className="text-xs text-gray-500 bg-brand-teal/5 border border-brand-teal/15 p-3 rounded-xl flex items-start gap-2">

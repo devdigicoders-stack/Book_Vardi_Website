@@ -28,7 +28,8 @@ import {
   Pencil,
   Check,
   Store,
-  AlertTriangle
+  AlertTriangle,
+  Building2
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
@@ -38,8 +39,8 @@ import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { backendEnabled, uploadAvatarToBackend, resolveImageUrl } from '../../utils/api';
-
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi } from '../../utils/api';
+import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 
 export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
@@ -75,7 +76,19 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   } = useCart();
   const { userSubdistrict } = useLocation();
 
-  const [activeTab, setActiveTab] = useState(initialTab); // 'profile' | 'wishlist' | 'orders' | 'cart' | 'addresses' | 'seller-data'
+  const [activeTab, setActiveTab] = useState(initialTab); // 'profile' | 'wishlist' | 'orders' | 'cart' | 'addresses' | 'seller-data' | 'bulk-orders'
+  const [customerBulkOrders, setCustomerBulkOrders] = useState([]);
+  const [selectedBulkOrder, setSelectedBulkOrder] = useState(null);
+
+  useEffect(() => {
+    if (activeTab === 'bulk-orders' || activeTab === 'profile') {
+      fetchCustomerSchoolBulkOrdersApi(userProfile?.phone || '').then(data => {
+        const list = Array.isArray(data) ? data : (data?.orders || []);
+        setCustomerBulkOrders(list);
+      }).catch(() => {});
+    }
+  }, [activeTab, userProfile?.phone]);
+
 
   // Load 12-step seller onboarding data saved during registration
   const [sellerAppData, setSellerAppData] = useState(() => {
@@ -793,6 +806,26 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 </span>
                 <ChevronRight size={14} className={activeTab === 'addresses' ? 'opacity-100' : 'opacity-40'} />
               </button>
+
+              <button
+                onClick={() => setActiveTab('bulk-orders')}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  activeTab === 'bulk-orders'
+                    ? 'bg-brand-teal text-white shadow-xs'
+                    : 'text-gray-700 hover:bg-gray-100 hover:text-brand-teal'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Building2 size={18} />
+                  <span>My Bulk Supply RFQs</span>
+                </span>
+                <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full ${
+                  activeTab === 'bulk-orders' ? 'bg-white/20 text-white' : 'bg-teal-50 text-teal-800'
+                }`}>
+                  {customerBulkOrders.length}
+                </span>
+              </button>
+
 
               {/* SELLER SECTION IN SIDEBAR */}
               {isApprovedSeller ? (
@@ -2213,7 +2246,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                         <div>
                           <div className="flex items-center justify-between gap-2 mb-2">
                             <span className="font-bold text-xs text-brand-teal uppercase tracking-wider bg-brand-teal/10 px-2.5 py-0.5 rounded-md">
-                              {addr.type}
+                              {typeof addr.type === 'object' ? 'Home' : (addr.type || 'Home')}
                             </span>
                             {addr.isDefault && (
                               <span className="text-[10px] font-extrabold text-brand-yellow bg-brand-teal-dark px-2 py-0.5 rounded-full">
@@ -2223,13 +2256,13 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           </div>
 
                           <h4 className="text-sm font-bold text-gray-900 mt-2">
-                            {addr.name}
+                            {typeof addr.name === 'object' ? (addr.name?.name || 'Customer') : (addr.name || 'Customer')}
                           </h4>
                           <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                            {addr.addressLine || addr.street}, {addr.city} - {addr.pincode}
+                            {typeof (addr.addressLine || addr.street) === 'object' ? 'Delivery Address' : (addr.addressLine || addr.street)}, {typeof addr.city === 'object' ? 'Lucknow' : (addr.city || 'Lucknow')} - {typeof addr.pincode === 'object' ? '226001' : (addr.pincode || '226001')}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
-                            Phone: {addr.phone}
+                            Phone: {typeof addr.phone === 'object' ? (addr.phone?.phone || '') : (addr.phone || '')}
                           </p>
                         </div>
 
@@ -2264,6 +2297,134 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               </div>
             )}
 
+            {/* TAB: MY BULK SUPPLY RFQS */}
+            {activeTab === 'bulk-orders' && (
+              <div className="bg-white border border-gray-200 rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                  <div>
+                    <h3 className="font-display text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                      <Building2 className="text-brand-teal" size={20} /> My Institutional Bulk Supply Inquiries
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Track submitted school bulk supply requests, live status, and approved vendor quotation proposals.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => onNavigate && onNavigate('bulk-order')}
+                    className="inline-flex items-center gap-1.5 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Plus size={15} />
+                    <span>Submit New Bulk Inquiry</span>
+                  </button>
+                </div>
+
+                {customerBulkOrders.length === 0 ? (
+                  <div className="p-10 text-center text-gray-500 space-y-3">
+                    <Building2 size={40} className="mx-auto text-gray-300" />
+                    <h4 className="font-bold text-gray-800 text-sm">No Active Bulk Supply Inquiries</h4>
+                    <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                      Have a bulk requirement for your school or college? Request custom uniforms, book bundles, and crest notebooks.
+                    </p>
+                    <button
+                      onClick={() => onNavigate && onNavigate('bulk-order')}
+                      className="px-5 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      Submit Bulk Supply Request
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {customerBulkOrders.map((order) => {
+                      const winningQuote = order.quotations?.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId));
+
+                      return (
+                        <div key={order.id || order._id} className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/40 transition-all space-y-4 bg-gray-50/50">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-200/70">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-brand-teal bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                                  {order.referenceId}
+                                </span>
+                                <h4 className="font-extrabold text-gray-900 text-base">
+                                  {order.institutionName}
+                                </h4>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Contact: {order.contactName} ({order.contactPhone}) • {order.city}, {order.state}
+                              </p>
+                            </div>
+
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                              order.status === 'quote_accepted'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : order.status === 'published' || order.status === 'assigned'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              {order.status === 'quote_accepted' ? 'Quote Approved & Finalized' :
+                               order.status === 'published' ? 'Marketplace RFQ Live' :
+                               order.status === 'assigned' ? 'Assigned to Authorized Vendor' : 'Pending Admin Review'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            <div className="sm:col-span-2">
+                              <span className="text-gray-400 font-semibold text-[11px] uppercase block">Demanded Requirements</span>
+                              <div className="font-bold text-gray-800 mt-0.5">
+                                {Array.isArray(order.requirements) && order.requirements.length > 0
+                                  ? order.requirements.map(r => `${r.itemName} (${r.quantity} units)`).join(', ')
+                                  : (order.additionalNotes || 'Bulk Supplies')}
+                              </div>
+                            </div>
+
+                            <div>
+                              <span className="text-gray-400 font-semibold text-[11px] uppercase block">Target Budget</span>
+                              <div className="font-extrabold text-brand-teal text-sm mt-0.5">
+                                ₹{Number(order.targetBudgetPerKit || 0).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Approved Quotation Banner */}
+                          {winningQuote && (
+                            <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                              <div>
+                                <span className="font-bold text-emerald-950 flex items-center gap-1">
+                                  <CheckCircle2 size={14} className="text-emerald-600" /> Approved Vendor Quote:
+                                </span>
+                                <div className="text-emerald-900 font-medium mt-0.5">
+                                  Fulfilled by <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong> ({winningQuote.sellerPhone})
+                                </div>
+                              </div>
+
+                              <div className="text-right">
+                                <div className="font-extrabold text-base text-emerald-900">
+                                  ₹{Number(winningQuote.quoteAmount).toLocaleString()}
+                                </div>
+                                <div className="text-[10px] text-emerald-700">
+                                  Est. Delivery: {winningQuote.estimatedDeliveryDays || 7} Days
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="pt-3 border-t border-gray-200/50 flex justify-end">
+                            <button
+                              onClick={() => setSelectedBulkOrder(order)}
+                              className="text-brand-teal text-xs font-bold hover:underline"
+                            >
+                              View Details & Requirement
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* TAB: 12-STEP SELLER APPLICATION DATA */}
             {activeTab === 'seller-data' && (
               <SellerApplicationReviewCard
@@ -2287,6 +2448,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       <SellerRegistrationModal
         isOpen={isSellerModalOpen}
         onClose={() => setIsSellerModalOpen(false)}
+      />
+
+      <BulkOrderPreviewModal
+        order={selectedBulkOrder}
+        onClose={() => setSelectedBulkOrder(null)}
       />
     </div>
   );
