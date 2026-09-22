@@ -38,22 +38,24 @@ export const getCartPaymentRestrictions = (cartItems = []) => {
   let noPaymentMethodItem = null;
 
   for (const item of cartItems) {
-    const pma = String(item.paymentMethodAllowed || item.payment_method_allowed || '').toLowerCase();
-
-    const allowedMethodsArray = (
-      Array.isArray(item.paymentMethodsAllowed) ? item.paymentMethodsAllowed :
-      Array.isArray(item.acceptedPaymentMethods) ? item.acceptedPaymentMethods :
-      Array.isArray(item.paymentMethods) ? item.paymentMethods :
-      Array.isArray(item.seller?.paymentMethods) ? item.seller.paymentMethods :
-      null
+    const rawPma = (
+      item.paymentMethodAllowed ||
+      item.payment_method_allowed ||
+      item.paymentMethod ||
+      item.product?.paymentMethodAllowed ||
+      item.product?.payment_method_allowed ||
+      item.seller?.paymentMethodAllowed ||
+      ''
     );
+
+    const pma = String(rawPma).toLowerCase().trim().replace(/[\s\-_]/g, '');
 
     let itemAllowsCod = true;
     let itemAllowsOnline = true;
 
-    if (pma === 'online_only' || pma === 'prepaid_only') {
+    if (pma === 'onlineonly' || pma === 'prepaidonly' || pma === 'prepaid') {
       itemAllowsCod = false;
-    } else if (pma === 'cod_only' || pma === 'cash_only') {
+    } else if (pma === 'codonly' || pma === 'cashonly' || pma === 'cod' || pma === 'cash') {
       itemAllowsOnline = false;
     } else if (pma === 'none' || pma === 'disabled' || pma === 'neither') {
       itemAllowsCod = false;
@@ -67,6 +69,14 @@ export const getCartPaymentRestrictions = (cartItems = []) => {
     if (item.acceptsOnline === false || item.sellerAcceptsOnline === false || item.seller?.acceptsOnline === false || item.seller?.paymentMethods?.online === false) {
       itemAllowsOnline = false;
     }
+
+    const allowedMethodsArray = (
+      Array.isArray(item.paymentMethodsAllowed) ? item.paymentMethodsAllowed :
+      Array.isArray(item.acceptedPaymentMethods) ? item.acceptedPaymentMethods :
+      Array.isArray(item.paymentMethods) ? item.paymentMethods :
+      Array.isArray(item.seller?.paymentMethods) ? item.seller.paymentMethods :
+      null
+    );
 
     if (allowedMethodsArray !== null) {
       const upperList = allowedMethodsArray.map((m) => String(m).toUpperCase().trim());
@@ -849,29 +859,51 @@ export default function CheckoutPage({ onNavigate }) {
                   <button
                     type="button"
                     disabled={isOnlineDisabled || areAllPaymentsDisabled}
-                    onClick={() => setPaymentMethod('upi')}
-                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                      paymentMethod === 'upi' && !isOnlineDisabled && !areAllPaymentsDisabled
-                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    onClick={() => {
+                      if (!isOnlineDisabled && !areAllPaymentsDisabled) {
+                        setPaymentMethod('upi');
+                      }
+                    }}
+                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all ${
+                      isOnlineDisabled || areAllPaymentsDisabled
+                        ? 'opacity-40 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed pointer-events-none'
+                        : paymentMethod === 'upi'
+                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs cursor-pointer'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 cursor-pointer'
                     }`}
                   >
                     <Smartphone size={20} />
                     <span className="text-xs font-extrabold">UPI / Online Pay</span>
+                    {isOnlineDisabled && (
+                      <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                        Disabled for Item
+                      </span>
+                    )}
                   </button>
 
                   <button
                     type="button"
                     disabled={isCodDisabled || areAllPaymentsDisabled}
-                    onClick={() => setPaymentMethod('cod')}
-                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                      paymentMethod === 'cod' && !isCodDisabled && !areAllPaymentsDisabled
-                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    onClick={() => {
+                      if (!isCodDisabled && !areAllPaymentsDisabled) {
+                        setPaymentMethod('cod');
+                      }
+                    }}
+                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all ${
+                      isCodDisabled || areAllPaymentsDisabled
+                        ? 'opacity-40 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed pointer-events-none'
+                        : paymentMethod === 'cod'
+                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs cursor-pointer'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 cursor-pointer'
                     }`}
                   >
                     <Banknote size={20} />
                     <span className="text-xs font-extrabold">Cash on Delivery (COD)</span>
+                    {isCodDisabled && (
+                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        Disabled for Item
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>

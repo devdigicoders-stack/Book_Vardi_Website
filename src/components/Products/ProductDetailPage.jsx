@@ -788,12 +788,20 @@ export default function ProductDetailPage({ onNavigate }) {
                   return null;
                 })()}
 
-                {/* Size Variants Selector */}
+                {/* Size / Scale Variants Selector */}
                 {sizeVariants.length > 0 && (
                   <div className="space-y-2 pt-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
-                        Select Size: <strong className="text-brand-teal ml-1">{selectedSize}</strong>
+                        {(() => {
+                          const scale = (activeVariant?.measureScale || sizeVariants[0]?.measureScale || '').toLowerCase();
+                          if (scale === 'count') return 'Select Pack / Count:';
+                          if (scale === 'meter') return 'Select Fabric Length:';
+                          if (scale === 'kg' || scale === 'gram') return 'Select Weight:';
+                          if (scale === 'box') return 'Select Packaging:';
+                          if (scale === 'unit') return 'Select Option:';
+                          return 'Select Size:';
+                        })()} <strong className="text-brand-teal ml-1">{selectedSize}</strong>
                       </span>
                       {activeVariant?.stock !== undefined && (
                         <span className={`text-[11px] font-bold ${activeVariant.stock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
@@ -803,10 +811,11 @@ export default function ProductDetailPage({ onNavigate }) {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {sizeVariants.map(variant => {
-                        const isSelected = selectedSize === variant.size;
+                        const variantVal = variant.size || variant.measureValue;
+                        const isSelected = selectedSize === variantVal;
                         return (
                           <button
-                            key={variant.size}
+                            key={variantVal}
                             type="button"
                             onClick={() => handleSelectSize(variant)}
                             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
@@ -815,7 +824,7 @@ export default function ProductDetailPage({ onNavigate }) {
                                 : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal/40'
                             }`}
                           >
-                            <span>{variant.size}</span>
+                            <span>{variantVal}</span>
                             {variant.price && (
                               <span className={`text-[10px] ${isSelected ? 'text-teal-100 font-normal' : 'text-gray-400 font-normal'}`}>
                                 ₹{variant.price}
