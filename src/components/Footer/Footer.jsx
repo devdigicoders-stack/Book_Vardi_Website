@@ -218,7 +218,7 @@ export default function Footer({ onNavigate }) {
                 <Truck size={18} className="text-brand-yellow shrink-0" />
                 <div>
                   <div className="text-[11px] sm:text-xs font-bold text-white">FREE SHIPPING</div>
-                  <div className="text-[10px] sm:text-[11px] text-white/60">Over ₹499</div>
+                  <div className="text-[10px] sm:text-[11px] text-white/60">Over ₹99</div>
                 </div>
               </div>
 
@@ -226,7 +226,7 @@ export default function Footer({ onNavigate }) {
                 <RotateCcw size={18} className="text-brand-yellow shrink-0" />
                 <div>
                   <div className="text-[11px] sm:text-xs font-bold text-white">EASY RETURNS</div>
-                  <div className="text-[10px] sm:text-[11px] text-white/60">30-Day Hassle Free</div>
+                  <div className="text-[10px] sm:text-[11px] text-white/60">7 Days Return & Exchange</div>
                 </div>
               </div>
 

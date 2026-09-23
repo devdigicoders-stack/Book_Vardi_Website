@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, Trash2, ShoppingBag, ArrowRight, ShieldCheck, Plus, Minus } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Trash2, ShoppingBag, ArrowRight, ShieldCheck, Plus, Minus, Loader2 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 
 export default function CartDrawer({ onNavigate }) {
@@ -21,10 +21,14 @@ export default function CartDrawer({ onNavigate }) {
     showToast
   } = useCart();
 
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
   const shippingCost = subtotal >= freeShippingThreshold || subtotal === 0 ? 0 : 49;
   const grandTotal = subtotal + shippingCost;
 
   const handleCheckout = () => {
+    if (isCheckingOut) return;
+    setIsCheckingOut(true);
     setIsCartOpen(false);
     if (isAuthenticated && isProfileIncomplete) {
       const missingLabels = profileCompleteness?.missing?.map((m) => m.label).join(', ') || 'required details';
@@ -35,6 +39,7 @@ export default function CartDrawer({ onNavigate }) {
     if (onNavigate) {
       onNavigate('checkout');
     }
+    setTimeout(() => setIsCheckingOut(false), 500);
   };
 
   return (
@@ -214,17 +219,22 @@ export default function CartDrawer({ onNavigate }) {
                 Continue Shopping
               </button>
               <button
-                className="flex-[1.5] py-3 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-bold text-xs sm:text-sm rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all transform hover:-translate-y-0.5 cursor-pointer"
+                disabled={isCheckingOut}
+                className="flex-[1.5] py-3 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-bold text-xs sm:text-sm rounded-lg flex items-center justify-center gap-1.5 shadow-sm transition-all transform hover:-translate-y-0.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 onClick={handleCheckout}
               >
-                <span>CHECKOUT</span>
-                <ArrowRight size={16} />
+                {isCheckingOut ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin text-brand-teal-dark" />
+                    <span>Loading...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>CHECKOUT</span>
+                    <ArrowRight size={16} />
+                  </>
+                )}
               </button>
-            </div>
-
-            <div className="flex items-center justify-center gap-1 text-[11px] text-gray-400 mt-3">
-              <ShieldCheck size={14} className="text-brand-teal" />
-              <span>100% Verified Secure SSL Checkout</span>
             </div>
           </div>
         )}

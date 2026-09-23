@@ -92,11 +92,11 @@ export default function ProductCarouselRow({ title, products, onViewAll, autoScr
         {/* Horizontal Scrollable Container */}
         {isRowLoading ? (
           <div 
-            className="flex overflow-x-auto gap-4 sm:gap-6 pb-6 pt-2 snap-x snap-mandatory hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0"
+            className="flex overflow-x-auto gap-3 sm:gap-6 pb-6 pt-2 snap-x snap-mandatory hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {[...Array(5)].map((_, idx) => (
-              <div key={idx} className="min-w-[280px] sm:min-w-[300px] max-w-[320px] shrink-0 snap-start bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 animate-pulse">
+              <div key={idx} className="min-w-[220px] xs:min-w-[250px] sm:min-w-[280px] md:min-w-[300px] max-w-[320px] shrink-0 snap-start bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 animate-pulse">
                 <div className="w-full aspect-square bg-gray-200 rounded-lg sm:rounded-xl mb-3 sm:mb-4" />
                 <div className="h-3.5 sm:h-4 bg-gray-200 rounded w-3/4 mb-2" />
                 <div className="h-2.5 sm:h-3 bg-gray-100 rounded w-1/2 mb-3 sm:mb-4" />
@@ -107,11 +107,11 @@ export default function ProductCarouselRow({ title, products, onViewAll, autoScr
         ) : products && products.length > 0 ? (
           <div 
             ref={scrollRef}
-            className="flex overflow-x-auto gap-4 sm:gap-6 pb-6 pt-2 snap-x snap-mandatory hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0"
+            className="flex overflow-x-auto gap-3 sm:gap-6 pb-6 pt-2 snap-x snap-mandatory hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {products.map((product, idx) => (
-              <div key={product.id || product._id || product.slug || `carousel-item-${idx}`} className="min-w-[280px] sm:min-w-[300px] max-w-[320px] shrink-0 snap-start">
+              <div key={product.id || product._id || product.slug || `carousel-item-${idx}`} className="min-w-[220px] xs:min-w-[250px] sm:min-w-[280px] md:min-w-[300px] max-w-[320px] shrink-0 snap-start">
                 {renderCard ? renderCard(product) : <ProductCard product={product} />}
               </div>
             ))}

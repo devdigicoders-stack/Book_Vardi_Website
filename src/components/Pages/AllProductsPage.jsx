@@ -96,7 +96,9 @@ export default function AllProductsPage({
     return products.filter((product) => {
       // Category match
       const catSlug = selectedCategory;
-      const matchesCategory = catSlug ? product.category === catSlug : true;
+      const matchesCategory = (catSlug && catSlug !== 'all')
+        ? (product.category === catSlug || product.subCategory === catSlug || (catSlug === 'school_specific' && (product.category === 'uniforms' || product.isSchoolSpecific)))
+        : true;
 
       // Price match
       let matchesPrice = true;

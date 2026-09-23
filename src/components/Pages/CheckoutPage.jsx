@@ -243,6 +243,7 @@ export default function CheckoutPage({ onNavigate }) {
 
   // Coupon state
   const [couponInput, setCouponInput] = useState('');
+  const [showCouponInput, setShowCouponInput] = useState(false);
   const [isRedeemingPoints, setIsRedeemingPoints] = useState(false);
 
   // Loading state
@@ -518,11 +519,6 @@ export default function CheckoutPage({ onNavigate }) {
             <ChevronRight size={13} />
             <span className="text-brand-teal font-bold">Secure Checkout</span>
           </div>
-
-          <div className="flex items-center gap-1.5 text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-            <ShieldCheck size={14} />
-            <span>256-Bit Bank Grade SSL</span>
-          </div>
         </div>
       </div>
 
@@ -559,7 +555,7 @@ export default function CheckoutPage({ onNavigate }) {
           </div>
         )}
 
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
+        <div className="flex flex-col lg:flex-row gap-8 items-start relative">
           {/* Left Column: Checkout Steps */}
           <div className="w-full lg:w-7/12 space-y-6">
             {/* Step 1: Delivery Address */}
@@ -874,9 +870,9 @@ export default function CheckoutPage({ onNavigate }) {
                   >
                     <Smartphone size={20} />
                     <span className="text-xs font-extrabold">UPI / Online Pay</span>
-                    {isOnlineDisabled && (
+                    {(isOnlineDisabled || areAllPaymentsDisabled) && (
                       <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                        Disabled for Item
+                        Not Applicable (Disabled)
                       </span>
                     )}
                   </button>
@@ -899,9 +895,9 @@ export default function CheckoutPage({ onNavigate }) {
                   >
                     <Banknote size={20} />
                     <span className="text-xs font-extrabold">Cash on Delivery (COD)</span>
-                    {isCodDisabled && (
+                    {(isCodDisabled || areAllPaymentsDisabled) && (
                       <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                        Disabled for Item
+                        Not Applicable (Disabled)
                       </span>
                     )}
                   </button>
@@ -1005,7 +1001,7 @@ export default function CheckoutPage({ onNavigate }) {
           </div>
 
           {/* Right Column: Sticky Order Summary & Pay */}
-          <div className="w-full lg:w-5/12 sticky top-24 space-y-5">
+          <div className="w-full lg:w-5/12 lg:sticky lg:top-[135px] self-start z-20 space-y-5">
             <div className="bg-white rounded-3xl p-6 sm:p-7 border border-gray-200 shadow-sm space-y-5">
               <div className="flex items-center justify-between border-b border-gray-100 pb-3.5">
                 <h3 className="font-display text-lg font-extrabold text-brand-teal">
@@ -1016,8 +1012,11 @@ export default function CheckoutPage({ onNavigate }) {
                 </span>
               </div>
 
-              {/* Items Preview */}
-              <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+              {/* Items Preview (Overflow Hidden & Scrollbar Hidden) */}
+              <div
+                className="space-y-3 max-h-56 overflow-y-auto hide-scrollbar pr-1"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              >
                 {cartItems.map((item) => (
                   <div key={item.id} className="flex items-center gap-3">
                     <img
@@ -1040,9 +1039,8 @@ export default function CheckoutPage({ onNavigate }) {
                 ))}
               </div>
 
-              {/* Coupon Code Section */}
+              {/* Coupon Code Section (Hidden by Default, Appears on Toggle) */}
               <div className="pt-3 border-t border-gray-100 space-y-2.5">
-                <label className="block text-xs font-bold text-gray-700">Apply Student Coupon</label>
                 {appliedCoupon ? (
                   <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2 text-xs">
                     <div className="flex items-center gap-2">
@@ -1062,41 +1060,57 @@ export default function CheckoutPage({ onNavigate }) {
                     </button>
                   </div>
                 ) : (
-                  <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="e.g. SCHOOL10"
-                      value={couponInput}
-                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                      className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold uppercase focus:outline-none focus:border-brand-teal focus:bg-white"
-                    />
+                  <div>
                     <button
-                      type="submit"
-                      className="px-4 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                      type="button"
+                      onClick={() => setShowCouponInput(!showCouponInput)}
+                      className="w-full flex items-center justify-between text-xs font-extrabold text-brand-teal bg-brand-teal/5 border border-brand-teal/15 hover:bg-brand-teal/10 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer"
                     >
-                      Apply
+                      <div className="flex items-center gap-2">
+                        <Tag size={14} className="text-brand-pink" />
+                        <span>Have a Coupon Code?</span>
+                      </div>
+                      <ChevronRight size={14} className={`transform transition-transform duration-200 ${showCouponInput ? 'rotate-90' : ''}`} />
                     </button>
-                  </form>
-                )}
 
-                {/* Popular Promo Chips */}
-                {!appliedCoupon && (
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                    <span className="text-[10px] text-gray-400 font-bold">Try:</span>
-                    <button
-                      type="button"
-                      onClick={() => applyCoupon('SCHOOL10')}
-                      className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
-                    >
-                      SCHOOL10 (10% OFF)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyCoupon('STUDENT50')}
-                      className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
-                    >
-                      STUDENT50 (₹50 OFF)
-                    </button>
+                    {showCouponInput && (
+                      <div className="mt-2.5 space-y-2.5 animate-in fade-in duration-200">
+                        <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="e.g. SCHOOL10"
+                            value={couponInput}
+                            onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                            className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold uppercase focus:outline-none focus:border-brand-teal focus:bg-white"
+                          />
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                          >
+                            Apply
+                          </button>
+                        </form>
+
+                        {/* Popular Promo Chips */}
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                          <span className="text-[10px] text-gray-400 font-bold">Try:</span>
+                          <button
+                            type="button"
+                            onClick={() => applyCoupon('SCHOOL10')}
+                            className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
+                          >
+                            SCHOOL10 (10% OFF)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => applyCoupon('STUDENT50')}
+                            className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
+                          >
+                            STUDENT50 (₹50 OFF)
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1170,7 +1184,12 @@ export default function CheckoutPage({ onNavigate }) {
               {/* Place Order CTA Button */}
               <button
                 type="button"
-                disabled={isSubmitting || areAllPaymentsDisabled}
+                disabled={
+                  isSubmitting ||
+                  areAllPaymentsDisabled ||
+                  (paymentMethod === 'cod' && isCodDisabled) ||
+                  ((paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking') && isOnlineDisabled)
+                }
                 onClick={handlePlaceOrder}
                 className="w-full py-3.5 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold text-sm uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1182,7 +1201,12 @@ export default function CheckoutPage({ onNavigate }) {
                 ) : areAllPaymentsDisabled ? (
                   <>
                     <AlertTriangle size={16} className="text-amber-900" />
-                    <span>PAYMENT METHOD DISABLED BY SELLER</span>
+                    <span>ALL PAYMENT METHODS DISABLED</span>
+                  </>
+                ) : (paymentMethod === 'cod' && isCodDisabled) || ((paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking') && isOnlineDisabled) ? (
+                  <>
+                    <AlertTriangle size={16} className="text-amber-900" />
+                    <span>PAYMENT METHOD NOT APPLICABLE</span>
                   </>
                 ) : (
                   <>
