@@ -1,6 +1,7 @@
 import React from 'react';
 import { Heart, Star, ShoppingCart, Eye } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { resolveImageUrl } from '../../utils/api';
 
 export default function ProductCard({ product }) {
   const { wishlist, toggleWishlist, addToCart, openProductDetails, cartItems } = useCart();
@@ -25,7 +26,8 @@ export default function ProductCard({ product }) {
 
   const price = minPrice;
   const originalPrice = product?.originalPrice || product?.mrp || (price > 0 && product?.discountPercentage ? Math.round(price / (1 - product.discountPercentage / 100)) : null);
-  const image = product?.image || (Array.isArray(product?.images) && product.images[0]) || '/images/gel-pen-set.jpg';
+  const rawImg = product?.image || (Array.isArray(product?.images) && product.images[0]) || product?.coverImage || (Array.isArray(product?.kitItems) && product.kitItems[0]?.image) || '/images/gel-pen-set.jpg';
+  const image = resolveImageUrl(rawImg);
   const rawRating = product?.rating ?? product?.averageRating;
   const rating = rawRating !== undefined && rawRating !== null ? Number(rawRating) : 0;
   const rawReviewsCount = product?.reviewsCount ?? product?.reviews ?? product?.numReviews;
@@ -140,7 +142,7 @@ export default function ProductCard({ product }) {
               </span>
             )}
             {originalPrice && originalPrice > price && (
-              <span className="text-[10px] sm:text-xs text-gray-400 line-through">
+              <span className="text-[10px] sm:text-xs text-red-500 line-through font-semibold decoration-red-500">
                 ₹{originalPrice}
               </span>
             )}

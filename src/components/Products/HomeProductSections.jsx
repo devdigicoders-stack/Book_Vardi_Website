@@ -48,29 +48,34 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
 
       if (!isMountedRef.current) return;
 
-      const recentList = recentRes?.products || (Array.isArray(recentRes) ? recentRes : []);
-      const featuredList = featuredRes?.products || (Array.isArray(featuredRes) ? featuredRes : []);
-      const specialList = specialRes?.products || (Array.isArray(specialRes) ? specialRes : []);
-      const recommendedList = recommendedRes?.products || (Array.isArray(recommendedRes) ? recommendedRes : []);
+      const rawRecent = recentRes?.products || (Array.isArray(recentRes) ? recentRes : []);
+      const rawFeatured = featuredRes?.products || (Array.isArray(featuredRes) ? featuredRes : []);
+      const rawSpecial = specialRes?.products || (Array.isArray(specialRes) ? specialRes : []);
+      const rawRecommended = recommendedRes?.products || (Array.isArray(recommendedRes) ? recommendedRes : []);
 
-      setRecentlyViewed(recentList.length > 0 ? recentList : getFallbackProducts(0, 8, activeCategory));
-      setFeatured(featuredList.length > 0 ? featuredList : getFallbackProducts(3, 8, activeCategory));
-      setSpecialOffers(specialList.length > 0 ? specialList : getFallbackProducts(12, 8, activeCategory));
-      setRecommended(recommendedList.length > 0 ? recommendedList : getFallbackProducts(7, 8, activeCategory));
+      const recentList = rawRecent.length > 0 ? rawRecent : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(0, 8, activeCategory));
+      const featuredList = rawFeatured.length > 0 ? rawFeatured : (rawRecommended.length > 0 ? rawRecommended : getFallbackProducts(2, 8, activeCategory));
+      const specialList = rawSpecial.length > 0 ? rawSpecial : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(4, 8, activeCategory));
+      const recommendedList = rawRecommended.length > 0 ? rawRecommended : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(6, 8, activeCategory));
+
+      setRecentlyViewed(recentList);
+      setFeatured(featuredList);
+      setSpecialOffers(specialList);
+      setRecommended(recommendedList);
     } catch (error) {
       console.error('Failed to load backend carousel rows:', error);
       if (isMountedRef.current) {
-        setRecentlyViewed(getFallbackProducts(0, 8, activeCategory));
-        setFeatured(getFallbackProducts(3, 8, activeCategory));
-        setSpecialOffers(getFallbackProducts(12, 8, activeCategory));
-        setRecommended(getFallbackProducts(7, 8, activeCategory));
+        setRecentlyViewed([]);
+        setFeatured([]);
+        setSpecialOffers([]);
+        setRecommended([]);
       }
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  }, [activeCategory, recentlyViewedKey, getFallbackProducts]);
+  }, [activeCategory, recentlyViewedKey]);
 
   // Fetch search results when searchQuery is active
   useEffect(() => {

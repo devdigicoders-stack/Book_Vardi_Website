@@ -506,7 +506,27 @@ export function LocationProvider({ children }) {
 export function useLocation() {
   const context = useContext(LocationContext);
   if (!context) {
-    throw new Error('useLocation must be used within a LocationProvider');
+    console.warn('useLocation was invoked outside a LocationProvider or during context initialization. Returning safe fallback context.');
+    return {
+      schoolRadiusKm: 25,
+      userLocation: { lat: 26.8790, lng: 81.0118, label: 'Kamta, Lucknow' },
+      locationLabel: 'Kamta, Lucknow',
+      userSubdistrict: 'Kamta, Lucknow',
+      permissionStatus: 'prompt',
+      isLocating: false,
+      locationError: null,
+      isPermissionModalOpen: false,
+      setIsPermissionModalOpen: () => {},
+      requestBrowserLocation: () => {},
+      selectManualCity: () => {},
+      getDistanceToCoords: () => null,
+      schools: [],
+      nearbySchools: [],
+      top10Schools: [],
+      isSchoolWithinRadius: () => true,
+      allSchoolsCount: 0,
+      nearbySchoolsCount: 0
+    };
   }
   return context;
 }

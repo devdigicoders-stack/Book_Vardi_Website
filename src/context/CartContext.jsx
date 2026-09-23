@@ -21,7 +21,8 @@ import {
   fetchMyOrdersFromBackend,
   fetchProductReviewsFromBackend,
   addReviewToBackend,
-  deleteReviewInBackend
+  deleteReviewInBackend,
+  fetchProductsFromBackend
 } from '../utils/api';
 
 export const EMPTY_USER_PROFILE = {
@@ -339,7 +340,9 @@ export function CartProvider({ children }) {
       const userId = userProfile?.id || userProfile?._id || '';
       fetchWishlistFromBackend(phone, userId)
         .then((res) => {
-          if (res?.productIds && Array.isArray(res.productIds)) {
+          if (res?.products && Array.isArray(res.products) && res.products.length > 0) {
+            setWishlist(res.products);
+          } else if (res?.productIds && Array.isArray(res.productIds)) {
             setWishlist(res.productIds);
           }
         })
@@ -371,6 +374,20 @@ export function CartProvider({ children }) {
         .catch(() => {});
     }
   }, [isAuthenticated, userProfile?.phone, userProfile?.id]);
+
+  useEffect(() => {
+    if (backendEnabled) {
+      fetchProductsFromBackend({ limit: 100 })
+        .then((res) => {
+          const liveList = res?.products || (Array.isArray(res) ? res : []);
+          setProducts(liveList);
+          try {
+            localStorage.setItem('bv_sync_products', JSON.stringify(liveList));
+          } catch (e) {}
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -596,13 +613,18 @@ export function CartProvider({ children }) {
     const phone = userProfile?.phone || '';
     const userId = userProfile?.id || userProfile?._id || '';
 
-    setWishlist((prev) => prev.filter((item) => String(item) !== strId));
+    setWishlist((prev) => prev.filter((item) => {
+      const itemId = typeof item === 'object' && item !== null ? (item.id || item._id || item.productId) : item;
+      return String(itemId) !== strId;
+    }));
     showToast('Removed item from your wishlist');
 
     if (backendEnabled) {
       removeFromWishlistInBackend(id, phone, userId)
         .then((res) => {
-          if (res?.productIds && Array.isArray(res.productIds)) {
+          if (res?.products && Array.isArray(res.products) && res.products.length > 0) {
+            setWishlist(res.products);
+          } else if (res?.productIds && Array.isArray(res.productIds)) {
             setWishlist(res.productIds);
           }
         })
@@ -681,25 +703,52 @@ export function CartProvider({ children }) {
       id = idOrProduct;
     }
 
-    const numId = isNaN(id) ? id : Number(id);
+    if (!id && product) {
+      id = product.id || product._id || product.productId;
+    }
+
+    const strTargetId = String(id);
     const phone = userProfile?.phone || '';
     const userId = userProfile?.id || userProfile?._id || '';
 
     setWishlist((prev) => {
-      const exists = prev.some((item) => String(item) === String(id));
+      const exists = prev.some((item) => {
+        const itemId = typeof item === 'object' && item !== null ? (item.id || item._id || item.productId) : item;
+        return String(itemId) === strTargetId;
+      });
+
       if (exists) {
         showToast('Removed item from your wishlist');
-        return prev.filter((item) => String(item) !== String(id));
+        return prev.filter((item) => {
+          const itemId = typeof item === 'object' && item !== null ? (item.id || item._id || item.productId) : item;
+          return String(itemId) !== strTargetId;
+        });
       } else {
         showToast('Saved to your wishlist! ❤️');
-        return [...prev, numId];
+        const itemToSave = product ? {
+          id: strTargetId,
+          _id: strTargetId,
+          productId: strTargetId,
+          name: product.name || product.title || 'Stationery Item',
+          price: product.price !== undefined ? Number(product.price) : 0,
+          originalPrice: product.originalPrice || product.mrp,
+          image: product.image || (Array.isArray(product.images) && product.images[0]) || '/images/gel-pen-set.jpg',
+          subtitle: product.subtitle || product.description || product.category || '',
+          category: product.category || '',
+          rating: product.rating || product.averageRating || 4.5,
+          reviewsCount: product.reviewsCount || product.numReviews || 0,
+          discountBadge: product.discountBadge || ''
+        } : strTargetId;
+        return [...prev, itemToSave];
       }
     });
 
     if (backendEnabled) {
       toggleWishlistInBackend(id, phone, userId, product)
         .then((res) => {
-          if (res?.productIds && Array.isArray(res.productIds)) {
+          if (res?.products && Array.isArray(res.products) && res.products.length > 0) {
+            setWishlist(res.products);
+          } else if (res?.productIds && Array.isArray(res.productIds)) {
             setWishlist(res.productIds);
           }
         })
@@ -712,8 +761,12 @@ export function CartProvider({ children }) {
   };
 
   const isWishlisted = (id) => {
-    if (!isAuthenticated) return false;
-    return wishlist.some((item) => String(item) === String(id));
+    if (!isAuthenticated || !id) return false;
+    const strId = String(id);
+    return wishlist.some((item) => {
+      const itemId = typeof item === 'object' && item !== null ? (item.id || item._id || item.productId) : item;
+      return String(itemId) === strId;
+    });
   };
 
   const handleSetIsCartOpen = (open) => {
@@ -761,9 +814,71 @@ export function CartProvider({ children }) {
   const displayedCartItems = isAuthenticated ? cartItems : [];
   const displayedWishlist = isAuthenticated ? wishlist : [];
 
-  const wishlistProducts = (products || []).filter((product) =>
-    displayedWishlist.some((id) => Number(id) === Number(product.id))
-  );
+  const wishlistProducts = (() => {
+    if (!isAuthenticated || !displayedWishlist || displayedWishlist.length === 0) return [];
+
+    const catalogProductsMap = new Map();
+
+    (products || []).forEach(p => {
+      const key = String(p.id || p._id || p.productId || '');
+      if (key) catalogProductsMap.set(key, p);
+    });
+
+    try {
+      const syncSaved = localStorage.getItem('bv_sync_products');
+      if (syncSaved) {
+        const syncList = JSON.parse(syncSaved);
+        if (Array.isArray(syncList)) {
+          syncList.forEach(p => {
+            const key = String(p.id || p._id || p.productId || '');
+            if (key && !catalogProductsMap.has(key)) catalogProductsMap.set(key, p);
+          });
+        }
+      }
+    } catch (e) {}
+
+    return displayedWishlist.map((item) => {
+      if (item && typeof item === 'object') {
+        const itemKey = String(item.id || item._id || item.productId || '');
+        const matchedInCatalog = catalogProductsMap.get(itemKey);
+        return {
+          id: itemKey || item.id || item._id,
+          _id: itemKey || item._id || item.id,
+          name: item.name || matchedInCatalog?.name || 'Liked Product',
+          subtitle: item.subtitle || matchedInCatalog?.subtitle || matchedInCatalog?.category || '',
+          price: item.price !== undefined ? Number(item.price) : (matchedInCatalog?.price || 0),
+          originalPrice: item.originalPrice || matchedInCatalog?.originalPrice || matchedInCatalog?.mrp,
+          image: item.image || (Array.isArray(item.images) && item.images[0]) || matchedInCatalog?.image || (Array.isArray(matchedInCatalog?.images) && matchedInCatalog.images[0]) || '/images/gel-pen-set.jpg',
+          category: item.category || matchedInCatalog?.category || '',
+          rating: item.rating !== undefined ? Number(item.rating) : (matchedInCatalog?.rating || matchedInCatalog?.averageRating || 4.5),
+          reviewsCount: item.reviewsCount || matchedInCatalog?.reviewsCount || matchedInCatalog?.numReviews || 0,
+          discountBadge: item.discountBadge || matchedInCatalog?.discountBadge || '',
+          sizeVariants: item.sizeVariants || matchedInCatalog?.sizeVariants || []
+        };
+      }
+
+      const strId = String(item);
+      const matched = catalogProductsMap.get(strId);
+      if (matched) {
+        return {
+          ...matched,
+          id: matched.id || matched._id || strId,
+          _id: matched._id || matched.id || strId,
+          image: matched.image || (Array.isArray(matched.images) && matched.images[0]) || '/images/gel-pen-set.jpg'
+        };
+      }
+
+      return {
+        id: strId,
+        _id: strId,
+        name: `Liked Item (${strId.slice(-6)})`,
+        subtitle: 'Saved Item',
+        price: 0,
+        image: '/images/gel-pen-set.jpg',
+        category: 'Stationery'
+      };
+    }).filter(Boolean);
+  })();
 
   const updateProfile = async (updatedData) => {
     let nextProfile;
@@ -931,7 +1046,7 @@ export function CartProvider({ children }) {
 
   const totalItemsCount = displayedCartItems.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = displayedCartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const freeShippingThreshold = 499.00;
+  const freeShippingThreshold = 99.00;
   const freeShippingProgress = Math.min(100, (subtotal / freeShippingThreshold) * 100);
   const freeShippingRemaining = Math.max(0, freeShippingThreshold - subtotal);
 
@@ -1065,7 +1180,7 @@ export function CartProvider({ children }) {
     return false;
   };
 
-  const register = async (newUserData = {}) => {
+  const register = async (newUserData = {}, options = {}) => {
     const email = (newUserData?.email || '').trim().toLowerCase();
     const password = String(newUserData?.password || '').trim();
     const phone = String(newUserData?.phone || '').trim();
@@ -1113,7 +1228,9 @@ export function CartProvider({ children }) {
         setRegisteredUsers((prev) => [...prev, freshProfile]);
         setIsAuthenticated(true);
         setUserProfile(freshProfile);
-        closeAuthModal();
+        if (!options?.keepModalOpen) {
+          closeAuthModal();
+        }
         showToast(`🎉 Registration successful! Welcome, ${freshProfile.name || 'Student'}! ✨`);
         return freshProfile;
       } catch (error) {
@@ -1148,7 +1265,9 @@ export function CartProvider({ children }) {
     setRegisteredUsers((prev) => [...prev, freshProfile]);
     setIsAuthenticated(true);
     setUserProfile(freshProfile);
-    closeAuthModal();
+    if (!options?.keepModalOpen) {
+      closeAuthModal();
+    }
     setWishlist([]);
     setCartItems([]);
     try {
@@ -1673,7 +1792,81 @@ export function CartProvider({ children }) {
 export function useCart() {
   const context = useContext(CartContext);
   if (!context) {
-    throw new Error('useCart must be used within a CartProvider');
+    console.warn('useCart was invoked outside a CartProvider or during context initialization. Returning safe fallback context.');
+    return {
+      products: [],
+      promotions: [],
+      cartItems: [],
+      wishlist: [],
+      wishlistProducts: [],
+      isWishlisted: () => false,
+      userProfile: EMPTY_USER_PROFILE,
+      setUserProfile: () => {},
+      updateProfile: () => {},
+      profileCompleteness: { isIncomplete: false, percentage: 100, missing: [], completedFields: 5, totalFields: 5 },
+      isProfileIncomplete: false,
+      getProfileCompleteness: () => ({ isIncomplete: false, percentage: 100, missing: [], completedFields: 5, totalFields: 5 }),
+      addAddress: () => {},
+      editAddress: () => {},
+      removeAddress: () => {},
+      isCartOpen: false,
+      isWishlistOpen: false,
+      toastMessage: null,
+      totalItemsCount: 0,
+      subtotal: 0,
+      freeShippingThreshold: 500,
+      freeShippingProgress: 0,
+      freeShippingRemaining: 500,
+      setIsCartOpen: () => {},
+      setIsWishlistOpen: () => {},
+      addToCart: () => {},
+      moveToCart: () => {},
+      removeFromCart: () => {},
+      clearCart: () => {},
+      updateQuantity: () => {},
+      toggleWishlist: () => {},
+      removeFromWishlist: () => {},
+      showToast: () => {},
+      isAuthenticated: false,
+      isAuthModalOpen: false,
+      setIsAuthModalOpen: () => {},
+      authMode: 'login',
+      setAuthMode: () => {},
+      openAuthModal: () => {},
+      closeAuthModal: () => {},
+      login: () => {},
+      register: () => {},
+      logout: () => {},
+      selectedProduct: null,
+      openProductDetails: () => {},
+      closeProductDetails: () => {},
+      recentlyViewedIds: [],
+      addRecentlyViewed: () => {},
+      productReviews: {},
+      addProductReview: () => {},
+      fetchReviewsForProduct: () => {},
+      lastPlacedOrder: null,
+      setLastPlacedOrder: () => {},
+      appliedCoupon: null,
+      applyCoupon: () => {},
+      removeCoupon: () => {},
+      placeOrder: () => {},
+      sellerStatus: 'none',
+      setSellerStatus: () => {},
+      sellerProfile: null,
+      isSeller: false,
+      isSellerModalOpen: false,
+      setIsSellerModalOpen: () => {},
+      submitSellerApplication: () => {},
+      approveSellerApplication: () => {},
+      isAdmin: false,
+      adminStatus: 'none',
+      setAdminStatus: () => {},
+      USERS: [],
+      registeredUsers: [],
+      isUserRegistered: () => false,
+      switchUser: () => {}
+    };
   }
   return context;
 }

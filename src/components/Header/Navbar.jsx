@@ -198,7 +198,7 @@ function DesktopProfileDropdown({
   );
 }
 
-export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchChange }) {
+export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchChange, hasAnnouncement = true }) {
   const {
     totalItemsCount,
     wishlist,
@@ -443,7 +443,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         className={`${
           isMobile 
             ? 'mt-2 pl-4 border-l-2 border-brand-yellow/30 space-y-4' 
-            : 'fixed top-[76px] left-0 w-full bg-white shadow-2xl border-t border-gray-100 z-50 p-6 animate-in fade-in slide-in-from-top-1 duration-200'
+            : 'absolute top-full left-0 w-full bg-white shadow-2xl border-t border-gray-100 z-50 p-6 animate-in fade-in slide-in-from-top-1 duration-200'
         }`}
       >
         <div className={isMobile ? 'flex flex-col gap-4' : 'container mx-auto px-4 flex flex-wrap gap-8 justify-center'}>
@@ -513,7 +513,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
   return (
     <header 
       ref={headerRef} 
-      className={`fixed left-0 right-0 top-[28px] z-50 w-full bg-white/95 backdrop-blur-md border-b border-gray-200/80 transition-all duration-200 ${
+      className={`fixed left-0 right-0 ${hasAnnouncement ? 'top-[28px]' : 'top-0'} z-50 w-full bg-white/95 backdrop-blur-md border-b border-gray-200/80 transition-all duration-200 ${
         isScrolled ? 'shadow-md bg-white/98' : 'shadow-xs'
       }`}
     >
@@ -657,7 +657,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
 
           {isAuthenticated ? (
             <div
-              className="flex items-center gap-1 relative"
+              className="hidden lg:flex items-center gap-1 relative"
               ref={actionProfileRef}
               onMouseEnter={handleActionProfileEnter}
               onMouseLeave={handleActionProfileLeave}
@@ -738,7 +738,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                 className="px-3.5 py-1.5 text-xs font-extrabold bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1"
               >
                 <UserPlus size={14} />
-                <span>Register</span>
+                <span>Sign Up</span>
               </button>
             </div>
           )}
@@ -928,7 +928,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                       className="w-full py-2 text-center text-xs font-extrabold bg-brand-yellow text-brand-teal-dark rounded-xl hover:bg-brand-yellow-hover flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                     >
                       <UserPlus size={15} />
-                      <span>Register</span>
+                      <span>Sign Up</span>
                     </button>
                   </div>
                 </div>
