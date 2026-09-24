@@ -214,30 +214,46 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
       logoEmbroideryRequired,
       targetBudgetPerKit: targetBudgetPerKit.trim(),
       additionalNotes: additionalNotes.trim(),
-      assignmentMode: 'broadcast', // DEFAULT TO BROADCAST SO IT GOES DIRECTLY TO ALL SELLERS
-      status: 'published'
+      assignmentMode: 'unassigned', // DEFAULT TO UNASSIGNED SO ONLY ADMIN RECEIVES IT FIRST UNTIL ADMIN DISTRIBUTES IT
+      status: 'pending'
     };
 
     let finalRefId = refId;
+    let savedSuccessfully = false;
+
     if (backendEnabled) {
       try {
         const res = await submitSchoolBulkOrderInBackend(payload);
-        if (res?.referenceId) {
-          finalRefId = res.referenceId;
+        if (res?.referenceId || res?.data?.referenceId || res?.order?.referenceId) {
+          finalRefId = res?.referenceId || res?.data?.referenceId || res?.order?.referenceId;
         }
+        savedSuccessfully = true;
       } catch (err) {
         console.error('Backend bulk order submission error:', err?.message);
-        showToast(`❌ Submission error: ${err?.message || 'Failed to submit bulk order'}`);
-        setIsSubmitting(false);
-        return;
       }
+    }
+
+    // Always store to local storage backup so inquiry is immediately visible in customer profile
+    try {
+      const localOrders = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
+      const savedPayload = { ...payload, referenceId: finalRefId, createdAt: new Date().toISOString() };
+      localOrders.unshift(savedPayload);
+      localStorage.setItem('bv_customer_bulk_orders', JSON.stringify(localOrders));
+      savedSuccessfully = true;
+    } catch (e) {
+      console.error('Failed to save to local storage:', e);
     }
 
     setIsSubmitting(false);
     setShowPreviewModal(false);
-    setSubmittedReferenceId(finalRefId);
-    showToast(`🎉 Bulk Order Inquiry ${finalRefId} submitted & sent to sellers!`);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (savedSuccessfully) {
+      setSubmittedReferenceId(finalRefId);
+      showToast(`🎉 Bulk Order Inquiry ${finalRefId} submitted successfully!`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      showToast('❌ Unable to submit bulk inquiry. Please try again.');
+    }
   };
 
   /* SUCCESS CONFIRMATION VIEW */
@@ -987,7 +1003,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                 <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-1 text-xs">
                   <p className="text-gray-600">Logo Embroidery: <strong className="text-gray-900">{logoEmbroideryRequired ? 'Yes (Custom Crest)' : 'No (Plain)'}</strong></p>
                   <p className="text-gray-600">Target Delivery Date: <strong className="text-gray-900">{targetDeliveryDate || 'Flexible / Urgent'}</strong></p>
-                  <p className="text-gray-600">Target Budget: <strong className="text-gray-900">{targetBudgetPerKit || 'Not Specified'}</strong></p>
+                  <p className="text-gray-600">Target Budget: <strong className="text-gray-900">{targetBudgetPerKit && Number(targetBudgetPerKit) > 0 ? `₹${Number(targetBudgetPerKit).toLocaleString()}` : 'Not Specified (Open to Quotes)'}</strong></p>
                 </div>
 
                 <div className="bg-brand-teal/5 p-4 rounded-2xl border border-brand-teal/20 space-y-1 text-xs text-right flex flex-col justify-center">

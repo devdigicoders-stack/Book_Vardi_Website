@@ -106,14 +106,17 @@ function getInitialPage() {
     if (candidate.includes('seller-dashboard') || candidate.includes('seller')) {
       return 'seller-dashboard';
     }
+    if (candidate.includes('bulk')) {
+      return 'school-bulk-order';
+    }
     if (candidate) {
       const validPages = [
         'home', 'products', 'product-detail', 'about', 'contact', 'offers', 'new-arrivals',
         'all-categories', 'profile', 'checkout', 'cart', 'order-success', 'seller-dashboard',
-        'seller-registration', 'school-directory', 'school-details', 'school-bulk-order', 'delivery-partner'
+        'seller-registration', 'school-directory', 'school-details', 'school-bulk-order', 'bulk-order', 'bulk', 'delivery-partner'
       ];
       const match = validPages.find(p => candidate.startsWith(p));
-      if (match) return match;
+      if (match) return match === 'bulk-order' || match === 'bulk' ? 'school-bulk-order' : match;
     }
   } catch {}
   return 'home';
@@ -193,12 +196,14 @@ function MainStore() {
       return;
     }
 
-    setCurrentPage(page);
+    const targetPage = (page === 'bulk-order' || page === 'bulk' || page === 'bulk-supply') ? 'school-bulk-order' : page;
+
+    setCurrentPage(targetPage);
 
     try {
-      const newUrl = page === 'home' 
+      const newUrl = targetPage === 'home' 
         ? window.location.pathname 
-        : `#${page}`;
+        : `#${targetPage}`;
       window.history.replaceState(null, '', newUrl);
     } catch {}
 
@@ -341,7 +346,7 @@ function MainStore() {
           {![
             'home', 'products', 'product-detail', 'about', 'contact', 'offers', 'new-arrivals',
             'all-categories', 'profile', 'checkout', 'order-success', 'seller-registration',
-            'school-directory', 'school-details', 'school-bulk-order', 'delivery-partner'
+            'school-directory', 'school-details', 'school-bulk-order', 'bulk-order', 'bulk', 'bulk-supply', 'delivery-partner'
           ].includes(activePage) && (
               <NotFoundPage onNavigate={navigateTo} />
             )}

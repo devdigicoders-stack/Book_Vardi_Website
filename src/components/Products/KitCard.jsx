@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Eye } from 'lucide-react';
+import { Eye, Loader2 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { resolveImageUrl } from '../../utils/api';
 import KitDetailsModal from './KitDetailsModal'; 
 
 export default function KitCard({ kit }) {
@@ -8,9 +9,12 @@ export default function KitCard({ kit }) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [imgLoading, setImgLoading] = useState(true);
 
   // Collect all images from the kit itself and its items
-  const allImages = [kit.image, ...(kit.kitItems ? kit.kitItems.map(item => item.image) : [])].filter(Boolean);
+  const allImages = [kit.image, ...(kit.kitItems ? kit.kitItems.map(item => item.image) : [])]
+    .filter(Boolean)
+    .map(img => resolveImageUrl(img));
 
   useEffect(() => {
     let interval;
@@ -24,6 +28,8 @@ export default function KitCard({ kit }) {
     return () => clearInterval(interval);
   }, [isHovered, allImages.length]);
 
+  const currentImg = allImages[currentImageIndex] || '';
+
   return (
     <>
       <div
@@ -32,19 +38,31 @@ export default function KitCard({ kit }) {
         onMouseLeave={() => setIsHovered(false)}
         onClick={() => setIsModalOpen(true)}
       >
-        <div className="relative w-full aspect-square bg-gray-50 overflow-hidden">
+        <div className="relative w-full aspect-square bg-gray-50 overflow-hidden flex items-center justify-center">
           {kit.discountBadge && (
             <span className="absolute top-2 left-2 z-10 text-[9px] font-extrabold tracking-wider px-1.5 py-0.5 rounded uppercase shadow-xs bg-brand-pink text-white">
               {kit.discountBadge}
             </span>
           )}
 
-          <img
-            src={allImages[currentImageIndex]}
-            alt={kit.name}
-            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
-            loading="lazy"
-          />
+          {imgLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-0">
+              <Loader2 className="w-5 h-5 animate-spin text-brand-teal" />
+            </div>
+          )}
+
+          {currentImg && (
+            <img
+              src={currentImg}
+              alt={kit.name}
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
+                imgLoading ? 'opacity-0' : 'opacity-100'
+              }`}
+              loading="lazy"
+              onLoad={() => setImgLoading(false)}
+              onError={() => setImgLoading(false)}
+            />
+          )}
 
           {allImages.length > 1 && (
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 z-10 bg-white/50 px-2 py-1 rounded-full backdrop-blur-sm">

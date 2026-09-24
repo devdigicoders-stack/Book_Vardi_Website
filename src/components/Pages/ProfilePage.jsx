@@ -83,9 +83,24 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   useEffect(() => {
     if (activeTab === 'bulk-orders' || activeTab === 'profile') {
       fetchCustomerSchoolBulkOrdersApi(userProfile?.phone || '').then(data => {
-        const list = Array.isArray(data) ? data : (data?.orders || []);
-        setCustomerBulkOrders(list);
-      }).catch(() => {});
+        const apiList = Array.isArray(data) ? data : (data?.orders || []);
+        let localList = [];
+        try {
+          localList = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
+        } catch {}
+        const merged = [...apiList];
+        localList.forEach(lItem => {
+          if (!merged.some(m => (m.referenceId && m.referenceId === lItem.referenceId) || (m._id && m._id === lItem._id))) {
+            merged.push(lItem);
+          }
+        });
+        setCustomerBulkOrders(merged);
+      }).catch(() => {
+        try {
+          const localList = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
+          setCustomerBulkOrders(localList);
+        } catch {}
+      });
     }
   }, [activeTab, userProfile?.phone]);
 
@@ -1612,13 +1627,9 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               <div key={idx} className="flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-3">
                                   <img
-                                    src={item.image}
+                                    src={resolveImageUrl(item.image)}
                                     alt={item.name}
                                     className="w-12 h-12 rounded-lg object-cover border border-gray-100 shrink-0"
-                                    onError={(e) => {
-                                      e.currentTarget.onerror = null;
-                                      e.currentTarget.src = '/images/gel-pen-set.jpg';
-                                    }}
                                   />
                                   <div>
                                     <h4 className="text-xs font-bold text-gray-800 line-clamp-1">
@@ -1743,13 +1754,9 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                         >
                           <div className="flex items-center gap-3.5">
                             <img
-                              src={item.image}
+                              src={resolveImageUrl(item.image)}
                               alt={item.name}
                               className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl object-cover border border-gray-100 shrink-0"
-                              onError={(e) => {
-                                e.currentTarget.onerror = null;
-                                e.currentTarget.src = '/images/gel-pen-set.jpg';
-                              }}
                             />
                             <div>
                               <h4 className="font-display font-bold text-sm text-gray-900 line-clamp-1">
@@ -2311,7 +2318,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                   </div>
 
                   <button
-                    onClick={() => onNavigate && onNavigate('bulk-order')}
+                    onClick={() => onNavigate && onNavigate('school-bulk-order')}
                     className="inline-flex items-center gap-1.5 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
                   >
                     <Plus size={15} />
@@ -2327,7 +2334,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                       Have a bulk requirement for your school or college? Request custom uniforms, book bundles, and crest notebooks.
                     </p>
                     <button
-                      onClick={() => onNavigate && onNavigate('bulk-order')}
+                      onClick={() => onNavigate && onNavigate('school-bulk-order')}
                       className="px-5 py-2.5 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl cursor-pointer"
                     >
                       Submit Bulk Supply Request
@@ -2381,7 +2388,9 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             <div>
                               <span className="text-gray-400 font-semibold text-[11px] uppercase block">Target Budget</span>
                               <div className="font-extrabold text-brand-teal text-sm mt-0.5">
-                                ₹{Number(order.targetBudgetPerKit || 0).toLocaleString()}
+                                {order.targetBudgetPerKit && Number(order.targetBudgetPerKit) > 0
+                                  ? `₹${Number(order.targetBudgetPerKit).toLocaleString()}`
+                                  : 'Open to Quotations'}
                               </div>
                             </div>
                           </div>

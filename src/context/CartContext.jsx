@@ -22,7 +22,9 @@ import {
   fetchProductReviewsFromBackend,
   addReviewToBackend,
   deleteReviewInBackend,
-  fetchProductsFromBackend
+  fetchProductsFromBackend,
+  fetchPublicSettingsFromBackend,
+  getProductMainImage
 } from '../utils/api';
 
 export const EMPTY_USER_PROFILE = {
@@ -81,6 +83,17 @@ export function getProfileCompleteness(profile) {
   };
 }
 
+export const getCartItemKey = (item) => {
+  if (!item) return '';
+  if (item.cartItemId) return String(item.cartItemId);
+  const prodId = item.productId !== undefined ? item.productId : (item.id !== undefined ? item.id : item._id);
+  const size = item.selectedSize || item.size || item.selectedVariant?.size || item.selectedVariant?.name || '';
+  const color = item.selectedColor || item.color || item.selectedVariant?.color || '';
+  const variantId = item.variantId || item.selectedVariant?.id || item.selectedVariant?._id || '';
+  const keyPart = [size, color, variantId].filter(Boolean).join('_');
+  return keyPart ? `${prodId}_${keyPart}` : String(prodId || '');
+};
+
 const CartContext = createContext(null);
 
 export function CartProvider({ children }) {
@@ -88,7 +101,16 @@ export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState(() => {
     try {
       const saved = localStorage.getItem('book_vardi_items_v2');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed)
+          ? parsed.map((it) => ({
+              ...it,
+              cartItemId: it.cartItemId || getCartItemKey(it)
+            }))
+          : [];
+      }
+      return [];
     } catch {
       return [];
     }
@@ -169,7 +191,7 @@ export function CartProvider({ children }) {
   // Dynamic Products and Promotions from global platform sync
   const [products, setProducts] = useState(() => {
     try {
-      const saved = localStorage.getItem('bv_sync_products');
+      const saved = localStorage.getItem('bv_sync_products') || localStorage.getItem('admin_products') || localStorage.getItem('bv_seller_products');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -357,7 +379,10 @@ export function CartProvider({ children }) {
       fetchCartFromBackend(phone, userId)
         .then((res) => {
           if (res?.cart?.items && Array.isArray(res.cart.items)) {
-            setCartItems(res.cart.items);
+            setCartItems(res.cart.items.map((it) => ({
+              ...it,
+              cartItemId: it.cartItemId || getCartItemKey(it)
+            })));
           }
         })
         .catch(() => {});
@@ -380,13 +405,37 @@ export function CartProvider({ children }) {
       fetchProductsFromBackend({ limit: 100 })
         .then((res) => {
           const liveList = res?.products || (Array.isArray(res) ? res : []);
-          setProducts(liveList);
-          try {
-            localStorage.setItem('bv_sync_products', JSON.stringify(liveList));
-          } catch (e) {}
+          if (Array.isArray(liveList) && liveList.length > 0) {
+            setProducts(liveList);
+            try {
+              localStorage.setItem('bv_sync_products', JSON.stringify(liveList));
+            } catch (e) {}
+          }
         })
         .catch(() => {});
     }
+  }, []);
+
+  useEffect(() => {
+    const handleSync = (e) => {
+      if (e.detail && Array.isArray(e.detail) && e.detail.length > 0) {
+        setProducts(e.detail);
+      } else {
+        try {
+          const saved = localStorage.getItem('bv_sync_products') || localStorage.getItem('admin_products') || localStorage.getItem('bv_seller_products');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) setProducts(parsed);
+          }
+        } catch (err) {}
+      }
+    };
+    window.addEventListener('bv_products_updated', handleSync);
+    window.addEventListener('adminProductsUpdated', handleSync);
+    return () => {
+      window.removeEventListener('bv_products_updated', handleSync);
+      window.removeEventListener('adminProductsUpdated', handleSync);
+    };
   }, []);
 
   useEffect(() => {
@@ -504,6 +553,53 @@ export function CartProvider({ children }) {
     } catch (e) {}
   }, [promotions]);
 
+  // Dynamic Free Shipping Threshold state (initialized from localStorage with fallback to 99)
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_free_shipping_threshold');
+      if (saved) return Number(JSON.parse(saved));
+      const savedSettings = localStorage.getItem('admin_settings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        if (parsed.minOrderFreeShipping || parsed.freeShippingThreshold) {
+          return Number(parsed.minOrderFreeShipping || parsed.freeShippingThreshold);
+        }
+      }
+      return 99;
+    } catch {
+      return 99;
+    }
+  });
+
+  useEffect(() => {
+    if (backendEnabled) {
+      fetchPublicSettingsFromBackend()
+        .then((res) => {
+          if (res && (res.minOrderFreeShipping !== undefined || res.freeShippingThreshold !== undefined)) {
+            const val = Number(res.minOrderFreeShipping || res.freeShippingThreshold);
+            if (val > 0) {
+              setFreeShippingThreshold(val);
+              try {
+                localStorage.setItem('bv_free_shipping_threshold', JSON.stringify(val));
+              } catch (e) {}
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleSync = (e) => {
+      if (e.detail && (e.detail.minOrderFreeShipping !== undefined || e.detail.freeShippingThreshold !== undefined)) {
+        const val = Number(e.detail.minOrderFreeShipping || e.detail.freeShippingThreshold);
+        if (val > 0) setFreeShippingThreshold(val);
+      }
+    };
+    window.addEventListener('bv_settings_updated', handleSync);
+    return () => window.removeEventListener('bv_settings_updated', handleSync);
+  }, []);
+
 
 
   // Recently Viewed Product Tracking State
@@ -559,35 +655,55 @@ export function CartProvider({ children }) {
     }
     const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
     const prodId = product?.id !== undefined ? product.id : product?._id;
-    const variantKey = `${prodId}_${product?.selectedSize || ''}`;
+    const computedKey = getCartItemKey(product);
+    const cartItemId = product?.cartItemId || computedKey;
     const inWishlist = wishlist.some((item) => String(item) === String(prodId));
 
+    const itemToAdd = {
+      ...product,
+      id: prodId,
+      productId: prodId,
+      cartItemId: cartItemId,
+      selectedSize: product?.selectedSize || undefined,
+      selectedColor: product?.selectedColor || undefined,
+      selectedVariant: product?.selectedVariant || undefined,
+      variantName: product?.variantName || product?.selectedVariant?.name || product?.selectedSize || undefined,
+      quantity: qtyToAdd,
+      selected: true
+    };
+
     setCartItems((prev) => {
-      const existing = prev.find((item) => `${item.id || item._id}_${item.selectedSize || ''}` === variantKey);
-      if (existing) {
-        return prev.map((item) =>
-          `${item.id || item._id}_${item.selectedSize || ''}` === variantKey
-            ? { ...item, quantity: item.quantity + qtyToAdd }
+      const existingIndex = prev.findIndex((item) => (item.cartItemId || getCartItemKey(item)) === cartItemId);
+      if (existingIndex > -1) {
+        return prev.map((item, idx) =>
+          idx === existingIndex
+            ? { ...item, ...itemToAdd, quantity: item.quantity + qtyToAdd, selected: true }
             : item
         );
       }
-      return [...prev, { ...product, id: prodId, quantity: qtyToAdd }];
+      return [...prev, itemToAdd];
     });
+
+    const variantLabel = itemToAdd.variantName || itemToAdd.selectedSize || itemToAdd.selectedColor || '';
+    const nameWithVariant = `${product.name}${variantLabel ? ` (${variantLabel})` : ''}`;
 
     if (inWishlist) {
       setWishlist((prev) => prev.filter((item) => String(item) !== String(prodId)));
-      showToast(`Moved "${product.name}${product.selectedSize ? ` (${product.selectedSize})` : ''}" from wishlist to your cart! 🛍️`);
+      showToast(`Moved "${nameWithVariant}" from wishlist to your cart! 🛍️`);
     } else {
-      showToast(`Added ${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}"${product.name}${product.selectedSize ? ` (${product.selectedSize})` : ''}" to your cart!`);
+      showToast(`Added ${qtyToAdd > 1 ? `${qtyToAdd}x ` : ''}"${nameWithVariant}" to your cart!`);
     }
 
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
       const userId = userProfile?.id || userProfile?._id || '';
-      addToCartInBackend(product, qtyToAdd, phone, userId)
+      addToCartInBackend(itemToAdd, qtyToAdd, phone, userId)
         .then((res) => {
           if (res?.cart?.items && Array.isArray(res.cart.items)) {
-            setCartItems(res.cart.items);
+            setCartItems(res.cart.items.map((it) => ({
+              ...it,
+              cartItemId: it.cartItemId || getCartItemKey(it)
+            })));
           }
         })
         .catch((err) => {
@@ -638,14 +754,20 @@ export function CartProvider({ children }) {
   };
 
   const removeFromCart = (id) => {
-    setCartItems((prev) => prev.filter((item) => String(item.id || item.productId || item._id) !== String(id)));
+    setCartItems((prev) => prev.filter((item) => {
+      const itemKey = item.cartItemId || getCartItemKey(item);
+      return String(itemKey) !== String(id) && String(item.id || item.productId || item._id) !== String(id);
+    }));
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
       const userId = userProfile?.id || userProfile?._id || '';
       removeFromCartInBackend(id, phone, userId)
         .then((res) => {
           if (res?.cart?.items && Array.isArray(res.cart.items)) {
-            setCartItems(res.cart.items);
+            setCartItems(res.cart.items.map((it) => ({
+              ...it,
+              cartItemId: it.cartItemId || getCartItemKey(it)
+            })));
           }
         })
         .catch((err) => {
@@ -663,7 +785,8 @@ export function CartProvider({ children }) {
     setCartItems((prev) =>
       prev
         .map((item) => {
-          if (String(item.id || item.productId || item._id) === String(id)) {
+          const itemKey = item.cartItemId || getCartItemKey(item);
+          if (String(itemKey) === String(id) || String(item.id || item.productId || item._id) === String(id)) {
             const newQty = item.quantity + delta;
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
@@ -677,7 +800,10 @@ export function CartProvider({ children }) {
       updateCartItemInBackend(id, delta, phone, userId)
         .then((res) => {
           if (res?.cart?.items && Array.isArray(res.cart.items)) {
-            setCartItems(res.cart.items);
+            setCartItems(res.cart.items.map((it) => ({
+              ...it,
+              cartItemId: it.cartItemId || getCartItemKey(it)
+            })));
           }
         })
         .catch((err) => {
@@ -732,7 +858,7 @@ export function CartProvider({ children }) {
           name: product.name || product.title || 'Stationery Item',
           price: product.price !== undefined ? Number(product.price) : 0,
           originalPrice: product.originalPrice || product.mrp,
-          image: product.image || (Array.isArray(product.images) && product.images[0]) || '/images/gel-pen-set.jpg',
+          image: getProductMainImage(product) || product.image || '',
           subtitle: product.subtitle || product.description || product.category || '',
           category: product.category || '',
           rating: product.rating || product.averageRating || 4.5,
@@ -811,8 +937,35 @@ export function CartProvider({ children }) {
     setIsWishlistOpen(open);
   };
 
+  const toggleCartItemSelection = (id) => {
+    setCartItems((prev) =>
+      prev.map((item) => {
+        const itemKey = item.cartItemId || getCartItemKey(item);
+        if (String(itemKey) === String(id) || String(item.id || item.productId || item._id) === String(id)) {
+          return { ...item, selected: item.selected === false ? true : false };
+        }
+        return item;
+      })
+    );
+  };
+
+  const selectAllCartItems = (selectVal = true) => {
+    setCartItems((prev) =>
+      prev.map((item) => ({ ...item, selected: Boolean(selectVal) }))
+    );
+  };
+
   const displayedCartItems = isAuthenticated ? cartItems : [];
   const displayedWishlist = isAuthenticated ? wishlist : [];
+
+  const selectedCartItems = displayedCartItems.filter((item) => item.selected !== false);
+  const unselectedCartItems = displayedCartItems.filter((item) => item.selected === false);
+
+  const totalItemsCount = selectedCartItems.reduce((sum, item) => sum + item.quantity, 0);
+  const allCartItemsCount = displayedCartItems.reduce((sum, item) => sum + item.quantity, 0);
+  const subtotal = selectedCartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const freeShippingProgress = Math.min(100, (subtotal / (freeShippingThreshold || 99)) * 100);
+  const freeShippingRemaining = Math.max(0, (freeShippingThreshold || 99) - subtotal);
 
   const wishlistProducts = (() => {
     if (!isAuthenticated || !displayedWishlist || displayedWishlist.length === 0) return [];
@@ -848,7 +1001,7 @@ export function CartProvider({ children }) {
           subtitle: item.subtitle || matchedInCatalog?.subtitle || matchedInCatalog?.category || '',
           price: item.price !== undefined ? Number(item.price) : (matchedInCatalog?.price || 0),
           originalPrice: item.originalPrice || matchedInCatalog?.originalPrice || matchedInCatalog?.mrp,
-          image: item.image || (Array.isArray(item.images) && item.images[0]) || matchedInCatalog?.image || (Array.isArray(matchedInCatalog?.images) && matchedInCatalog.images[0]) || '/images/gel-pen-set.jpg',
+          image: getProductMainImage(item) || getProductMainImage(matchedInCatalog) || item.image || '',
           category: item.category || matchedInCatalog?.category || '',
           rating: item.rating !== undefined ? Number(item.rating) : (matchedInCatalog?.rating || matchedInCatalog?.averageRating || 4.5),
           reviewsCount: item.reviewsCount || matchedInCatalog?.reviewsCount || matchedInCatalog?.numReviews || 0,
@@ -864,7 +1017,7 @@ export function CartProvider({ children }) {
           ...matched,
           id: matched.id || matched._id || strId,
           _id: matched._id || matched.id || strId,
-          image: matched.image || (Array.isArray(matched.images) && matched.images[0]) || '/images/gel-pen-set.jpg'
+          image: getProductMainImage(matched) || matched.image || ''
         };
       }
 
@@ -874,7 +1027,7 @@ export function CartProvider({ children }) {
         name: `Liked Item (${strId.slice(-6)})`,
         subtitle: 'Saved Item',
         price: 0,
-        image: '/images/gel-pen-set.jpg',
+        image: '',
         category: 'Stationery'
       };
     }).filter(Boolean);
@@ -1043,12 +1196,6 @@ export function CartProvider({ children }) {
     }
     showToast('Address updated successfully!');
   };
-
-  const totalItemsCount = displayedCartItems.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = displayedCartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const freeShippingThreshold = 99.00;
-  const freeShippingProgress = Math.min(100, (subtotal / freeShippingThreshold) * 100);
-  const freeShippingRemaining = Math.max(0, freeShippingThreshold - subtotal);
 
   const openAuthModal = (mode = 'login') => {
     setAuthMode(mode);
@@ -1585,14 +1732,17 @@ export function CartProvider({ children }) {
       year: 'numeric'
     });
 
+    const itemsToBuy = cartItems.filter((item) => item.selected !== false);
+    const unselectedItems = cartItems.filter((item) => item.selected === false);
+
     const newOrder = {
       id: randomId,
       date: formattedDate,
       status: 'Processing',
       statusColor: 'blue',
       trackingNumber: randomTracking,
-      itemsCount: cartItems.reduce((acc, item) => acc + item.quantity, 0),
-      items: [...cartItems],
+      itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
+      items: [...itemsToBuy],
       subtotal: orderData.subtotal,
       shippingCost: orderData.shippingCost,
       discount: orderData.discount || 0,
@@ -1623,7 +1773,7 @@ export function CartProvider({ children }) {
       school: userProfile?.institution || 'General Public',
       date: formattedDate,
       total: orderData.total,
-      itemsCount: cartItems.reduce((acc, item) => acc + item.quantity, 0),
+      itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
       status: 'Processing',
       paymentMethod: orderData.paymentMethod || 'UPI',
       paymentStatus: 'Paid',
@@ -1631,7 +1781,7 @@ export function CartProvider({ children }) {
         ? `${orderData.shippingAddress.address || ''}, ${orderData.shippingAddress.city || ''} ${orderData.shippingAddress.pincode || ''}`
         : (orderData.shippingAddress || 'Customer Address'),
       trackingNumber: randomTracking,
-      items: cartItems.map((item) => ({
+      items: itemsToBuy.map((item) => ({
         id: item.id,
         name: item.name,
         price: item.price,
@@ -1644,7 +1794,7 @@ export function CartProvider({ children }) {
     // Update product stock quantities locally and broadcast
     const updatedProducts = products.map((prod) => {
       const prodIdStr = String(prod.id || prod._id || '');
-      const cartMatch = cartItems.find((c) => {
+      const cartMatch = itemsToBuy.find((c) => {
         const cartIdStr = String(c.id || c._id || c.productId || '');
         return (cartIdStr && prodIdStr && cartIdStr === prodIdStr) || (c.name && prod.name && c.name.trim().toLowerCase() === prod.name.trim().toLowerCase());
       });
@@ -1679,7 +1829,7 @@ export function CartProvider({ children }) {
     setProducts(updatedProducts);
 
     setLastPlacedOrder(newOrder);
-    setCartItems([]);
+    setCartItems(unselectedItems);
     setAppliedCoupon(null);
 
     if (backendEnabled) {
@@ -1713,6 +1863,10 @@ export function CartProvider({ children }) {
         products,
         promotions,
         cartItems,
+        selectedCartItems,
+        allCartItemsCount,
+        toggleCartItemSelection,
+        selectAllCartItems,
         wishlist,
         wishlistProducts,
         isWishlisted,

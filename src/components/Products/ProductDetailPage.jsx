@@ -31,107 +31,54 @@ import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import { resolveImageUrl } from '../../utils/api';
+import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
 import GrabKitSection from './GrabKitSection';
 
-export const getProductPaymentRestrictions = (product) => {
-  if (!product) return { acceptsCod: true, acceptsOnline: true, allDisabled: false };
-
-  const pma = String(product.paymentMethodAllowed || product.payment_method_allowed || '').toLowerCase();
-
-  const allowedMethodsArray = (
-    Array.isArray(product.paymentMethodsAllowed) ? product.paymentMethodsAllowed :
-    Array.isArray(product.acceptedPaymentMethods) ? product.acceptedPaymentMethods :
-    Array.isArray(product.paymentMethods) ? product.paymentMethods :
-    Array.isArray(product.seller?.paymentMethods) ? product.seller.paymentMethods :
-    null
-  );
-
-  let acceptsCod = true;
-  let acceptsOnline = true;
-
-  if (pma === 'online_only' || pma === 'prepaid_only') {
-    acceptsCod = false;
-  } else if (pma === 'cod_only' || pma === 'cash_only') {
-    acceptsOnline = false;
-  } else if (pma === 'none' || pma === 'disabled' || pma === 'neither') {
-    acceptsCod = false;
-    acceptsOnline = false;
-  }
-
-  if (product.acceptsCod === false || product.sellerAcceptsCod === false || product.seller?.acceptsCod === false || product.seller?.paymentMethods?.cod === false) {
-    acceptsCod = false;
-  }
-
-  if (product.acceptsOnline === false || product.sellerAcceptsOnline === false || product.seller?.acceptsOnline === false || product.seller?.paymentMethods?.online === false) {
-    acceptsOnline = false;
-  }
-
-  if (allowedMethodsArray !== null) {
-    const upperList = allowedMethodsArray.map((m) => String(m).toUpperCase().trim());
-    if (upperList.length === 0) {
-      acceptsCod = false;
-      acceptsOnline = false;
-    } else {
-      const hasCod = upperList.some((m) => m.includes('COD') || m.includes('CASH'));
-      const hasOnline = upperList.some((m) => m.includes('ONLINE') || m.includes('UPI') || m.includes('CARD') || m.includes('PREPAID') || m.includes('RAZORPAY'));
-      if (!hasCod) acceptsCod = false;
-      if (!hasOnline) acceptsOnline = false;
-    }
-  }
-
-  return {
-    acceptsCod,
-    acceptsOnline,
-    allDisabled: !acceptsCod && !acceptsOnline
-  };
-};
-
-const FALLBACK_IMAGE = '/images/gel-pen-set.jpg';
-
-const CATEGORY_GALLERY_MAP = {
-  notebooks: [
-    'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1456735190827-d1262f71b8a3?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1531346878377-a5be20888e57?w=1000&auto=format&fit=crop&q=80'
-  ],
-  pens: [
-    '/images/gel-pen-set.jpg',
-    '/images/pastel-highlighters.jpg',
-    'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=1000&auto=format&fit=crop&q=80'
-  ],
-  supplies: [
-    'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=1000&auto=format&fit=crop&q=80'
-  ],
-  bags: [
-    'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=1000&auto=format&fit=crop&q=80'
-  ],
-  art: [
-    'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1506784365847-bbad939e9335?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=1000&auto=format&fit=crop&q=80'
-  ],
-  planners: [
-    'https://images.unsplash.com/photo-1506784365847-bbad939e9335?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1456735190827-d1262f71b8a3?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1516962215378-7fa2e137ae93?w=1000&auto=format&fit=crop&q=80'
-  ],
-  gifts: [
-    'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1516962215378-7fa2e137ae93?w=1000&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1456735190827-d1262f71b8a3?w=1000&auto=format&fit=crop&q=80'
-  ]
-};
+export { getProductPaymentRestrictions };
 
 const getProductGallery = (product) => {
-  const rawImage = product?.image || (Array.isArray(product?.images) && product.images[0]);
-  const productGallery = Array.isArray(product?.images) ? product.images : [];
-  const categoryGallery = CATEGORY_GALLERY_MAP[product?.category] || [];
-  const gallery = [rawImage, ...productGallery, ...categoryGallery].filter(Boolean).map((img) => resolveImageUrl(img));
-  return [...new Set(gallery)].slice(0, 5);
+  if (!product) return [];
+  const list = [];
+
+  const extractUrl = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string') return val.trim();
+    if (typeof val === 'object') {
+      return (val.url || val.src || val.path || val.data || val.link || '').trim();
+    }
+    return '';
+  };
+
+  const primary = extractUrl(product.image || product.coverImage || product.imageUrl || product.photo || product.primaryImage);
+  if (primary) list.push(primary);
+
+  if (Array.isArray(product.images) && product.images.length > 0) {
+    product.images.forEach(img => {
+      const url = extractUrl(img);
+      if (url && !list.includes(url)) {
+        list.push(url);
+      }
+    });
+  }
+
+  if (Array.isArray(product.sizeVariants)) {
+    product.sizeVariants.forEach(v => {
+      const vImg = extractUrl(v.image);
+      if (vImg && !list.includes(vImg)) list.push(vImg);
+
+      if (Array.isArray(v.images)) {
+        v.images.forEach(img => {
+          const url = extractUrl(img);
+          if (url && !list.includes(url)) {
+            list.push(url);
+          }
+        });
+      }
+    });
+  }
+
+  const resolved = list.map(img => resolveImageUrl(img)).filter(Boolean);
+  return [...new Set(resolved)];
 };
 
 export default function ProductDetailPage({ onNavigate }) {
@@ -582,7 +529,7 @@ export default function ProductDetailPage({ onNavigate }) {
                       className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       onError={(e) => {
                         e.currentTarget.onerror = null;
-                        e.currentTarget.src = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=800&auto=format&fit=crop&q=80';
+                        e.currentTarget.style.display = 'none';
                       }}
                     />
                   </div>
@@ -756,15 +703,21 @@ export default function ProductDetailPage({ onNavigate }) {
                     <Heart size={16} fill={isWishlisted ? 'currentColor' : 'none'} />
                   </button>
 
-                  <img
-                    src={variantImageOverride || productGallery[activeImageIndex] || selectedProduct.image || FALLBACK_IMAGE}
-                    alt={selectedProduct.name}
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = FALLBACK_IMAGE;
-                    }}
-                  />
+                  {(() => {
+                    const currentImg = variantImageOverride || productGallery[activeImageIndex] || resolveImageUrl(getProductMainImage(selectedProduct));
+                    return currentImg ? (
+                      <img
+                        src={currentImg}
+                        alt={selectedProduct.name}
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 text-gray-400">
+                        <Loader2 className="w-8 h-8 animate-spin text-brand-teal" />
+                        <span className="text-xs mt-2">Loading image...</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="grid grid-cols-4 gap-2 sm:gap-2.5">
@@ -787,10 +740,6 @@ export default function ProductDetailPage({ onNavigate }) {
                         src={image}
                         alt={`${selectedProduct.name} view ${index + 1}`}
                         className="h-16 w-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = FALLBACK_IMAGE;
-                        }}
                       />
                     </button>
                   ))}
@@ -897,13 +846,13 @@ export default function ProductDetailPage({ onNavigate }) {
                   </div>
 
                   {/* Seller & Stock Status Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 mt-3.5 pt-3 border-t border-gray-100 text-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-3.5 pt-3 border-t border-gray-100 text-xs">
                     <div className="flex items-center gap-1.5 text-gray-600">
                       <Store size={14} className="text-brand-teal shrink-0" />
                       <span>Sold by: <strong className="text-gray-900">{selectedProduct.sellerStoreName || selectedProduct.storeName || selectedProduct.legalBusinessName || selectedProduct.sellerName || (typeof selectedProduct.seller === 'string' ? selectedProduct.seller : selectedProduct.seller?.storeName || 'Book Vardi Verified Seller')}</strong></span>
                     </div>
 
-                    {/* <div className="flex items-center gap-2">
+
                       {selectedProduct.isReturnable === false ? (
                         <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
                           Non-Returnable
@@ -930,8 +879,7 @@ export default function ProductDetailPage({ onNavigate }) {
                             : 'Out of Stock'}
                         </span>
                       )}
-                    </div> */}
-                  </div>
+                    </div>
                 </div>
 
                 {/* Price & Savings */}
@@ -997,44 +945,62 @@ export default function ProductDetailPage({ onNavigate }) {
                         </span>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {(showAllSizes ? sizeVariants : sizeVariants.slice(0, 5)).map((variant, vIdx) => {
+                    {/* Variant Preview Image Layout in Row */}
+                    <div className="flex items-center gap-2.5 overflow-x-auto pb-2 pt-1 scrollbar-thin hide-scrollbar touch-pan-x">
+                      {sizeVariants.map((variant, vIdx) => {
                         const variantVal = variant.size || variant.measureValue || `size-${vIdx}`;
                         const isSelected = selectedSize === variantVal;
+                        const rawVImg = variant.image || (Array.isArray(variant.images) && variant.images[0]) || selectedProduct?.image || (Array.isArray(selectedProduct?.images) && selectedProduct.images[0]);
+                        const vImgUrl = rawVImg ? resolveImageUrl(rawVImg) : '';
+
                         return (
                           <button
                             key={variant.id || variant._id || variantVal || `size-var-${vIdx}`}
                             type="button"
                             onClick={() => handleSelectSize(variant)}
-                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
+                            className={`flex items-center gap-2.5 p-2 rounded-2xl border transition-all cursor-pointer shrink-0 text-left ${
                               isSelected
-                                ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
-                                : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal/40'
+                                ? 'bg-teal-950 text-white border-teal-950 ring-2 ring-teal-700/30 shadow-md scale-[1.02]'
+                                : 'bg-white text-gray-800 border-gray-200 hover:border-brand-teal/50 hover:bg-teal-50/20'
                             }`}
                           >
-                            <span>{variantVal}</span>
-                            {variant.price && (
-                              <span className={`text-[10px] ${isSelected ? 'text-teal-100 font-normal' : 'text-gray-400 font-normal'}`}>
-                                ₹{variant.price}
-                              </span>
+                            {vImgUrl ? (
+                              <img
+                                src={vImgUrl}
+                                alt={variantVal}
+                                className="w-10 h-10 rounded-xl object-cover border border-gray-200 shrink-0 bg-gray-50"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            ) : (
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                isSelected ? 'bg-teal-800 text-teal-100' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {variantVal.slice(0, 3)}
+                              </div>
                             )}
+                            <div className="pr-1.5 min-w-[60px]">
+                              <div className="text-xs font-extrabold flex items-center gap-1">
+                                <span>{variantVal}</span>
+                                {variant.measureScale && variant.measureScale !== 'size' && (
+                                  <span className={`text-[9px] px-1 py-0.2 rounded uppercase font-bold ${isSelected ? 'bg-teal-800 text-amber-300' : 'bg-gray-100 text-gray-500'}`}>
+                                    {variant.measureScale}
+                                  </span>
+                                )}
+                              </div>
+                              {variant.price && (
+                                <div className={`text-[11px] font-bold mt-0.5 ${isSelected ? 'text-amber-300' : 'text-brand-teal'}`}>
+                                  ₹{variant.price}
+                                  {variant.mrp && Number(variant.mrp) > Number(variant.price) && (
+                                    <span className={`ml-1 text-[9px] line-through font-normal ${isSelected ? 'text-teal-200' : 'text-gray-400'}`}>
+                                      ₹{variant.mrp}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </button>
                         );
                       })}
-
-                      {sizeVariants.length > 5 && (
-                        <button
-                          type="button"
-                          onClick={() => setShowAllSizes(!showAllSizes)}
-                          className="px-3 py-2 rounded-xl text-xs font-bold text-brand-teal bg-teal-50 hover:bg-teal-100 border border-teal-200 hover:border-brand-teal/50 cursor-pointer transition-all flex items-center gap-1"
-                        >
-                          {showAllSizes ? (
-                            <span>Show Less</span>
-                          ) : (
-                            <span>Show More (+{sizeVariants.length - 5})</span>
-                          )}
-                        </button>
-                      )}
                     </div>
                   </div>
                 )}

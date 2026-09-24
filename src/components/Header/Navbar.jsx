@@ -517,9 +517,9 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         isScrolled ? 'shadow-md bg-white/98' : 'shadow-xs'
       }`}
     >
-      <div className="container mx-auto px-4 flex items-center justify-between h-[76px] gap-6">
+      <div className="container mx-auto px-2.5 sm:px-4 flex items-center justify-between h-[76px] gap-2 sm:gap-3 lg:gap-4 xl:gap-6 max-w-full">
         {/* Brand Logo & Location Subdistrict Badge */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           {/* Logo Icon */}
           <button
             onClick={() => {
@@ -531,32 +531,32 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
             <img
               src="/logo.png"
               alt="Book Vardi"
-              className="h-11 sm:h-12 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+              className="h-10 sm:h-12 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
             />
           </button>
 
           {/* Text + Location Badge stacked vertically parallel to logo icon */}
-          <div className="flex flex-col items-start justify-center">
+          <div className="flex flex-col items-start justify-center min-w-0">
             <button
               onClick={() => {
                 setActiveHomeSection('home');
                 onNavigate('home');
               }}
-              className="font-display text-lg sm:text-xl font-extrabold text-black tracking-tight leading-none cursor-pointer focus:outline-none"
+              className="font-display text-base sm:text-xl font-extrabold text-black tracking-tight leading-none cursor-pointer focus:outline-none"
             >
               BOOK<span className="text-brand-yellow">VARDI</span>
             </button>
 
             {/* Location subdistrict badge directly below text, parallel to brand icon */}
-            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50/90 border border-emerald-200/80 px-2 py-0.5 rounded-full mt-1 shadow-2xs">
+            <div className="flex items-center gap-1 text-[11px] sm:text-xs font-bold text-emerald-700 bg-emerald-50/90 border border-emerald-200/80 px-1.5 sm:px-2 py-0.5 rounded-full mt-1 shadow-2xs max-w-[130px] sm:max-w-[180px]">
               <button
                 type="button"
                 onClick={() => setIsPermissionModalOpen(true)}
-                className="flex items-center gap-1 hover:underline cursor-pointer"
+                className="flex items-center gap-1 hover:underline cursor-pointer truncate min-w-0"
                 title="Click to change delivery subdistrict or city"
               >
-                <MapPin size={12} className="text-emerald-600 shrink-0" />
-                <span> <span className="text-emerald-800 font-extrabold">{userSubdistrict || locationLabel || 'allow location'}</span></span>
+                <MapPin size={11} className="text-emerald-600 shrink-0" />
+                <span className="truncate"> <span className="text-emerald-800 font-extrabold truncate">{userSubdistrict || locationLabel || 'allow location'}</span></span>
               </button>
 
               {/* Sync with Live GPS Location symbol */}
@@ -566,10 +566,10 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                   e.stopPropagation();
                   requestBrowserLocation();
                 }}
-                className="p-0.5 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer text-emerald-700 hover:text-emerald-900"
+                className="p-0.5 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer text-emerald-700 hover:text-emerald-900 shrink-0"
                 title="Click to sync with live GPS location"
               >
-                <RotateCcw size={11} className={`stroke-[2.5] ${isLocating ? 'animate-spin' : ''}`} />
+                <RotateCcw size={10} className={`stroke-[2.5] ${isLocating ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
@@ -577,8 +577,8 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         
 
         {/* Global Search Bar (Desktop) */}
-        <div className="hidden lg:flex justify-center px-2 min-w-[180px] max-w-xs xl:max-w-sm w-full">
-          <div className="w-full max-w-xs xl:max-w-sm">
+        <div className="hidden xl:flex justify-center px-1 min-w-[140px] max-w-xs w-full shrink">
+          <div className="w-full max-w-xs">
             <GlobalSearch
               onNavigate={onNavigate}
               onSearch={onSearchChange}
@@ -588,7 +588,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         </div>
 
         {/* Desktop Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-5 xl:gap-7 h-full shrink-0">
+        <nav className="hidden lg:flex items-center gap-3.5 xl:gap-6 h-full shrink-0">
           {NAV_LINKS.map((link, idx) => {
             const isActive =
               currentPage === 'home'
@@ -607,7 +607,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
               >
                 <button
                   onClick={(e) => handleLinkClick(link.view, e)}
-                  className={`text-sm font-semibold text-gray-600 hover:text-brand-teal transition-colors inline-flex items-center gap-1 py-1 relative cursor-pointer ${
+                  className={`text-xs xl:text-sm font-semibold text-gray-600 hover:text-brand-teal transition-colors inline-flex items-center gap-1 py-1 relative cursor-pointer ${
                     isActive || (isCategories && megaMenuOpen) ? 'text-brand-teal font-bold' : ''
                   }`}
                   title={isCategories ? 'Double tap to open all categories' : ''}
@@ -630,12 +630,12 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         </nav>
 
         {/* Actions (Location, Wishlist, User, Cart) */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto lg:ml-0">
           
 
           {isAuthenticated && (
             <button
-              className={`relative p-2 rounded-full transition-all duration-200 active:scale-75 cursor-pointer ${
+              className={`relative p-2 rounded-full transition-all duration-200 active:scale-75 cursor-pointer shrink-0 ${
                 isWishlistOpen
                   ? 'text-brand-pink bg-pink-50 ring-2 ring-brand-pink/20 shadow-xs'
                   : 'text-brand-teal hover:bg-brand-teal/5'
@@ -657,7 +657,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
 
           {isAuthenticated ? (
             <div
-              className="hidden lg:flex items-center gap-1 relative"
+              className="hidden lg:flex items-center gap-1 relative shrink-0"
               ref={actionProfileRef}
               onMouseEnter={handleActionProfileEnter}
               onMouseLeave={handleActionProfileLeave}
@@ -725,17 +725,17 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
               )}
             </div>
           ) : (
-            <div className="hidden lg:flex items-center gap-1.5 ml-1">
+            <div className="hidden lg:flex items-center gap-1.5 ml-1 shrink-0">
               <button
                 onClick={() => openAuthModal('login')}
-                className="px-3.5 py-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark hover:bg-brand-teal/5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                className="px-3.5 py-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark hover:bg-brand-teal/5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
               >
                 <LogIn size={15} />
                 <span>Log In</span>
               </button>
               <button
                 onClick={() => openAuthModal('register')}
-                className="px-3.5 py-1.5 text-xs font-extrabold bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                className="px-3.5 py-1.5 text-xs font-extrabold bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
               >
                 <UserPlus size={14} />
                 <span>Sign Up</span>
@@ -746,7 +746,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
           {/* Cart Icon Button - Positioned right after Profile Card (Icon & Badge only) */}
           <button
             type="button"
-            className="relative p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 transition-all active:scale-95 cursor-pointer ml-1"
+            className="relative p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 transition-all active:scale-95 cursor-pointer shrink-0 border border-transparent hover:border-brand-teal/10"
             onClick={() => setIsCartOpen(true)}
             title="Open Shopping Cart"
             aria-label="Open Shopping Cart"
@@ -764,7 +764,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
           </button>
 
           <button
-            className="p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 lg:hidden cursor-pointer"
+            className="p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 lg:hidden cursor-pointer shrink-0"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}

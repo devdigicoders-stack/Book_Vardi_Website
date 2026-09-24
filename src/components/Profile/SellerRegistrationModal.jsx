@@ -110,6 +110,9 @@ export const INITIAL_FORM_STATE = {
   primaryBrands: [],
   estimatedSkuCount: '',
   sampleProductTitle: '',
+  sampleProductImage: '',
+  sampleProductPrice: '',
+  sampleProductMrp: '',
 
   // Step 10: Agreements
   acceptedTerms: false,
@@ -202,6 +205,7 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
   const [isDraggingAddressProof, setIsDraggingAddressProof] = useState(false);
   const [isDraggingProfilePhoto, setIsDraggingProfilePhoto] = useState(false);
   const [isDraggingStoreLogo, setIsDraggingStoreLogo] = useState(false);
+  const [isDraggingSampleProductImage, setIsDraggingSampleProductImage] = useState(false);
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -447,6 +451,38 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     setIsDraggingStoreLogo(false);
     const file = e.dataTransfer.files && e.dataTransfer.files[0];
     processStoreLogoFile(file);
+  };
+
+  const processSampleProductFile = (file) => {
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('⚠️ Product image file is too large. Please select an image under 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData(prev => ({
+        ...prev,
+        sampleProductImage: event.target.result
+      }));
+      showToast('📦 Sample Product Image uploaded successfully!');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSampleProductSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    processSampleProductFile(file);
+  };
+
+  const handleSampleProductDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingSampleProductImage(false);
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    processSampleProductFile(file);
   };
 
   const processAddressProofFile = (file) => {
@@ -1813,7 +1849,7 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-bold text-gray-700">Sample Product / Flagship Item Title</label>
+                  <label className="font-bold text-gray-700">Sample Product Title</label>
                   <input
                     type="text"
                     value={formData.sampleProductTitle}
@@ -1821,6 +1857,100 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                     className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs"
                     placeholder="e.g. DPS Navy Blazer (Size 34)"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Sample Product Selling Price (₹)</label>
+                  <input
+                    type="number"
+                    value={formData.sampleProductPrice}
+                    onChange={(e) => handleChange('sampleProductPrice', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-brand-teal"
+                    placeholder="e.g. 499"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700">Sample Product M.R.P. (₹)</label>
+                  <input
+                    type="number"
+                    value={formData.sampleProductMrp}
+                    onChange={(e) => handleChange('sampleProductMrp', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-red-500"
+                    placeholder="e.g. 699"
+                  />
+                </div>
+              </div>
+
+              {/* Sample Product Image Drag & Drop / Preview Box */}
+              <div className="space-y-2 pt-2">
+                <label className="font-bold text-gray-700">Sample Product Real Image Preview & File Upload</label>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSampleProductImage(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSampleProductImage(false); }}
+                  onDrop={handleSampleProductDrop}
+                  className={`p-4 rounded-2xl border-2 border-dashed transition-all ${
+                    isDraggingSampleProductImage
+                      ? 'border-brand-teal bg-teal-50/50 scale-[1.01]'
+                      : 'border-gray-200 bg-gray-50/60 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-gray-200 shadow-2xs shrink-0 bg-white group">
+                      <img
+                        src={formData.sampleProductImage || "https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80"}
+                        alt="Sample Product Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = "https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80";
+                        }}
+                      />
+                      {formData.sampleProductImage && (
+                        <button
+                          type="button"
+                          onClick={() => handleChange('sampleProductImage', '')}
+                          className="absolute top-1 right-1 bg-black/70 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                          title="Remove Product Image"
+                        >
+                          <X size={10} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex-1 space-y-2 text-center sm:text-left">
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-900">
+                          {isDraggingSampleProductImage ? 'Drop Product Image Here!' : 'Upload Product Photo'}
+                        </h4>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          Drag & drop real product image (PNG, JPG, WEBP under 5MB) or paste image URL.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center gap-2">
+                        <label className="px-3.5 py-1.5 rounded-xl bg-brand-teal text-white font-bold text-xs hover:bg-brand-teal-light transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5">
+                          <Upload size={14} />
+                          <span>{formData.sampleProductImage ? 'Change Image' : 'Upload Photo'}</span>
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            onChange={handleSampleProductSelect}
+                          />
+                        </label>
+
+                        <input
+                          type="text"
+                          value={formData.sampleProductImage}
+                          onChange={(e) => handleChange('sampleProductImage', e.target.value)}
+                          placeholder="Or paste image URL (https://...)"
+                          className="w-full sm:flex-1 px-3 py-1.5 rounded-xl border border-gray-200 text-xs focus:outline-none focus:border-brand-teal bg-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

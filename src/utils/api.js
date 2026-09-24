@@ -175,6 +175,12 @@ export async function removeFromWishlistInBackend(productId, phone = '', userId 
   });
 }
 
+export async function fetchPublicSettingsFromBackend() {
+  return requestApi('/admin/settings/public', {
+    method: 'GET'
+  });
+}
+
 export async function fetchCartFromBackend(phone = '', userId = '') {
   return requestApi('/cart', {
     method: 'GET',
@@ -497,11 +503,62 @@ export async function uploadAvatarToBackend(file, phone = '') {
 }
 
 export function resolveImageUrl(url) {
-  if (!url || typeof url !== 'string') return '';
-  if (/^https?:\/\//i.test(url) || url.startsWith('data:')) return url;
+  if (!url) return '';
+  const str = typeof url === 'string' ? url.trim() : (url?.url || url?.src || url?.path || '');
+  if (!str) return '';
+  if (/^https?:\/\//i.test(str) || str.startsWith('data:') || str.startsWith('blob:')) return str;
   const backendHost = apiBaseUrl.replace(/\/api\/?$/, '');
-  const cleanPath = url.startsWith('/') ? url : `/${url}`;
+  const cleanPath = str.startsWith('/') ? str : `/${str}`;
   return `${backendHost}${cleanPath}`;
+}
+
+export function getProductMainImage(product) {
+  if (!product) return '';
+  
+  const extractUrl = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string') return val.trim();
+    if (typeof val === 'object') {
+      return (val.url || val.src || val.path || val.data || val.link || '').trim();
+    }
+    return '';
+  };
+
+  // 1. Direct image properties (primary image uploaded by seller)
+  const directImg = extractUrl(product.image || product.coverImage || product.imageUrl || product.photo || product.primaryImage);
+  if (directImg) return directImg;
+
+  // 2. Check images array
+  if (Array.isArray(product.images) && product.images.length > 0) {
+    for (const img of product.images) {
+      const url = extractUrl(img);
+      if (url) return url;
+    }
+  }
+
+  // 3. Check sizeVariants images or image
+  if (Array.isArray(product.sizeVariants) && product.sizeVariants.length > 0) {
+    for (const v of product.sizeVariants) {
+      const vImg = extractUrl(v.image);
+      if (vImg) return vImg;
+      if (Array.isArray(v.images) && v.images.length > 0) {
+        for (const img of v.images) {
+          const url = extractUrl(img);
+          if (url) return url;
+        }
+      }
+    }
+  }
+
+  // 4. Kit Items if bundle
+  if (Array.isArray(product.kitItems) && product.kitItems.length > 0) {
+    for (const item of product.kitItems) {
+      const url = extractUrl(item.image);
+      if (url) return url;
+    }
+  }
+
+  return '';
 }
 
 // Product Reviews API calls
@@ -567,9 +624,11 @@ export async function registerSellerInBackend(formData) {
 }
 
 export async function submitSchoolBulkOrderInBackend(payload) {
+  const phone = payload?.contactPhone || payload?.phone || '';
   return requestApi('/schools/bulk-order', {
     method: 'POST',
-    data: payload
+    data: payload,
+    headers: phone ? { 'x-user-phone': phone } : {}
   });
 }
 
