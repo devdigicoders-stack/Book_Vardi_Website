@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Heart, ShoppingCart, ArrowRight, Trash2, Sparkles, ExternalLink } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import { resolveImageUrl, getProductMainImage } from '../../utils/api';
 
 export default function WishlistDrawer({ onNavigate }) {
   const {
@@ -81,13 +82,9 @@ export default function WishlistDrawer({ onNavigate }) {
               >
                 <div className="relative w-20 h-20 rounded-lg overflow-hidden shrink-0 border border-gray-100 bg-gray-50">
                   <img
-                    src={product.image}
+                    src={resolveImageUrl(getProductMainImage(product) || product.image)}
                     alt={product.name}
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = '/images/gel-pen-set.jpg';
-                    }}
                   />
                   {product.discountBadge && (
                     <span className="absolute top-1 left-1 bg-brand-pink text-white text-[8px] font-extrabold px-1 py-0.2 rounded">

@@ -10,6 +10,7 @@ import {
   Banknote,
   Lock,
   Plus,
+  Minus,
   X,
   ChevronRight,
   Sparkles,
@@ -18,10 +19,13 @@ import {
   Package,
   Clock,
   AlertTriangle,
-  Pencil
+  Pencil,
+  Trash2,
+  PlusCircle
 } from 'lucide-react';
-import { useCart } from '../../context/CartContext';
-import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, getUpiIntentUrl } from '../../utils/api';
+import { useCart, getCartItemKey } from '../../context/CartContext';
+import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, getUpiIntentUrl, resolveImageUrl, getProductMainImage } from '../../utils/api';
+import { getCartPaymentRestrictions } from '../../utils/paymentRestrictions';
 
 const POPULAR_BANKS = [
   { id: 'sbi', name: 'State Bank of India', code: 'SBI' },
@@ -30,93 +34,14 @@ const POPULAR_BANKS = [
   { id: 'axis', name: 'Axis Bank', code: 'AXIS' }
 ];
 
-export const getCartPaymentRestrictions = (cartItems = []) => {
-  let isCodDisabled = false;
-  let isOnlineDisabled = false;
-  let disabledCodReasonItem = null;
-  let disabledOnlineReasonItem = null;
-  let noPaymentMethodItem = null;
-
-  for (const item of cartItems) {
-    const rawPma = (
-      item.paymentMethodAllowed ||
-      item.payment_method_allowed ||
-      item.paymentMethod ||
-      item.product?.paymentMethodAllowed ||
-      item.product?.payment_method_allowed ||
-      item.seller?.paymentMethodAllowed ||
-      ''
-    );
-
-    const pma = String(rawPma).toLowerCase().trim().replace(/[\s\-_]/g, '');
-
-    let itemAllowsCod = true;
-    let itemAllowsOnline = true;
-
-    if (pma === 'onlineonly' || pma === 'prepaidonly' || pma === 'prepaid') {
-      itemAllowsCod = false;
-    } else if (pma === 'codonly' || pma === 'cashonly' || pma === 'cod' || pma === 'cash') {
-      itemAllowsOnline = false;
-    } else if (pma === 'none' || pma === 'disabled' || pma === 'neither') {
-      itemAllowsCod = false;
-      itemAllowsOnline = false;
-    }
-
-    if (item.acceptsCod === false || item.sellerAcceptsCod === false || item.seller?.acceptsCod === false || item.seller?.paymentMethods?.cod === false) {
-      itemAllowsCod = false;
-    }
-
-    if (item.acceptsOnline === false || item.sellerAcceptsOnline === false || item.seller?.acceptsOnline === false || item.seller?.paymentMethods?.online === false) {
-      itemAllowsOnline = false;
-    }
-
-    const allowedMethodsArray = (
-      Array.isArray(item.paymentMethodsAllowed) ? item.paymentMethodsAllowed :
-      Array.isArray(item.acceptedPaymentMethods) ? item.acceptedPaymentMethods :
-      Array.isArray(item.paymentMethods) ? item.paymentMethods :
-      Array.isArray(item.seller?.paymentMethods) ? item.seller.paymentMethods :
-      null
-    );
-
-    if (allowedMethodsArray !== null) {
-      const upperList = allowedMethodsArray.map((m) => String(m).toUpperCase().trim());
-      if (upperList.length === 0) {
-        itemAllowsCod = false;
-        itemAllowsOnline = false;
-      } else {
-        const hasCod = upperList.some((m) => m.includes('COD') || m.includes('CASH'));
-        const hasOnline = upperList.some((m) => m.includes('ONLINE') || m.includes('UPI') || m.includes('CARD') || m.includes('PREPAID') || m.includes('RAZORPAY'));
-        if (!hasCod) itemAllowsCod = false;
-        if (!hasOnline) itemAllowsOnline = false;
-      }
-    }
-
-    if (!itemAllowsCod) {
-      isCodDisabled = true;
-      if (!disabledCodReasonItem) disabledCodReasonItem = item;
-    }
-    if (!itemAllowsOnline) {
-      isOnlineDisabled = true;
-      if (!disabledOnlineReasonItem) disabledOnlineReasonItem = item;
-    }
-    if (!itemAllowsCod && !itemAllowsOnline) {
-      if (!noPaymentMethodItem) noPaymentMethodItem = item;
-    }
-  }
-
-  return {
-    isCodDisabled,
-    isOnlineDisabled,
-    areAllPaymentsDisabled: isCodDisabled && isOnlineDisabled,
-    disabledCodReasonItem,
-    disabledOnlineReasonItem,
-    noPaymentMethodItem
-  };
-};
-
 export default function CheckoutPage({ onNavigate }) {
   const {
     cartItems,
+    selectedCartItems,
+    toggleCartItemSelection,
+    selectAllCartItems,
+    updateQuantity,
+    removeFromCart,
     subtotal,
     freeShippingThreshold,
     userProfile,
@@ -218,7 +143,7 @@ export default function CheckoutPage({ onNavigate }) {
     disabledCodReasonItem,
     disabledOnlineReasonItem,
     noPaymentMethodItem
-  } = getCartPaymentRestrictions(cartItems);
+  } = getCartPaymentRestrictions(selectedCartItems);
 
   // Automatically switch active payment option if current selection is disabled by seller
   React.useEffect(() => {
@@ -248,6 +173,15 @@ export default function CheckoutPage({ onNavigate }) {
 
   // Loading state
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Disallowed Payment Mode Modal state
+  const [disallowedPaymentModal, setDisallowedPaymentModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    mode: '',
+    item: null
+  });
 
   // Empty cart redirect
   if (cartItems.length === 0) {
@@ -338,15 +272,42 @@ export default function CheckoutPage({ onNavigate }) {
   // Place Order submission
   const handlePlaceOrder = () => {
     if (areAllPaymentsDisabled) {
-      showToast(`⚠️ Cannot place order: Seller for '${noPaymentMethodItem?.name || 'item'}' has disabled all payment methods.`);
+      const itemName = noPaymentMethodItem?.name || 'item';
+      const msg = `Payment mode is not applicable for '${itemName}'. Seller has disabled all payment methods for this product.`;
+      showToast(`⚠️ ${msg}`);
+      setDisallowedPaymentModal({
+        isOpen: true,
+        title: 'Payment Mode Not Applicable',
+        message: msg,
+        mode: 'All',
+        item: noPaymentMethodItem
+      });
       return;
     }
     if (paymentMethod === 'cod' && isCodDisabled) {
-      showToast(`⚠️ Cash on Delivery (COD) is disabled for '${disabledCodReasonItem?.name || 'item'}' by the seller.`);
+      const itemName = disabledCodReasonItem?.name || 'item';
+      const msg = `Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'. Seller requires Online / Prepaid payment for this product.`;
+      showToast(`⚠️ ${msg}`);
+      setDisallowedPaymentModal({
+        isOpen: true,
+        title: 'Payment Mode Not Applicable',
+        message: msg,
+        mode: 'Cash on Delivery (COD)',
+        item: disabledCodReasonItem
+      });
       return;
     }
     if (paymentMethod !== 'cod' && isOnlineDisabled) {
-      showToast(`⚠️ Online Payment is disabled for '${disabledOnlineReasonItem?.name || 'item'}' by the seller.`);
+      const itemName = disabledOnlineReasonItem?.name || 'item';
+      const msg = `Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'. Seller accepts Cash on Delivery (COD) only.`;
+      showToast(`⚠️ ${msg}`);
+      setDisallowedPaymentModal({
+        isOpen: true,
+        title: 'Payment Mode Not Applicable',
+        message: msg,
+        mode: 'UPI / Online Pay',
+        item: disabledOnlineReasonItem
+      });
       return;
     }
 
@@ -852,55 +813,100 @@ export default function CheckoutPage({ onNavigate }) {
 
                 {/* Payment Type Selection Tabs (UPI & COD) */}
                 <div className="grid grid-cols-2 gap-3.5">
+                {/* Payment Type Selection Tabs (UPI & COD) */}
+                <div className="grid grid-cols-2 gap-3.5">
                   <button
                     type="button"
-                    disabled={isOnlineDisabled || areAllPaymentsDisabled}
                     onClick={() => {
-                      if (!isOnlineDisabled && !areAllPaymentsDisabled) {
+                      if (areAllPaymentsDisabled) {
+                        const itemName = noPaymentMethodItem?.name || 'this product';
+                        const msg = `Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'. The seller has disabled all payment options for this product.`;
+                        showToast(`⚠️ Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'`);
+                        setDisallowedPaymentModal({
+                          isOpen: true,
+                          title: 'Payment Mode Not Applicable',
+                          message: msg,
+                          mode: 'UPI / Online Pay',
+                          item: noPaymentMethodItem
+                        });
+                      } else if (isOnlineDisabled) {
+                        const itemName = disabledOnlineReasonItem?.name || 'this product';
+                        const msg = `Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'. The seller accepts Cash on Delivery (COD) only.`;
+                        showToast(`⚠️ Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'`);
+                        setDisallowedPaymentModal({
+                          isOpen: true,
+                          title: 'Payment Mode Not Applicable',
+                          message: msg,
+                          mode: 'UPI / Online Pay',
+                          item: disabledOnlineReasonItem
+                        });
+                      } else {
                         setPaymentMethod('upi');
                       }
                     }}
-                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all ${
+                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                       isOnlineDisabled || areAllPaymentsDisabled
-                        ? 'opacity-40 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed pointer-events-none'
+                        ? 'bg-rose-50/70 text-rose-800 border-rose-300 hover:bg-rose-100/80 shadow-2xs'
                         : paymentMethod === 'upi'
-                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs cursor-pointer'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 cursor-pointer'
+                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
                     }`}
                   >
                     <Smartphone size={20} />
                     <span className="text-xs font-extrabold">UPI / Online Pay</span>
                     {(isOnlineDisabled || areAllPaymentsDisabled) && (
-                      <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
-                        Not Applicable (Disabled)
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 shadow-2xs">
+                        🚫 Disallowed (Click for info)
                       </span>
                     )}
                   </button>
 
                   <button
                     type="button"
-                    disabled={isCodDisabled || areAllPaymentsDisabled}
                     onClick={() => {
-                      if (!isCodDisabled && !areAllPaymentsDisabled) {
+                      if (areAllPaymentsDisabled) {
+                        const itemName = noPaymentMethodItem?.name || 'this product';
+                        const msg = `Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'. The seller has disabled all payment options for this product.`;
+                        showToast(`⚠️ Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'`);
+                        setDisallowedPaymentModal({
+                          isOpen: true,
+                          title: 'Payment Mode Not Applicable',
+                          message: msg,
+                          mode: 'Cash on Delivery (COD)',
+                          item: noPaymentMethodItem
+                        });
+                      } else if (isCodDisabled) {
+                        const itemName = disabledCodReasonItem?.name || 'this product';
+                        const msg = `Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'. The seller requires Online / Prepaid payment for this product.`;
+                        showToast(`⚠️ Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'`);
+                        setDisallowedPaymentModal({
+                          isOpen: true,
+                          title: 'Payment Mode Not Applicable',
+                          message: msg,
+                          mode: 'Cash on Delivery (COD)',
+                          item: disabledCodReasonItem
+                        });
+                      } else {
                         setPaymentMethod('cod');
                       }
                     }}
-                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all ${
+                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                       isCodDisabled || areAllPaymentsDisabled
-                        ? 'opacity-40 bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed pointer-events-none'
+                        ? 'bg-amber-50/70 text-amber-900 border-amber-300 hover:bg-amber-100/80 shadow-2xs'
                         : paymentMethod === 'cod'
-                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs cursor-pointer'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 cursor-pointer'
+                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
                     }`}
                   >
                     <Banknote size={20} />
                     <span className="text-xs font-extrabold">Cash on Delivery (COD)</span>
                     {(isCodDisabled || areAllPaymentsDisabled) && (
-                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                        Not Applicable (Disabled)
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 shadow-2xs">
+                        🚫 Disallowed (Click for info)
                       </span>
                     )}
                   </button>
+                </div>
                 </div>
               </div>
 
@@ -1008,36 +1014,127 @@ export default function CheckoutPage({ onNavigate }) {
                   Order Summary
                 </h3>
                 <span className="text-xs font-bold bg-brand-teal/5 text-brand-teal px-2.5 py-1 rounded-full">
-                  {cartItems.length} {cartItems.length === 1 ? 'Item' : 'Items'}
+                  {selectedCartItems.length} to buy ({cartItems.length} in cart)
                 </span>
               </div>
 
-              {/* Items Preview (Overflow Hidden & Scrollbar Hidden) */}
+              {/* Selection Bar & Add Product CTA */}
+              <div className="flex items-center justify-between text-xs font-bold text-gray-800 bg-teal-50/70 p-2.5 rounded-xl border border-teal-100">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={cartItems.length > 0 && cartItems.every((item) => item.selected !== false)}
+                    onChange={(e) => selectAllCartItems(e.target.checked)}
+                    className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal cursor-pointer accent-teal-700"
+                  />
+                  <span>Select All Items ({selectedCartItems.length} selected)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('products')}
+                  className="text-brand-teal hover:text-brand-teal-light font-extrabold flex items-center gap-1 text-xs cursor-pointer bg-white px-2 py-1 rounded-md border border-brand-teal/20 shadow-2xs hover:bg-brand-teal/5 transition-all"
+                >
+                  <PlusCircle size={13} className="text-brand-teal" />
+                  <span>+ Add Product</span>
+                </button>
+              </div>
+
+              {/* Items List with Selection & Steppers */}
               <div
-                className="space-y-3 max-h-56 overflow-y-auto hide-scrollbar pr-1"
+                className="space-y-3 max-h-64 overflow-y-auto hide-scrollbar pr-1"
                 style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
               >
-                {cartItems.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3">
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="w-12 h-12 rounded-xl object-cover bg-gray-100 border border-gray-200 shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-gray-900 truncate">
-                        {item.name}
-                      </p>
-                      <p className="text-[11px] text-gray-500 truncate">
-                        Qty: {item.quantity} × ₹{item.price}
-                      </p>
+                {cartItems.map((item) => {
+                  const isSelected = item.selected !== false;
+                  const itemKey = item.cartItemId || getCartItemKey(item);
+                  const variantText = item.variantName || item.selectedSize || item.selectedColor || '';
+
+                  return (
+                    <div
+                      key={itemKey}
+                      className={`flex items-center gap-2.5 p-2 rounded-xl border transition-all ${
+                        isSelected ? 'bg-white border-gray-200 shadow-2xs' : 'bg-gray-50/80 border-dashed border-gray-200 opacity-60'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleCartItemSelection(itemKey)}
+                        className="w-4 h-4 rounded text-brand-teal focus:ring-brand-teal cursor-pointer accent-teal-700 shrink-0"
+                        title={isSelected ? 'Uncheck to keep in cart without buying' : 'Check to buy now'}
+                      />
+
+                      <img
+                        src={resolveImageUrl(getProductMainImage(item) || item.image)}
+                        alt={item.name}
+                        className="w-11 h-11 rounded-lg object-cover bg-gray-100 border border-gray-200 shrink-0"
+                      />
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="text-xs font-bold text-gray-900 truncate">
+                            {item.name}
+                          </p>
+                          {!isSelected && (
+                            <span className="text-[9px] font-bold text-gray-400 bg-gray-200/70 px-1.5 py-0.5 rounded shrink-0">
+                              Stays in Cart
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
+                          <span className="text-[11px] font-extrabold text-brand-teal">
+                            ₹{item.price} {variantText ? `• ${variantText}` : ''}
+                          </span>
+
+                          {/* Stepper with count increment and decrement buttons */}
+                          <div className="flex items-center border border-gray-200 rounded-md bg-gray-50 overflow-hidden shadow-2xs shrink-0">
+                            <button
+                              type="button"
+                              className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
+                              onClick={() => updateQuantity(itemKey, -1)}
+                              aria-label="Decrease quantity"
+                              title="Decrease quantity"
+                            >
+                              <Minus size={10} strokeWidth={2.5} />
+                            </button>
+                            <span className="w-6 text-center text-xs font-extrabold text-gray-900 bg-white py-0.5">{item.quantity}</span>
+                            <button
+                              type="button"
+                              className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
+                              onClick={() => updateQuantity(itemKey, 1)}
+                              aria-label="Increase quantity"
+                              title="Increase quantity (add more)"
+                            >
+                              <Plus size={10} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-extrabold text-gray-900 block">
+                          ₹{item.price * item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeFromCart(itemKey)}
+                          className="text-gray-400 hover:text-rose-600 transition-colors p-0.5 mt-0.5 cursor-pointer"
+                          title="Remove item"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-gray-900 shrink-0">
-                      ₹{item.price * item.quantity}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              {cartItems.length > selectedCartItems.length && (
+                <div className="text-[11px] text-gray-600 font-semibold italic bg-gray-50 p-2 rounded-xl text-center border border-gray-200">
+                  ℹ️ {cartItems.length - selectedCartItems.length} unselected item(s) will remain in your cart after order placement.
+                </div>
+              )}
 
               {/* Coupon Code Section (Hidden by Default, Appears on Toggle) */}
               <div className="pt-3 border-t border-gray-100 space-y-2.5">
@@ -1141,7 +1238,7 @@ export default function CheckoutPage({ onNavigate }) {
               {/* Price Calculation Breakdown */}
               <div className="space-y-2 pt-3 border-t border-gray-100 text-xs text-gray-600">
                 <div className="flex justify-between">
-                  <span>Cart Subtotal</span>
+                  <span>Selected Subtotal ({selectedCartItems.length} items)</span>
                   <span className="font-semibold text-gray-900">₹{subtotal}</span>
                 </div>
 
@@ -1186,6 +1283,7 @@ export default function CheckoutPage({ onNavigate }) {
                 type="button"
                 disabled={
                   isSubmitting ||
+                  selectedCartItems.length === 0 ||
                   areAllPaymentsDisabled ||
                   (paymentMethod === 'cod' && isCodDisabled) ||
                   ((paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking') && isOnlineDisabled)
@@ -1197,6 +1295,11 @@ export default function CheckoutPage({ onNavigate }) {
                   <>
                     <Loader2 size={18} className="animate-spin text-brand-teal-dark" />
                     <span>Processing Secure Order...</span>
+                  </>
+                ) : selectedCartItems.length === 0 ? (
+                  <>
+                    <AlertTriangle size={16} className="text-amber-900" />
+                    <span>SELECT AT LEAST 1 ITEM TO BUY</span>
                   </>
                 ) : areAllPaymentsDisabled ? (
                   <>
@@ -1211,7 +1314,7 @@ export default function CheckoutPage({ onNavigate }) {
                 ) : (
                   <>
                     <Lock size={16} />
-                    <span>PLACE ORDER • ₹{grandTotal}</span>
+                    <span>PLACE ORDER • ₹{grandTotal} ({selectedCartItems.length} ITEMS)</span>
                   </>
                 )}
               </button>
@@ -1555,6 +1658,48 @@ export default function CheckoutPage({ onNavigate }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Disallowed Payment Mode Modal Popup */}
+      {disallowedPaymentModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-rose-100 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-xs">
+              <AlertTriangle size={28} />
+            </div>
+
+            <div>
+              <h3 className="font-display font-extrabold text-lg text-gray-900">
+                {disallowedPaymentModal.title || 'Payment Mode Not Applicable'}
+              </h3>
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed bg-gray-50 p-3 rounded-2xl border border-gray-200 font-medium">
+                {disallowedPaymentModal.message}
+              </p>
+            </div>
+
+            {disallowedPaymentModal.item && (
+              <div className="flex items-center gap-3 p-2.5 bg-rose-50/60 rounded-xl border border-rose-200 text-left">
+                <img
+                  src={resolveImageUrl(getProductMainImage(disallowedPaymentModal.item) || disallowedPaymentModal.item.image)}
+                  alt={disallowedPaymentModal.item.name}
+                  className="w-10 h-10 rounded-lg object-cover bg-white border border-gray-200 shrink-0"
+                />
+                <div className="min-w-0 flex-1 text-xs">
+                  <p className="font-bold text-gray-900 truncate">{disallowedPaymentModal.item.name}</p>
+                  <p className="text-[10px] text-rose-700 font-semibold">Product in Cart</p>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setDisallowedPaymentModal({ isOpen: false, title: '', message: '', mode: '', item: null })}
+              className="w-full py-3 bg-brand-teal hover:bg-brand-teal-light text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
+            >
+              Understood, Got It
+            </button>
           </div>
         </div>
       )}

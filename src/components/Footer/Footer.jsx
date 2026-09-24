@@ -10,7 +10,7 @@ import { CATEGORIES } from '../../constants/categories';
 import { useCart } from '../../context/CartContext';
 
 export default function Footer({ onNavigate }) {
-  const { isAuthenticated, sellerStatus, isAdmin, isSeller } = useCart();
+  const { isAuthenticated, sellerStatus, isAdmin, isSeller, freeShippingThreshold = 99 } = useCart();
   const [showAllCategories, setShowAllCategories] = useState(false);
   return (
     <footer className="bg-brand-teal text-white pt-16 border-t border-white/10" id="footer">
@@ -218,7 +218,7 @@ export default function Footer({ onNavigate }) {
                 <Truck size={18} className="text-brand-yellow shrink-0" />
                 <div>
                   <div className="text-[11px] sm:text-xs font-bold text-white">FREE SHIPPING</div>
-                  <div className="text-[10px] sm:text-[11px] text-white/60">Over ₹99</div>
+                  <div className="text-[10px] sm:text-[11px] text-white/60">Over ₹{freeShippingThreshold}</div>
                 </div>
               </div>
 

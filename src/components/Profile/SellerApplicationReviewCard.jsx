@@ -16,6 +16,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { ONBOARDING_STEPS } from './SellerRegistrationModal';
+import { resolveImageUrl } from '../../utils/api';
 
 export default function SellerApplicationReviewCard({ applicationData, onEditStep, onOpenSellerDashboard }) {
   const [expandedSections, setExpandedSections] = useState({
@@ -546,6 +547,48 @@ export default function SellerApplicationReviewCard({ applicationData, onEditSte
                 <div>
                   <span className="block text-gray-400 font-medium text-[11px]">Estimated Catalog Volume</span>
                   <span className="font-bold text-gray-800">{data.estimatedSkuCount || '250+ SKUs'}</span>
+                </div>
+              </div>
+
+              {/* Real Product Info & Image Preview */}
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                <span className="block text-gray-400 font-medium text-[11px]">Real Product Info & Image Preview</span>
+                <div className="p-3.5 rounded-2xl bg-gradient-to-br from-gray-50 via-teal-50/20 to-amber-50/30 border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden border border-gray-200 shadow-2xs shrink-0 bg-white">
+                    <img
+                      src={resolveImageUrl(data.sampleProductImage || data.sampleProductPhoto || data.productImage || 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=800&auto=format&fit=crop&q=80')}
+                      alt={data.sampleProductTitle || 'Sample Product'}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=800&auto=format&fit=crop&q=80';
+                      }}
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-extrabold uppercase text-brand-teal bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                        Flagship Sample
+                      </span>
+                      {data.selectedCategories?.[0] && (
+                        <span className="text-[10px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md">
+                          {data.selectedCategories[0]}
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="font-display font-bold text-sm text-gray-900 leading-snug">
+                      {data.sampleProductTitle || 'Academic School Kit / Uniform Sample Item'}
+                    </h4>
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-display font-extrabold text-sm text-brand-teal">
+                        Price: ₹{data.sampleProductPrice || 499}
+                      </span>
+                      <span className="text-xs text-red-500 font-semibold flex items-center gap-1">
+                        <span className="text-[10px] text-gray-400 uppercase">M.R.P.:</span>
+                        <span className="line-through text-red-500 font-semibold decoration-red-500">₹{data.sampleProductMrp || 699}</span>
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

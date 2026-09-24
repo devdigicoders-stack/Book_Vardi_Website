@@ -1,8 +1,6 @@
 import React from 'react';
 import { Printer, Download, X, ShieldCheck, Building2, MapPin, FileText } from 'lucide-react';
-import { downloadInvoiceApi } from '../../utils/api';
-
-const FALLBACK_IMAGE = '/images/gel-pen-set.jpg';
+import { downloadInvoiceApi, resolveImageUrl } from '../../utils/api';
 
 export default function TaxInvoiceModal({ isOpen, onClose, order, userProfile, role = 'user' }) {
   if (!isOpen || !order) return null;
@@ -46,11 +44,27 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, userProfile, r
     }
   ];
 
+  const getProductGstRate = (item) => {
+    const explicitGst = item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.gst ?? item.taxRate ?? item.productId?.gstPercent ?? item.productId?.gstRate ?? item.productId?.gst ?? item.productId?.gstPercentage ?? item.productId?.taxRate;
+    if (explicitGst !== undefined && explicitGst !== null && !isNaN(Number(explicitGst))) {
+      return Number(explicitGst);
+    }
+    const category = (item.category || item.productId?.category || '').toLowerCase();
+    if (category.includes('book')) return 0;
+    if (category.includes('uniform') || category.includes('clothing')) return 5;
+    if (category.includes('shoe')) return 12;
+    return 18;
+  };
+
   const subtotal = order.subtotal || items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
-  const taxAmount = Math.round(subtotal * 0.05); // 5% GST estimate for educational supplies
+  const taxAmount = items.reduce((acc, item) => {
+    const rate = getProductGstRate(item);
+    const itemNet = Number(item.price || 0) * Number(item.quantity || 1);
+    return acc + (rate > 0 ? (itemNet - (itemNet / (1 + rate / 100))) : 0);
+  }, 0);
   const shippingCost = order.shippingCost !== undefined ? order.shippingCost : 0;
   const discount = order.discount || 0;
-  const grandTotal = order.total || (subtotal + taxAmount + shippingCost - discount);
+  const grandTotal = order.total || (subtotal + shippingCost - discount);
 
   // Helper to convert number to words (Indian rupees)
   const numberToWords = (num) => {
@@ -198,7 +212,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, userProfile, r
                   const qty = Number(item.quantity || 1);
                   const price = Number(item.price || 0);
                   const itemNet = price * qty;
-                  const itemImg = item.image || (Array.isArray(item.images) && item.images[0]) || order.image || FALLBACK_IMAGE;
+                  const itemImgRaw = item.image || (Array.isArray(item.images) && item.images[0]) || order.image;
+                  const itemImg = itemImgRaw ? resolveImageUrl(itemImgRaw) : '';
+                  const itemGstRate = getProductGstRate(item);
 
                   return (
                     <tr key={item.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
@@ -206,15 +222,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, userProfile, r
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-2.5">
                           {/* REAL PRODUCT IMAGE THUMBNAIL */}
-                          <img
-                            src={itemImg}
-                            alt={item.name}
-                            className="w-10 h-10 object-cover rounded-lg border border-gray-200 shrink-0 bg-gray-50 shadow-2xs"
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = FALLBACK_IMAGE;
-                            }}
-                          />
+                          {itemImg ? (
+                            <img
+                              src={itemImg}
+                              alt={item.name}
+                              className="w-10 h-10 object-cover rounded-lg border border-gray-200 shrink-0 bg-gray-50 shadow-2xs"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg border border-gray-200 shrink-0 bg-gray-100 flex items-center justify-center text-gray-400 text-[9px] font-bold">
+                              No Img
+                            </div>
+                          )}
                           <div>
                             <p className="font-bold text-gray-900 leading-snug">{item.name}</p>
                             <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium mt-0.5">
@@ -228,7 +246,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, userProfile, r
                       <td className="py-2.5 px-3 text-center font-mono text-gray-600">{item.hsnCode || '4901'}</td>
                       <td className="py-2.5 px-3 text-center font-bold text-gray-900">{qty}</td>
                       <td className="py-2.5 px-3 text-right font-mono">₹{price.toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-gray-600">5% GST</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600">{itemGstRate}% GST</td>
                       <td className="py-2.5 px-3 text-right font-bold text-gray-900 font-mono">₹{itemNet.toFixed(2)}</td>
                     </tr>
                   );
@@ -261,7 +279,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, userProfile, r
                 <span className="font-mono">₹{subtotal.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
-                <span>Estimated GST (5%):</span>
+                <span>GST Tax (Product Priority):</span>
                 <span className="font-mono">₹{taxAmount.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-gray-600">

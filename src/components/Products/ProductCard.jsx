@@ -1,11 +1,18 @@
-import React from 'react';
-import { Heart, Star, ShoppingCart, Eye } from 'lucide-react';
+import React, { useState } from 'react';
+import { Heart, Star, ShoppingCart, Eye, Loader2 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
-import { resolveImageUrl } from '../../utils/api';
+import { resolveImageUrl, getProductMainImage } from '../../utils/api';
+
+import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
 
 export default function ProductCard({ product }) {
-  const { wishlist, toggleWishlist, addToCart, openProductDetails, cartItems } = useCart();
+  const { wishlist, toggleWishlist, addToCart, openProductDetails, cartItems, showToast } = useCart();
   
+  const [imgLoading, setImgLoading] = useState(true);
+  const [imgError, setImgError] = useState(false);
+
+  const paymentRestrictions = getProductPaymentRestrictions(product);
+
   const productId = product?._id || product?.id;
   const isWishlisted = wishlist.some((id) => String(id) === String(productId));
   const cartItem = cartItems?.find((item) => String(item._id || item.id) === String(productId));
@@ -26,8 +33,8 @@ export default function ProductCard({ product }) {
 
   const price = minPrice;
   const originalPrice = product?.originalPrice || product?.mrp || (price > 0 && product?.discountPercentage ? Math.round(price / (1 - product.discountPercentage / 100)) : null);
-  const rawImg = product?.image || (Array.isArray(product?.images) && product.images[0]) || product?.coverImage || (Array.isArray(product?.kitItems) && product.kitItems[0]?.image) || '/images/gel-pen-set.jpg';
-  const image = resolveImageUrl(rawImg);
+  const rawImg = getProductMainImage(product);
+  const image = rawImg ? resolveImageUrl(rawImg) : '';
   const rawRating = product?.rating ?? product?.averageRating;
   const rating = rawRating !== undefined && rawRating !== null ? Number(rawRating) : 0;
   const rawReviewsCount = product?.reviewsCount ?? product?.reviews ?? product?.numReviews;
@@ -48,7 +55,7 @@ export default function ProductCard({ product }) {
       className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl overflow-hidden flex flex-col hover:shadow-xl hover:border-brand-teal/20 transition-all duration-300 transform hover:-translate-y-1 group cursor-pointer"
     >
       {/* Product Image Area */}
-      <div className="relative w-full pt-[100%] bg-gray-50 overflow-hidden">
+      <div className="relative w-full pt-[100%] bg-gray-50 overflow-hidden flex items-center justify-center">
         {badge && (
           <span
             className={`absolute top-2 left-2 sm:top-3 sm:left-3 z-10 text-[9px] sm:text-[10px] font-extrabold tracking-wider px-1.5 sm:px-2 py-0.5 rounded uppercase shadow-xs ${getBadgeStyle(
@@ -81,19 +88,32 @@ export default function ProductCard({ product }) {
           />
         </button>
 
-        <img
-          src={image}
-          alt={title}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          loading="lazy"
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = '/images/gel-pen-set.jpg';
-          }}
-        />
+        {/* Loader shown while image is loading or if no image/error */}
+        {(imgLoading || imgError || !image) && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/90 z-0">
+            <Loader2 className="w-6 h-6 animate-spin text-brand-teal" />
+            {imgError && <span className="text-[10px] text-gray-400 font-medium mt-1">Loading image...</span>}
+          </div>
+        )}
+
+        {image && !imgError && (
+          <img
+            src={image}
+            alt={title}
+            className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+              imgLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+            }`}
+            loading="lazy"
+            onLoad={() => setImgLoading(false)}
+            onError={() => {
+              setImgError(true);
+              setImgLoading(false);
+            }}
+          />
+        )}
 
         {/* Quick View Hover Indicator */}
-        <div className="absolute inset-0 bg-black/15 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 bg-black/15 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-10">
           <span className="inline-flex items-center gap-1.5 bg-white/95 backdrop-blur text-brand-teal text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-md transform translate-y-2 group-hover:translate-y-0 transition-transform">
             <Eye size={14} />
             <span>Quick View</span>
@@ -167,15 +187,21 @@ export default function ProductCard({ product }) {
             </span>
           </div>
 
+
           {/* Add to Cart / Select Size Button with Live Item Count */}
           <button
-            className={`w-full mt-1.5 sm:mt-2 py-1.5 sm:py-2 px-2 sm:px-3 font-bold rounded-lg text-[11px] sm:text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 ${
+            disabled={paymentRestrictions.allDisabled}
+            className={`w-full mt-1.5 sm:mt-2 py-1.5 sm:py-2 px-2 sm:px-3 font-bold rounded-lg text-[11px] sm:text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
               countInCart > 0
                 ? 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark border border-brand-yellow-hover ring-2 ring-brand-yellow/30 font-extrabold'
                 : 'bg-brand-yellow/25 hover:bg-brand-yellow text-brand-teal border border-brand-yellow/60'
             }`}
             onClick={(e) => {
               e.stopPropagation();
+              if (paymentRestrictions.allDisabled) {
+                if (showToast) showToast('⚠️ Payment disabled by seller for this item');
+                return;
+              }
               if (sizeVariants.length > 0) {
                 openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount });
               } else {
@@ -186,9 +212,11 @@ export default function ProductCard({ product }) {
           >
             <ShoppingCart size={13} className="shrink-0" />
             <span className="truncate">
-              {sizeVariants.length > 0 
-                ? (countInCart > 0 ? `Select Size (${countInCart})` : 'Select Size')
-                : (countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart')}
+              {paymentRestrictions.allDisabled
+                ? 'Payment Disabled'
+                : sizeVariants.length > 0 
+                  ? (countInCart > 0 ? `Select Size (${countInCart})` : 'Select Size')
+                  : (countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart')}
             </span>
           </button>
         </div>
