@@ -2,14 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, ArrowUpRight } from 'lucide-react';
 import { fetchAnnouncementsFromBackend } from '../../utils/api';
 
-const DEFAULT_ANNOUNCEMENTS = [
-  { id: 1, text: 'Free Shipping on Orders Over ₹499', badge: 'FREE SHIPPING', link: '', priority: 1, isActive: true },
-  { id: 2, text: '10% OFF Your First Order | Use Code: SCHOOL10', badge: '10% OFF', link: '', priority: 2, isActive: true },
-  { id: 3, text: '30-Day Hassle-Free Returns on Uniforms', badge: 'EASY RETURNS', link: '', priority: 3, isActive: true }
-];
-
 export default function TopAnnouncementBar({ onNavigate, onVisibilityChange }) {
-  const [announcements, setAnnouncements] = useState(DEFAULT_ANNOUNCEMENTS);
+  const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
     let isMounted = true;

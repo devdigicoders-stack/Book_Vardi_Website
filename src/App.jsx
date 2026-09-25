@@ -3,7 +3,6 @@ import { CartProvider, useCart } from './context/CartContext';
 import { LocationProvider } from './context/LocationContext';
 import TopAnnouncementBar from './components/Header/TopAnnouncementBar';
 import Navbar from './components/Header/Navbar';
-import LocationPermissionModal from './components/Common/LocationPermissionModal';
 import HeroSection from './components/Hero/HeroSection';
 import FeaturesBar from './components/Features/FeaturesBar';
 import CategorySection from './components/Categories/CategorySection';
@@ -13,6 +12,7 @@ import PromoBanners from './components/Promotions/PromoBanners';
 import NewsletterSection from './components/Newsletter/NewsletterSection';
 import Footer from './components/Footer/Footer';
 import Toast from './components/Common/Toast';
+import SplashScreen from './components/Common/SplashScreen';
 
 const lazyWithRetry = (componentImport) =>
   lazy(async () => {
@@ -91,6 +91,23 @@ const SchoolDetailsPage = lazyWithRetry(() => import('./components/Pages/SchoolD
 const SellerRegistrationPage = lazyWithRetry(() => import('./components/Pages/SellerRegistrationPage'));
 const SchoolBulkOrderPage = lazyWithRetry(() => import('./components/Pages/SchoolBulkOrderPage'));
 const DeliveryPartnerPage = lazyWithRetry(() => import('./components/Pages/DeliveryPartnerPage'));
+const LocationPermissionModal = lazyWithRetry(() => import('./components/Common/LocationPermissionModal'));
+
+// Pre-fetch critical secondary route chunks in background during browser idle time
+export const prefetchSecondaryRoutes = () => {
+  if (typeof window === 'undefined') return;
+  const scheduleIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1200));
+
+  scheduleIdle(() => {
+    import('./components/Pages/AllProductsPage');
+    import('./components/Products/ProductDetailPage');
+    import('./components/Cart/CartDrawer');
+    import('./components/Wishlist/WishlistDrawer');
+    import('./components/Auth/AuthModal');
+    import('./components/Pages/CheckoutPage');
+    import('./components/Common/LocationPermissionModal');
+  });
+};
 
 function getInitialPage() {
   try {
@@ -128,6 +145,11 @@ function MainStore() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeProfileTab, setActiveProfileTab] = useState('profile');
+
+  // Priority: Home UI is loaded first. Pre-fetch secondary pages in background during idle time.
+  React.useEffect(() => {
+    prefetchSecondaryRoutes();
+  }, []);
 
   // Synchronize browser history / URL hash
   React.useEffect(() => {
@@ -222,6 +244,9 @@ function MainStore() {
 
   return (
     <div className={`min-h-screen flex flex-col ${hasAnnouncement ? 'pt-[104px]' : 'pt-[76px]'} text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal transition-all duration-200`}>
+      {/* Brand Splash Screen on Initial Load */}
+      <SplashScreen />
+
       {/* Top Banner with announcements pinned to the viewport */}
       <TopAnnouncementBar onNavigate={navigateTo} onVisibilityChange={setHasAnnouncement} />
 
@@ -372,7 +397,9 @@ function MainStore() {
       <Toast />
 
       {/* Location Permission & Discovery Radius Modal */}
-      <LocationPermissionModal />
+      <Suspense fallback={null}>
+        <LocationPermissionModal />
+      </Suspense>
     </div>
   );
 }

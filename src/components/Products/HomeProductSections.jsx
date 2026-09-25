@@ -53,10 +53,18 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
       const rawSpecial = specialRes?.products || (Array.isArray(specialRes) ? specialRes : []);
       const rawRecommended = recommendedRes?.products || (Array.isArray(recommendedRes) ? recommendedRes : []);
 
-      const recentList = rawRecent.length > 0 ? rawRecent : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(0, 8, activeCategory));
-      const featuredList = rawFeatured.length > 0 ? rawFeatured : (rawRecommended.length > 0 ? rawRecommended : getFallbackProducts(2, 8, activeCategory));
-      const specialList = rawSpecial.length > 0 ? rawSpecial : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(4, 8, activeCategory));
-      const recommendedList = rawRecommended.length > 0 ? rawRecommended : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(6, 8, activeCategory));
+      const filterApproved = (list) => {
+        if (!Array.isArray(list)) return [];
+        return list.filter(p => {
+          const appStat = String(p.approvalStatus || '').toLowerCase();
+          return appStat !== 'pending' && appStat !== 'rejected';
+        });
+      };
+
+      const recentList = filterApproved(rawRecent.length > 0 ? rawRecent : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(0, 8, activeCategory)));
+      const featuredList = filterApproved(rawFeatured.length > 0 ? rawFeatured : (rawRecommended.length > 0 ? rawRecommended : getFallbackProducts(2, 8, activeCategory)));
+      const specialList = filterApproved(rawSpecial.length > 0 ? rawSpecial : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(4, 8, activeCategory)));
+      const recommendedList = filterApproved(rawRecommended.length > 0 ? rawRecommended : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(6, 8, activeCategory)));
 
       setRecentlyViewed(recentList);
       setFeatured(featuredList);

@@ -30,7 +30,7 @@ import {
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { resolveImageUrl } from '../../utils/api';
+import { resolveImageUrl, parseSizeVariants } from '../../utils/api';
 import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
 import GrabKitSection from './GrabKitSection';
 
@@ -61,21 +61,20 @@ const getProductGallery = (product) => {
     });
   }
 
-  if (Array.isArray(product.sizeVariants)) {
-    product.sizeVariants.forEach(v => {
-      const vImg = extractUrl(v.image);
-      if (vImg && !list.includes(vImg)) list.push(vImg);
+  const variants = parseSizeVariants(product);
+  variants.forEach(v => {
+    const vImg = extractUrl(v.image);
+    if (vImg && !list.includes(vImg)) list.push(vImg);
 
-      if (Array.isArray(v.images)) {
-        v.images.forEach(img => {
-          const url = extractUrl(img);
-          if (url && !list.includes(url)) {
-            list.push(url);
-          }
-        });
-      }
-    });
-  }
+    if (Array.isArray(v.images)) {
+      v.images.forEach(img => {
+        const url = extractUrl(img);
+        if (url && !list.includes(url)) {
+          list.push(url);
+        }
+      });
+    }
+  });
 
   const resolved = list.map(img => resolveImageUrl(img)).filter(Boolean);
   return [...new Set(resolved)];
@@ -148,9 +147,10 @@ export default function ProductDetailPage({ onNavigate }) {
     realBaseMrp = Math.round(basePrice / (1 - baseDiscountPct / 100));
   }
 
-  // Size Variants handling with individual price, MRP and image
-  const sizeVariants = Array.isArray(selectedProduct?.sizeVariants) && selectedProduct.sizeVariants.length > 0
-    ? selectedProduct.sizeVariants
+  // Size Variants & Base Version handling with individual prices, MRPs and images
+  const parsedVariants = parseSizeVariants(selectedProduct);
+  const rawSizeVariants = parsedVariants.length > 0
+    ? parsedVariants
     : (Array.isArray(selectedProduct?.sizes) && selectedProduct.sizes.length > 0
         ? selectedProduct.sizes.map(s => {
             if (typeof s === 'object' && s !== null) {
@@ -165,6 +165,18 @@ export default function ProductDetailPage({ onNavigate }) {
             };
           })
         : []);
+
+  const baseVariantOption = (basePrice > 0) ? {
+    size: 'Base Product',
+    price: basePrice,
+    mrp: realBaseMrp,
+    image: selectedProduct?.image,
+    isBase: true
+  } : null;
+
+  const sizeVariants = (baseVariantOption && rawSizeVariants.length > 0 && !rawSizeVariants.some(v => String(v.size || '').toLowerCase().includes('base')))
+    ? [baseVariantOption, ...rawSizeVariants]
+    : rawSizeVariants;
 
   const [selectedSize, setSelectedSize] = useState(() => sizeVariants[0]?.size || null);
   const [variantImageOverride, setVariantImageOverride] = useState(null);
@@ -231,57 +243,19 @@ export default function ProductDetailPage({ onNavigate }) {
   const currentProductIdKey = selectedProduct?.id || selectedProduct?._id || 'default_product';
   const currentAppliedCouponCode = appliedProductCouponMap[currentProductIdKey] || null;
 
-  // Available Offers & Coupons list
-  const availableCoupons = [
-    {
-      code: 'SCHOOL10',
-      title: 'Get 10% Flat Student Discount',
-      subtitle: '10% Off on all academic books & uniforms',
-      discountType: 'percentage',
-      discountValue: '10%',
-      minOrder: 0,
-      minOrderLabel: 'No Minimum Order Value',
-      expiry: 'Dec 31, 2026',
-      colorScheme: 'pink',
-      details: 'Applies a 10% instant price reduction on your entire cart subtotal. Valid for all registered students, parents, and schools. Only 1 coupon can be applied per order.'
-    },
-    {
-      code: 'STUDENT50',
-      title: '₹50 Flat Student Savings',
-      subtitle: 'Save ₹50 on orders above ₹399',
-      discountType: 'flat',
-      discountValue: '₹50',
-      minOrder: 399,
-      minOrderLabel: 'Min Order Value ₹399',
-      expiry: 'Dec 31, 2026',
-      colorScheme: 'teal',
-      details: 'Get flat ₹50 instant cashback discount when your cart value exceeds ₹399. Applies across notebooks, stationery kits, and school uniforms. Only 1 coupon can be applied per order.'
-    },
-    {
-      code: 'FREESHIP',
-      title: '100% Free Doorstep Delivery',
-      subtitle: 'Zero shipping charges on any cart value',
-      discountType: 'freeship',
-      discountValue: 'Free Delivery',
-      minOrder: 0,
-      minOrderLabel: 'No Minimum Order Value',
-      expiry: 'Dec 31, 2026',
-      colorScheme: 'yellow',
-      details: 'Waives 100% of shipping and delivery fees for doorstep student dispatch. Valid for all pin codes across India. Only 1 coupon can be applied per order.'
-    },
-    ...(promotions || []).map((p) => ({
-      code: p.code,
-      title: p.title || `${p.code} Promo Offer`,
-      subtitle: p.description || `Special offer on ${p.code}`,
-      discountType: p.discountType || 'percentage',
-      discountValue: p.discountValue ? `${p.discountValue}%` : 'Special Discount',
-      minOrder: p.minOrderValue || 0,
-      minOrderLabel: p.minOrderValue ? `Min Order Value ₹${p.minOrderValue}` : 'No Minimum Limit',
-      expiry: p.expiryDate ? new Date(p.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Limited Time',
-      colorScheme: 'teal',
-      details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`
-    }))
-  ];
+  // Available Offers & Coupons list (Loaded strictly from database promotions)
+  const availableCoupons = (promotions || []).map((p) => ({
+    code: p.code,
+    title: p.title || `${p.code} Promo Offer`,
+    subtitle: p.description || `Special offer on ${p.code}`,
+    discountType: p.discountType || (p.type === 'percent' ? 'percentage' : 'flat'),
+    discountValue: p.discountValue ? `${p.discountValue}%` : (p.value ? `${p.value}%` : 'Special Discount'),
+    minOrder: p.minOrderValue || p.minOrderAmount || 0,
+    minOrderLabel: (p.minOrderValue || p.minOrderAmount) ? `Min Order Value ₹${p.minOrderValue || p.minOrderAmount}` : 'No Minimum Limit',
+    expiry: p.expiryDate ? new Date(p.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Limited Time',
+    colorScheme: 'teal',
+    details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`
+  }));
 
   const handleApplyCouponAndCheckout = (couponCode) => {
     if (selectedProduct) {
@@ -708,8 +682,8 @@ export default function ProductDetailPage({ onNavigate }) {
                     return currentImg ? (
                       <img
                         src={currentImg}
-                        alt={selectedProduct.name}
-                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        alt={selectedProduct.name ? `${selectedProduct.name} - Official Product` : 'Bookvardi Product Details'}
+                        className="absolute inset-0 w-full h-full object-cover text-xs font-semibold italic text-gray-400 leading-snug p-3 text-center group-hover:scale-105 transition-transform duration-500"
                       />
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 text-gray-400">
@@ -964,20 +938,19 @@ export default function ProductDetailPage({ onNavigate }) {
                                 : 'bg-white text-gray-800 border-gray-200 hover:border-brand-teal/50 hover:bg-teal-50/20'
                             }`}
                           >
-                            {vImgUrl ? (
-                              <img
-                                src={vImgUrl}
-                                alt={variantVal}
-                                className="w-10 h-10 rounded-xl object-cover border border-gray-200 shrink-0 bg-gray-50"
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                              />
-                            ) : (
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                                isSelected ? 'bg-teal-800 text-teal-100' : 'bg-gray-100 text-gray-600'
-                              }`}>
-                                {variantVal.slice(0, 3)}
-                              </div>
-                            )}
+                            <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border overflow-hidden ${
+                              isSelected ? 'bg-teal-800 text-teal-100 border-teal-700' : 'bg-gray-100 text-gray-600 border-gray-200'
+                            }`}>
+                              {vImgUrl ? (
+                                <img
+                                  src={vImgUrl}
+                                  alt={variantVal}
+                                  className="w-full h-full object-cover relative z-10"
+                                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
+                              ) : null}
+                              <span className="select-none absolute z-0">{variantVal.slice(0, 3)}</span>
+                            </div>
                             <div className="pr-1.5 min-w-[60px]">
                               <div className="text-xs font-extrabold flex items-center gap-1">
                                 <span>{variantVal}</span>
@@ -1005,16 +978,19 @@ export default function ProductDetailPage({ onNavigate }) {
                   </div>
                 )}
 
-                {/* Size Chart Popup Button for Clothing & Uniforms */}
-                {(selectedProduct.category === 'Uniforms' || selectedProduct.category === 'uniforms' || selectedProduct.sizeChart || ['shirt', 'pant', 'blazer', 'trousers', 'skirt', 'uniform'].some(k => (selectedProduct.name || '').toLowerCase().includes(k))) && (
+                {/* Size Chart Popup Button for Clothing, Apparel & Uniforms */}
+                {(selectedProduct.category === 'Uniforms' || selectedProduct.category === 'uniforms' || selectedProduct.category === 'shoes' || selectedProduct.sizeChart || Array.isArray(selectedProduct.sizes) || ['shirt', 'pant', 'blazer', 'trousers', 'skirt', 'uniform', 'shoe', 'apparel', 'wear', 'dress'].some(k => (selectedProduct.name || '').toLowerCase().includes(k))) && (
                   <div className="pt-1">
                     <button
                       type="button"
                       onClick={() => setShowSizeChartModal(true)}
-                      className="px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs border border-teal-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+                      className="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-900 font-extrabold text-xs border border-teal-200 flex items-center gap-2 cursor-pointer transition-colors shadow-2xs"
                     >
                       <Sparkles size={14} className="text-teal-600" />
-                      <span>View Apparel Size Chart & Measurement Guide</span>
+                      <span>View Size Chart & Measurement Guide</span>
+                      <span className="text-[10px] font-bold text-teal-700 bg-white/80 px-1.5 py-0.5 rounded border border-teal-200">
+                        {selectedProduct.sizeChart?.rows && selectedProduct.sizeChart.rows.length > 0 ? 'Custom Guide' : 'Default Guide'}
+                      </span>
                     </button>
                   </div>
                 )}
@@ -1973,9 +1949,17 @@ export default function ProductDetailPage({ onNavigate }) {
           <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 max-w-2xl w-full p-6 relative max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
               <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-brand-teal bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
-                  School Uniform & Size Guide
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${
+                    selectedProduct.sizeChart?.rows && selectedProduct.sizeChart.rows.length > 0
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-teal-50 text-brand-teal border-teal-200'
+                  }`}>
+                    {selectedProduct.sizeChart?.rows && selectedProduct.sizeChart.rows.length > 0
+                      ? '✨ Seller Custom Size Guide'
+                      : '📏 Standard Default Measurement Guide'}
+                  </span>
+                </div>
                 <h3 className="text-lg font-extrabold text-gray-900 mt-1">
                   Size Measurement Chart ({selectedProduct.name})
                 </h3>

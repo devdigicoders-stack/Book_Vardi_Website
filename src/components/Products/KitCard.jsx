@@ -54,8 +54,8 @@ export default function KitCard({ kit }) {
           {currentImg && (
             <img
               src={currentImg}
-              alt={kit.name}
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
+              alt={kit.name ? `${kit.name} - School Combo Kit` : 'School Combo Kit'}
+              className={`absolute inset-0 w-full h-full object-cover text-xs font-semibold italic text-gray-400 leading-snug p-2 text-center transition-opacity duration-300 ${
                 imgLoading ? 'opacity-0' : 'opacity-100'
               }`}
               loading="lazy"

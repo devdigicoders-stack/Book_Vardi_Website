@@ -24,7 +24,7 @@ import {
   PlusCircle
 } from 'lucide-react';
 import { useCart, getCartItemKey } from '../../context/CartContext';
-import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, getUpiIntentUrl, resolveImageUrl, getProductMainImage } from '../../utils/api';
+import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, loadRazorpayScript, getUpiIntentUrl, resolveImageUrl, getProductMainImage } from '../../utils/api';
 import { getCartPaymentRestrictions } from '../../utils/paymentRestrictions';
 
 const POPULAR_BANKS = [
@@ -51,6 +51,7 @@ export default function CheckoutPage({ onNavigate }) {
     addAddress,
     editAddress,
     appliedCoupon,
+    promotions = [],
     applyCoupon,
     removeCoupon,
     placeOrder,
@@ -61,6 +62,7 @@ export default function CheckoutPage({ onNavigate }) {
 
   React.useEffect(() => {
     setIsCartOpen(false);
+    loadRazorpayScript();
   }, [setIsCartOpen]);
 
   // Address state
@@ -270,7 +272,7 @@ export default function CheckoutPage({ onNavigate }) {
   };
 
   // Place Order submission
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (areAllPaymentsDisabled) {
       const itemName = noPaymentMethodItem?.name || 'item';
       const msg = `Payment mode is not applicable for '${itemName}'. Seller has disabled all payment methods for this product.`;
@@ -377,7 +379,12 @@ export default function CheckoutPage({ onNavigate }) {
       }
     }
 
-    if (paymentMethod !== 'cod' && typeof window.Razorpay !== 'undefined') {
+    if (paymentMethod !== 'cod') {
+      const isRazorpayReady = await loadRazorpayScript();
+      if (!isRazorpayReady || typeof window.Razorpay === 'undefined') {
+        setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 800);
+        return;
+      }
       createRazorpayOrderInBackend(
         {
           amount: grandTotal,
@@ -1175,7 +1182,7 @@ export default function CheckoutPage({ onNavigate }) {
                         <form onSubmit={handleApplyCoupon} className="flex gap-2">
                           <input
                             type="text"
-                            placeholder="e.g. SCHOOL10"
+                            placeholder="Enter Coupon Code"
                             value={couponInput}
                             onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
                             className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold uppercase focus:outline-none focus:border-brand-teal focus:bg-white"
@@ -1188,24 +1195,22 @@ export default function CheckoutPage({ onNavigate }) {
                           </button>
                         </form>
 
-                        {/* Popular Promo Chips */}
-                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                          <span className="text-[10px] text-gray-400 font-bold">Try:</span>
-                          <button
-                            type="button"
-                            onClick={() => applyCoupon('SCHOOL10')}
-                            className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
-                          >
-                            SCHOOL10 (10% OFF)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyCoupon('STUDENT50')}
-                            className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
-                          >
-                            STUDENT50 (₹50 OFF)
-                          </button>
-                        </div>
+                        {/* Dynamic Promo Chips */}
+                        {Array.isArray(promotions) && promotions.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            <span className="text-[10px] text-gray-400 font-bold">Try:</span>
+                            {promotions.slice(0, 3).map((p) => (
+                              <button
+                                key={p.code || p._id}
+                                type="button"
+                                onClick={() => applyCoupon(p.code)}
+                                className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
+                              >
+                                {p.code} ({p.discountValue ? `${p.discountValue}%` : 'OFF'})
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
