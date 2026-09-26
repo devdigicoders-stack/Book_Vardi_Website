@@ -94,6 +94,10 @@ export default function AllProductsPage({
   // Filter and sort products
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
+      // Exclude Pending or Rejected products from website display
+      const appStat = String(product.approvalStatus || product.status || '').toLowerCase();
+      if (appStat === 'pending' || appStat === 'rejected') return false;
+
       // Category match
       const catSlug = selectedCategory;
       const matchesCategory = (catSlug && catSlug !== 'all')

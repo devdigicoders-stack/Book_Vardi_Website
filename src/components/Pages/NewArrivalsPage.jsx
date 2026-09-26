@@ -5,7 +5,8 @@ import ProductCard from '../Products/ProductCard';
 
 export default function NewArrivalsPage({ onNavigate }) {
   const { products: contextProducts = [] } = useCart();
-  const products = contextProducts.filter(p => p.discountBadge === 'NEW' || p.isNew || p.badge === 'NEW');
+  const filtered = contextProducts.filter(p => p.discountBadge === 'NEW' || p.isNew || p.badge === 'NEW' || (Array.isArray(p.tags) && p.tags.some(t => String(t).toLowerCase() === 'new')));
+  const products = filtered.length > 0 ? filtered : contextProducts.slice(0, 16);
 
   useEffect(() => {
     window.scrollTo(0, 0);

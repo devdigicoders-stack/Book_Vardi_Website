@@ -21,7 +21,7 @@ export default function NewsletterSection() {
     setTimeout(() => {
       setIsLoading(false);
       setSubscribed(true);
-      showToast('🎉 Thank you for subscribing! Use code SCHOOL10 for 10% off.');
+      showToast('🎉 Thank you for subscribing! Exclusive student offers will be sent to your inbox.');
     }, 400);
   };
 
@@ -64,7 +64,7 @@ export default function NewsletterSection() {
                   <div>
                     <span className="font-bold block">You're Subscribed!</span>
                     <span className="text-gray-600 text-[11px]">
-                      Use promo code <strong className="text-brand-teal font-extrabold">SCHOOL10</strong> for 10% off.
+                      Check your inbox for exclusive student discount codes.
                     </span>
                   </div>
                 </div>

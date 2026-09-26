@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, Star, ShoppingCart, Eye, Loader2 } from 'lucide-react';
+import { Heart, Star, ShoppingCart, Eye, Loader2, Package } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { resolveImageUrl, getProductMainImage } from '../../utils/api';
 
@@ -23,12 +23,13 @@ export default function ProductCard({ product }) {
   const basePrice = product?.price || 0;
   const sizeVariants = Array.isArray(product?.sizeVariants) && product.sizeVariants.length > 0 ? product.sizeVariants : [];
   const variantPrices = sizeVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
-  const minPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : basePrice;
-  const maxPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : basePrice;
+  const allPrices = [basePrice, ...variantPrices].filter(p => !isNaN(p) && p > 0);
+  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : basePrice;
+  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : basePrice;
   const hasPriceRange = minPrice < maxPrice;
 
   const availableSizes = sizeVariants.length > 0
-    ? sizeVariants.map(v => v.size)
+    ? ['Base Product', ...sizeVariants.map(v => v.size)]
     : (Array.isArray(product?.sizes) ? product.sizes : []);
 
   const price = minPrice;
@@ -51,6 +52,9 @@ export default function ProductCard({ product }) {
 
   return (
     <div
+      onMouseEnter={() => {
+        try { import('./ProductDetailPage'); } catch {}
+      }}
       onClick={() => openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount })}
       className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl overflow-hidden flex flex-col hover:shadow-xl hover:border-brand-teal/20 transition-all duration-300 transform hover:-translate-y-1 group cursor-pointer"
     >
@@ -88,19 +92,19 @@ export default function ProductCard({ product }) {
           />
         </button>
 
-        {/* Loader shown while image is loading or if no image/error */}
+        {/* Skeleton Loader Overlay */}
         {(imgLoading || imgError || !image) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/90 z-0">
-            <Loader2 className="w-6 h-6 animate-spin text-brand-teal" />
-            {imgError && <span className="text-[10px] text-gray-400 font-medium mt-1">Loading image...</span>}
+          <div className="absolute inset-0 bg-gray-200 animate-pulse flex flex-col items-center justify-center z-10">
+            <Package className="w-10 h-10 text-gray-300/80 mb-1" />
+            <div className="w-16 h-2 bg-gray-300/60 rounded-full" />
           </div>
         )}
 
         {image && !imgError && (
           <img
             src={image}
-            alt={title}
-            className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+            alt={title ? `${title} - Bookvardi` : 'Bookvardi Product'}
+            className={`absolute inset-0 w-full h-full object-cover text-xs font-semibold italic text-gray-400 leading-snug p-2 text-center transition-all duration-500 group-hover:scale-105 ${
               imgLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
             }`}
             loading="lazy"

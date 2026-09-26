@@ -110,13 +110,13 @@ export default function PromoBanners({ onNavigate }) {
               </button>
             </div>
 
-            <div className="w-full sm:w-36 md:w-40 h-32 shrink-0 rounded-xl overflow-hidden shadow-xs bg-white relative">
+            <div className="w-full sm:w-36 md:w-40 h-32 shrink-0 rounded-xl overflow-hidden shadow-xs bg-gray-200 animate-pulse relative">
               {COMBINED_PROMOS.map((item, idx) => (
                 <img
                   key={item.id}
                   src={item.image}
-                  alt={item.title}
-                  className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ${idx === promoIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}
+                  alt={item.title ? `${item.title} - Bookvardi Promotion` : 'Special Offer'}
+                  className={`absolute inset-0 w-full h-full object-cover text-xs font-semibold italic text-gray-400 p-2 text-center transition-all duration-700 ${idx === promoIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}
                   loading="lazy"
                 />
               ))}

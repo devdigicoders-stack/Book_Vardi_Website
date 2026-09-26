@@ -192,7 +192,16 @@ export function CartProvider({ children }) {
   const [products, setProducts] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_sync_products') || localStorage.getItem('admin_products') || localStorage.getItem('bv_seller_products');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(p => {
+            const appStat = String(p.approvalStatus || '').toLowerCase();
+            return appStat !== 'pending' && appStat !== 'rejected';
+          });
+        }
+      }
+      return [];
     } catch {
       return [];
     }
@@ -405,10 +414,14 @@ export function CartProvider({ children }) {
       fetchProductsFromBackend({ limit: 100 })
         .then((res) => {
           const liveList = res?.products || (Array.isArray(res) ? res : []);
-          if (Array.isArray(liveList) && liveList.length > 0) {
-            setProducts(liveList);
+          if (Array.isArray(liveList)) {
+            const approvedList = liveList.filter(p => {
+              const appStat = String(p.approvalStatus || '').toLowerCase();
+              return appStat !== 'pending' && appStat !== 'rejected';
+            });
+            setProducts(approvedList);
             try {
-              localStorage.setItem('bv_sync_products', JSON.stringify(liveList));
+              localStorage.setItem('bv_sync_products', JSON.stringify(approvedList));
             } catch (e) {}
           }
         })
@@ -418,16 +431,23 @@ export function CartProvider({ children }) {
 
   useEffect(() => {
     const handleSync = (e) => {
-      if (e.detail && Array.isArray(e.detail) && e.detail.length > 0) {
-        setProducts(e.detail);
-      } else {
-        try {
-          const saved = localStorage.getItem('bv_sync_products') || localStorage.getItem('admin_products') || localStorage.getItem('bv_seller_products');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) setProducts(parsed);
-          }
-        } catch (err) {}
+      const raw = (e.detail && Array.isArray(e.detail) && e.detail.length > 0)
+        ? e.detail
+        : (() => {
+            try {
+              const saved = localStorage.getItem('bv_sync_products') || localStorage.getItem('admin_products') || localStorage.getItem('bv_seller_products');
+              return saved ? JSON.parse(saved) : [];
+            } catch (err) {
+              return [];
+            }
+          })();
+
+      if (Array.isArray(raw)) {
+        const approvedOnly = raw.filter(p => {
+          const appStat = String(p.approvalStatus || '').toLowerCase();
+          return appStat !== 'pending' && appStat !== 'rejected';
+        });
+        setProducts(approvedOnly);
       }
     };
     window.addEventListener('bv_products_updated', handleSync);
@@ -458,18 +478,18 @@ export function CartProvider({ children }) {
     // Register seller application to platform sync so admin console sees it in Sellers tab
     const newSellerEntry = {
       id: `SEL-${Math.floor(100 + Math.random() * 900)}`,
-      name: data?.basicProfile?.name || data?.businessDetails?.legalName || userProfile?.name || 'New Merchant',
-      businessName: data?.businessDetails?.legalName || data?.businessDetails?.tradeName || 'New Store',
+      name: data?.basicProfile?.name || data?.businessDetails?.legalName || userProfile?.name,
+      businessName: data?.businessDetails?.legalName || data?.businessDetails?.tradeName,
       storeName: data?.storeDetails?.storeName || `${data?.basicProfile?.name || 'New'}'s Vardi Store`,
-      email: data?.basicProfile?.email || userProfile?.email || 'seller@bookvardi.in',
-      phone: data?.basicProfile?.phone || userProfile?.phone || '+91 98000 00000',
+      email: data?.basicProfile?.email || userProfile?.email,
+      phone: data?.basicProfile?.phone || userProfile?.phone,
       status: 'Pending',
       rating: 5.0,
       totalOrders: 0,
       revenue: 0,
       commissionRate: 8,
       payoutBalance: 0,
-      category: data?.storeDetails?.primaryCategory || 'Uniforms & Stationery',
+      category: data?.storeDetails?.primaryCategory,
       address: `${data?.addressDetails?.registeredAddress || ''}, ${data?.addressDetails?.city || ''}`,
       joinedDate: 'Today',
       onboardingStep: data?.currentStep || 12,
@@ -565,9 +585,9 @@ export function CartProvider({ children }) {
           return Number(parsed.minOrderFreeShipping || parsed.freeShippingThreshold);
         }
       }
-      return 99;
+      return 500;
     } catch {
-      return 99;
+      return 500;
     }
   });
 
@@ -964,8 +984,8 @@ export function CartProvider({ children }) {
   const totalItemsCount = selectedCartItems.reduce((sum, item) => sum + item.quantity, 0);
   const allCartItemsCount = displayedCartItems.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = selectedCartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const freeShippingProgress = Math.min(100, (subtotal / (freeShippingThreshold || 99)) * 100);
-  const freeShippingRemaining = Math.max(0, (freeShippingThreshold || 99) - subtotal);
+  const freeShippingProgress = Math.min(100, (subtotal / (freeShippingThreshold || 500)) * 100);
+  const freeShippingRemaining = Math.max(0, (freeShippingThreshold || 500) - subtotal);
 
   const wishlistProducts = (() => {
     if (!isAuthenticated || !displayedWishlist || displayedWishlist.length === 0) return [];
@@ -1533,49 +1553,6 @@ export function CartProvider({ children }) {
       setAppliedCoupon(coupon);
       showToast(`🎉 Coupon ${code} applied! ₹${calculatedDiscount} off.`);
       return { success: true, message: `${coupon.label} applied!`, discountAmount: calculatedDiscount };
-    }
-
-    if (code === 'SCHOOL10') {
-      const coupon = {
-        code: 'SCHOOL10',
-        type: 'percent',
-        value: 10,
-        discountAmount: Math.round((subtotal * 0.1) * 100) / 100,
-        label: '10% Student Discount'
-      };
-      setAppliedCoupon(coupon);
-      showToast('🎉 Coupon SCHOOL10 applied! 10% discount added.');
-      return { success: true, message: '10% student discount applied!' };
-    }
-
-    if (code === 'STUDENT50') {
-      if (subtotal < 399) {
-        showToast('⚠️ STUDENT50 requires a minimum order of ₹399.');
-        return { success: false, message: 'Minimum cart value of ₹399 required for STUDENT50.' };
-      }
-      const coupon = {
-        code: 'STUDENT50',
-        type: 'flat',
-        value: 50,
-        discountAmount: 50,
-        label: '₹50 Flat Student Discount'
-      };
-      setAppliedCoupon(coupon);
-      showToast('🎉 Coupon STUDENT50 applied! ₹50 off.');
-      return { success: true, message: '₹50 flat student discount applied!' };
-    }
-
-    if (code === 'FREESHIP') {
-      const coupon = {
-        code: 'FREESHIP',
-        type: 'freeship',
-        value: 0,
-        discountAmount: 0,
-        label: '100% Free Shipping'
-      };
-      setAppliedCoupon(coupon);
-      showToast('🚚 Coupon FREESHIP applied! Free delivery unlocked.');
-      return { success: true, message: 'Free shipping applied!' };
     }
 
     showToast('❌ Invalid or expired coupon code.');
