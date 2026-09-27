@@ -12,6 +12,7 @@ import {
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
 import { fetchProductsFromBackend, fetchCategoriesFromBackend } from '../../utils/api';
+import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 const CHUNK_SIZE = 8;
 
@@ -48,8 +49,14 @@ export default function AllProductsPage({
   // Fetch categories from backend
   useEffect(() => {
     fetchCategoriesFromBackend()
-      .then((data) => setCategories(Array.isArray(data) ? data : []))
-      .catch(() => setCategories([]));
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(data);
+        } else {
+          setCategories(CATEGORY_STRUCTURE);
+        }
+      })
+      .catch(() => setCategories(CATEGORY_STRUCTURE));
   }, []);
 
   // Fetch products from backend

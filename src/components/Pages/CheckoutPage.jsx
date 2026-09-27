@@ -26,6 +26,7 @@ import {
 import { useCart, getCartItemKey } from '../../context/CartContext';
 import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, loadRazorpayScript, getUpiIntentUrl, resolveImageUrl, getProductMainImage } from '../../utils/api';
 import { getCartPaymentRestrictions } from '../../utils/paymentRestrictions';
+import { isCouponApplicableToCart } from '../../utils/couponApplicability';
 
 const POPULAR_BANKS = [
   { id: 'sbi', name: 'State Bank of India', code: 'SBI' },
@@ -132,10 +133,7 @@ export default function CheckoutPage({ onNavigate }) {
   const [deliverySpeed, setDeliverySpeed] = useState('standard'); // 'standard' | 'express'
 
   // Payment Method
-  const [paymentMethod, setPaymentMethod] = useState('upi'); // 'upi' | 'card' | 'netbanking' | 'cod'
-  const [upiMethod, setUpiMethod] = useState('gpay'); // 'gpay' | 'phonepe' | 'paytm' | 'id'
-  const [customUpiId, setCustomUpiId] = useState('');
-  const [isUpiVerified, setIsUpiVerified] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('upi'); // 'upi' | 'cod'
 
   // Evaluate seller & product payment restrictions across all cart items
   const {
@@ -261,16 +259,6 @@ export default function CheckoutPage({ onNavigate }) {
     setCouponInput('');
   };
 
-  // Verify custom UPI
-  const handleVerifyUpi = () => {
-    if (!customUpiId.includes('@')) {
-      showToast('⚠️ Please enter a valid UPI ID (e.g. name@okhdfcbank)');
-      return;
-    }
-    setIsUpiVerified(true);
-    showToast(`✓ UPI ID ${customUpiId} verified!`);
-  };
-
   // Place Order submission
   const handlePlaceOrder = async () => {
     if (areAllPaymentsDisabled) {
@@ -338,10 +326,7 @@ export default function CheckoutPage({ onNavigate }) {
 
     setIsSubmitting(true);
 
-    let paymentLabel = 'Cash on Delivery (COD)';
-    if (paymentMethod === 'upi') {
-      paymentLabel = upiMethod === 'id' ? `UPI (${customUpiId || 'Verified ID'})` : `UPI (${upiMethod.toUpperCase()})`;
-    }
+    let paymentLabel = paymentMethod === 'upi' ? 'UPI / Online Payment' : 'Cash on Delivery (COD)';
 
     const executeDirectOrder = (label, address, razorpayInfo = {}) => {
       placeOrder({
@@ -359,25 +344,6 @@ export default function CheckoutPage({ onNavigate }) {
       setIsSubmitting(false);
       onNavigate('order-success');
     };
-
-    if (paymentMethod === 'upi') {
-      const isMobileDevice = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobileDevice) {
-        const intentUrl = getUpiIntentUrl({
-          app: upiMethod,
-          amount: grandTotal,
-          vpa: upiMethod === 'id' && customUpiId ? customUpiId : 'bookvardi@upi'
-        });
-        showToast(`Redirecting to ${upiMethod === 'gpay' ? 'Google Pay' : upiMethod === 'phonepe' ? 'PhonePe' : upiMethod === 'paytm' ? 'Paytm' : 'UPI App'}... 📲`);
-        window.location.href = intentUrl;
-
-        // Execute background order logging
-        setTimeout(() => {
-          executeDirectOrder(`${paymentLabel} (Direct Mobile Intent)`, activeShippingAddress);
-        }, 1500);
-        return;
-      }
-    }
 
     if (paymentMethod !== 'cod') {
       const isRazorpayReady = await loadRazorpayScript();
@@ -917,77 +883,7 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
               </div>
 
-              {/* Sub-view for UPI */}
-              {paymentMethod === 'upi' && (
-                <div className="bg-gray-50/90 rounded-2xl p-5 border border-gray-200 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-800">Popular Instant UPI Apps & Razorpay Gateway</span>
-                    <span className="text-[10px] text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded-full">
-                      Zero Surcharge
-                    </span>
-                  </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {[
-                      { id: 'gpay', name: 'Google Pay' },
-                      { id: 'phonepe', name: 'PhonePe' },
-                      { id: 'paytm', name: 'Paytm' },
-                      { id: 'id', name: 'Other UPI ID' }
-                    ].map((app) => (
-                      <button
-                        key={app.id}
-                        type="button"
-                        onClick={() => setUpiMethod(app.id)}
-                        className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                          upiMethod === app.id
-                            ? 'bg-brand-teal text-white border-brand-teal shadow-2xs'
-                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        {app.name}
-                      </button>
-                    ))}
-                  </div>
-
-                  {upiMethod === 'id' ? (
-                    <div className="space-y-2 pt-2">
-                      <label className="block text-xs font-bold text-gray-700">Enter Your VPA / UPI ID</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="yourname@okaxis"
-                          value={customUpiId}
-                          onChange={(e) => {
-                            setCustomUpiId(e.target.value);
-                            setIsUpiVerified(false);
-                          }}
-                          className="flex-1 bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-brand-teal"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleVerifyUpi}
-                          className="px-4 py-2 bg-brand-teal text-white font-bold text-xs rounded-xl hover:bg-brand-teal-light transition-colors cursor-pointer"
-                        >
-                          Verify
-                        </button>
-                      </div>
-                      {isUpiVerified && (
-                        <p className="text-xs text-emerald-700 font-bold flex items-center gap-1 mt-1">
-                          <CheckCircle2 size={13} />
-                          <span>Verified: Student Account Holder</span>
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-white rounded-xl border border-gray-200 text-xs text-gray-700 flex items-center gap-2.5">
-                      <Smartphone size={18} className="text-brand-teal shrink-0 animate-bounce" />
-                      <span>
-                        Tapping <strong>Place Order</strong> will launch <strong>{upiMethod === 'gpay' ? 'Google Pay' : upiMethod === 'phonepe' ? 'PhonePe' : upiMethod === 'paytm' ? 'Paytm' : upiMethod.toUpperCase()}</strong> directly on your device.
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Sub-view for Cash on Delivery (COD) */}
               {paymentMethod === 'cod' && (
@@ -1194,23 +1090,6 @@ export default function CheckoutPage({ onNavigate }) {
                             Apply
                           </button>
                         </form>
-
-                        {/* Dynamic Promo Chips */}
-                        {Array.isArray(promotions) && promotions.length > 0 && (
-                          <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                            <span className="text-[10px] text-gray-400 font-bold">Try:</span>
-                            {promotions.slice(0, 3).map((p) => (
-                              <button
-                                key={p.code || p._id}
-                                type="button"
-                                onClick={() => applyCoupon(p.code)}
-                                className="text-[10px] font-bold bg-gray-100 hover:bg-brand-yellow/20 hover:text-brand-teal text-gray-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer border border-gray-200"
-                              >
-                                {p.code} ({p.discountValue ? `${p.discountValue}%` : 'OFF'})
-                              </button>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>

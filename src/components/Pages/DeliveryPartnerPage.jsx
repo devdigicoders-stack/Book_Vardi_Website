@@ -379,11 +379,28 @@ export default function DeliveryPartnerPage({ onNavigate }) {
             {/* Actions & Resend OTP Box */}
             {!deliverySuccess && (
               <div className="space-y-3">
+                {/* Cash Collection Banner for COD */}
+                {(order?.paymentMethod === 'COD' || order?.paymentStatus !== 'paid') && (
+                  <div className="p-3.5 bg-amber-500 text-white rounded-2xl shadow-md space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                        <DollarSign size={18} className="text-amber-200" /> Collect Cash on Delivery
+                      </span>
+                      <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
+                        ₹{order?.totalAmount || 0}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-100 font-medium">
+                      ⚠️ Please collect exactly <strong className="text-white">₹{order?.totalAmount || 0}</strong> cash from the customer before verifying their OTP.
+                    </p>
+                  </div>
+                )}
+
                 {/* Security Guarantee Note */}
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-semibold flex items-start gap-2">
-                  <ShieldCheck size={18} className="text-amber-700 shrink-0 mt-0.5" />
+                <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-teal-900 text-xs font-semibold flex items-start gap-2">
+                  <ShieldCheck size={18} className="text-teal-700 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold">Doorstep OTP Security:</span> 4-digit PIN is sent directly to the customer's mobile number. Ask the customer for the code upon package handover.
+                    <span className="font-bold">Doorstep OTP & Payment Security:</span> 4-digit PIN is sent directly to the customer's phone. Verifying OTP marks payment as <strong className="text-teal-950 uppercase font-bold">PAID</strong> and order as <strong className="text-teal-950 uppercase font-bold">DELIVERED</strong>.
                   </div>
                 </div>
 
@@ -391,7 +408,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <button
                   onClick={handleResendOtp}
                   disabled={resending || !order || verifying}
-                  className="w-full py-3 bg-white border border-amber-300 text-amber-900 font-extrabold text-xs rounded-xl shadow-xs hover:bg-amber-50 flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full py-3 bg-white border border-teal-300 text-teal-900 font-extrabold text-xs rounded-xl shadow-xs hover:bg-teal-50 flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Send size={15} className={resending ? 'animate-spin' : ''} />
                   {resending ? 'Resending OTP...' : '📲 Resend OTP to Customer\'s Phone'}
@@ -419,7 +436,9 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               <div className="w-12 h-12 bg-teal-50 text-teal-800 rounded-2xl mx-auto flex items-center justify-center mb-2 border border-teal-100">
                 <Key size={24} />
               </div>
-              <h3 className="text-lg font-black text-gray-900">Enter Customer OTP</h3>
+              <h3 className="text-lg font-black text-gray-900">
+                {order?.paymentMethod === 'COD' || order?.paymentStatus !== 'paid' ? `Collect ₹${order?.totalAmount || 0} Cash & Enter OTP` : 'Enter Customer OTP'}
+              </h3>
               <p className="text-xs text-gray-500 font-medium">Ask customer for 4-digit PIN sent to their phone</p>
             </div>
 

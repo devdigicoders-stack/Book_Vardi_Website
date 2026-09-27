@@ -5,6 +5,7 @@ import { useLocation } from '../../context/LocationContext';
 import { NAV_LINKS } from '../../constants/navigation';
 import GlobalSearch from './GlobalSearch';
 import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend, resolveImageUrl } from '../../utils/api';
+import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 
 
@@ -424,16 +425,11 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
     onNavigate(view);
   };
 
-  const defaultCategoryList = [
-    { id: 'uniforms', name: 'Uniforms & Schoolwear', subCategories: MEGA_MENU_DATA['uniforms'] },
-    { id: 'ncert', name: 'NCERT & CBSE Textbooks', subCategories: MEGA_MENU_DATA['ncert'] },
-    { id: 'practice_books', name: 'Practice & Workbooks', subCategories: MEGA_MENU_DATA['practice_books'] },
-    { id: 'drawing_books', name: 'Drawing & Craft Kits', subCategories: MEGA_MENU_DATA['drawing_books'] },
-    { id: 'school_specific', name: 'School Specific Kits', subCategories: MEGA_MENU_DATA['school_specific'] },
-    { id: 'bags', name: 'School Bags & Backpacks', subCategories: MEGA_MENU_DATA['bags'] },
-    { id: 'supplies', name: 'Writing & Supplies', subCategories: MEGA_MENU_DATA['supplies'] },
-    { id: 'kits', name: 'Academic Study Kits', subCategories: MEGA_MENU_DATA['kits'] }
-  ];
+  const defaultCategoryList = CATEGORY_STRUCTURE.map(c => ({
+    id: c.name,
+    name: c.name,
+    subCategories: c.subCategories.map(sub => ({ name: sub }))
+  }));
 
   const activeCategoriesTree = categoriesTree && categoriesTree.length > 0 ? categoriesTree : defaultCategoryList;
 
@@ -448,7 +444,8 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
       >
         <div className={isMobile ? 'flex flex-col gap-4' : 'container mx-auto px-4 flex flex-wrap gap-8 justify-center'}>
           {activeCategoriesTree.map((category) => {
-            const catId = category.slug || category._id || category.id || category.name?.toLowerCase().replace(/\s+/g, '_');
+            const catName = category.name || category.title || 'Category';
+            const catId = category.slug || category._id || category.id || catName;
             const subList = Array.isArray(category.subCategories) && category.subCategories.length > 0
               ? category.subCategories
               : (MEGA_MENU_DATA[catId] || []);
@@ -459,11 +456,11 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                     onClick={() => {
                       setMegaMenuOpen(false);
                       setMobileMenuOpen(false);
-                      onNavigate('products', catId);
+                      onNavigate('products', catName);
                     }}
                     className="font-extrabold text-brand-teal hover:text-brand-pink text-sm uppercase tracking-wider text-left transition-colors flex items-center justify-between group cursor-pointer"
                   >
-                    <span>{category.name}</span>
+                    <span>{catName}</span>
                     {!isMobile && <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />}
                   </button>
                   
@@ -472,11 +469,11 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                       const subName = typeof sub === 'string' ? sub : sub?.name;
                       return (
                         <button 
-                          key={sub._id || idx}
+                          key={sub._id || sub.slug || idx}
                           onClick={() => {
                             setMegaMenuOpen(false);
                             setMobileMenuOpen(false);
-                            onNavigate('products', catId);
+                            onNavigate('products', catName, subName);
                           }}
                           className="text-xs font-semibold text-gray-500 hover:text-brand-teal hover:bg-brand-teal/5 py-1 px-2 -ml-2 rounded-lg text-left transition-colors cursor-pointer"
                         >

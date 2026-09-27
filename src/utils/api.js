@@ -380,9 +380,11 @@ export async function createOrderInBackend(orderPayload, phone = '') {
 }
 
 export async function fetchMyOrdersFromBackend(phone = '') {
+  const userPhone = String(phone || '').trim();
   const res = await requestApi('/orders/my-orders', {
     method: 'GET',
-    headers: phone ? { 'x-user-phone': phone } : {}
+    headers: userPhone ? { 'x-user-phone': userPhone } : {},
+    params: userPhone ? { phone: userPhone } : {}
   });
   return res;
 }
@@ -851,6 +853,24 @@ export async function checkServiceabilityWebsiteApi(deliveryPincode, weightKg = 
     method: 'POST',
     data: { deliveryPincode, weightKg },
     fallback: { success: true, serviceable: true, estimatedRate: 45, estimatedDays: '2-3 Days' }
+  });
+}
+
+export async function cancelOrderApi(orderId, reason = '', phone = '') {
+  return requestApi(`/orders/${orderId}/cancel`, {
+    method: 'POST',
+    data: { reason },
+    headers: phone ? { 'x-user-phone': phone } : {},
+    fallback: { success: true, message: 'Order cancelled successfully' }
+  });
+}
+
+export async function requestReturnExchangeApi(orderId, payload = {}, phone = '') {
+  return requestApi(`/orders/${orderId}/return-exchange`, {
+    method: 'POST',
+    data: payload,
+    headers: phone ? { 'x-user-phone': phone } : {},
+    fallback: { success: true, message: `${payload.type === 'exchange' ? 'Exchange' : 'Return'} requested successfully` }
   });
 }
 

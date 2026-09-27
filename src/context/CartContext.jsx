@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   backendEnabled,
   loginWithBackend,
@@ -381,6 +381,25 @@ export function CartProvider({ children }) {
     }
   }, [isAuthenticated, userProfile?.phone, userProfile?.id]);
 
+  const fetchUserOrders = useCallback(async (overridePhone = '') => {
+    const phone = overridePhone || userProfile?.phone || '';
+    if (!phone && !userProfile?.id && !isAuthenticated) return [];
+    try {
+      const res = await fetchMyOrdersFromBackend(phone);
+      const ordersList = Array.isArray(res) ? res : (res?.orders || []);
+      if (Array.isArray(ordersList)) {
+        setUserProfile((prev) => ({
+          ...prev,
+          orders: ordersList
+        }));
+      }
+      return ordersList;
+    } catch (err) {
+      console.warn('⚠️ Could not fetch user orders from backend:', err?.message || err);
+      return userProfile?.orders || [];
+    }
+  }, [userProfile?.phone, userProfile?.id, isAuthenticated]);
+
   useEffect(() => {
     if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
       const phone = userProfile?.phone || '';
@@ -396,18 +415,9 @@ export function CartProvider({ children }) {
         })
         .catch(() => {});
 
-      fetchMyOrdersFromBackend(phone)
-        .then((orders) => {
-          if (Array.isArray(orders) && orders.length > 0) {
-            setUserProfile((prev) => ({
-              ...prev,
-              orders
-            }));
-          }
-        })
-        .catch(() => {});
+      fetchUserOrders(phone);
     }
-  }, [isAuthenticated, userProfile?.phone, userProfile?.id]);
+  }, [isAuthenticated, userProfile?.phone, userProfile?.id, fetchUserOrders]);
 
   useEffect(() => {
     if (backendEnabled) {
@@ -510,68 +520,59 @@ export function CartProvider({ children }) {
     showToast('🎉 Congratulations! You are now an approved seller.');
   };
 
-  // Sync to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('book_vardi_items_v2', JSON.stringify(cartItems));
-    } catch (e) {
-      console.error(e);
+  // Non-blocking async helper for localStorage updates
+  const setLocalStorageAsync = useCallback((key, data) => {
+    if (typeof window === 'undefined') return;
+    const task = () => {
+      try {
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch (e) {}
+    };
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(task, { timeout: 2000 });
+    } else {
+      setTimeout(task, 100);
     }
-  }, [cartItems]);
+  }, []);
+
+  // Sync to localStorage asynchronously
+  useEffect(() => {
+    setLocalStorageAsync('book_vardi_items_v2', cartItems);
+  }, [cartItems, setLocalStorageAsync]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('book_vardi_wishlist_v2', JSON.stringify(wishlist));
-    } catch (e) {
-      console.error(e);
+    setLocalStorageAsync('book_vardi_wishlist_v2', wishlist);
+  }, [wishlist, setLocalStorageAsync]);
+
+  useEffect(() => {
+    setLocalStorageAsync('book_vardi_user_profile', userProfile);
+  }, [userProfile, setLocalStorageAsync]);
+
+  useEffect(() => {
+    setLocalStorageAsync('book_vardi_is_authenticated', isAuthenticated);
+  }, [isAuthenticated, setLocalStorageAsync]);
+
+  useEffect(() => {
+    setLocalStorageAsync('book_vardi_product_reviews', productReviews);
+  }, [productReviews, setLocalStorageAsync]);
+
+  useEffect(() => {
+    if (lastPlacedOrder) {
+      setLocalStorageAsync('book_vardi_last_order', lastPlacedOrder);
     }
-  }, [wishlist]);
+  }, [lastPlacedOrder, setLocalStorageAsync]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('book_vardi_user_profile', JSON.stringify(userProfile));
-    } catch (e) {
-      console.error(e);
+    if (Array.isArray(products) && products.length > 0) {
+      setLocalStorageAsync('bv_sync_products', products);
     }
-  }, [userProfile]);
+  }, [products, setLocalStorageAsync]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('book_vardi_is_authenticated', JSON.stringify(isAuthenticated));
-    } catch (e) {
-      console.error(e);
+    if (Array.isArray(promotions) && promotions.length > 0) {
+      setLocalStorageAsync('bv_sync_promotions', promotions);
     }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('book_vardi_product_reviews', JSON.stringify(productReviews));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [productReviews]);
-
-  useEffect(() => {
-    try {
-      if (lastPlacedOrder) {
-        localStorage.setItem('book_vardi_last_order', JSON.stringify(lastPlacedOrder));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }, [lastPlacedOrder]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('bv_sync_products', JSON.stringify(products));
-    } catch (e) {}
-  }, [products]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('bv_sync_promotions', JSON.stringify(promotions));
-    } catch (e) {}
-  }, [promotions]);
+  }, [promotions, setLocalStorageAsync]);
 
   // Dynamic Free Shipping Threshold state (initialized from localStorage with fallback to 99)
   const [freeShippingThreshold, setFreeShippingThreshold] = useState(() => {
@@ -1759,10 +1760,21 @@ export function CartProvider({ children }) {
         : (orderData.shippingAddress || 'Customer Address'),
       trackingNumber: randomTracking,
       items: itemsToBuy.map((item) => ({
-        id: item.id,
+        ...item,
+        id: item.id || item._id || item.productId,
+        productId: item.productId || item.id || item._id,
+        sellerId: item.sellerId || item.seller?._id || item.seller?.id || item.seller,
+        sellerName: item.sellerName || item.storeName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
+        storeName: item.storeName || item.sellerName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
+        gst: item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.taxRate,
+        gstPercent: item.gstPercent ?? item.gst ?? item.gstPercentage ?? item.gstRate ?? item.taxRate,
+        gstPercentage: item.gstPercentage ?? item.gstPercent ?? item.gst ?? item.gstRate ?? item.taxRate,
         name: item.name,
         price: item.price,
+        finalPrice: item.finalPrice || item.price,
         quantity: item.quantity,
+        size: item.selectedSize || item.size || '',
+        age: item.age || '',
         image: item.image,
         category: item.category || 'Stationery'
       }))
@@ -1816,9 +1828,11 @@ export function CartProvider({ children }) {
           if (res?.order) {
             console.log('🌐 [FRONTEND API] Order created in backend DB:', res.order);
           }
+          fetchUserOrders(userPhone);
         })
         .catch((err) => {
           console.error('Failed to save order to backend DB:', err);
+          fetchUserOrders(userPhone);
         });
 
       clearCartInBackend(userPhone)
@@ -1834,87 +1848,123 @@ export function CartProvider({ children }) {
     return newOrder;
   };
 
+  const profileCompletenessInfo = useMemo(() => getProfileCompleteness(userProfile), [userProfile]);
+
+  const contextValue = useMemo(() => ({
+    products,
+    promotions,
+    cartItems,
+    selectedCartItems,
+    allCartItemsCount,
+    toggleCartItemSelection,
+    selectAllCartItems,
+    wishlist,
+    wishlistProducts,
+    isWishlisted,
+    userProfile,
+    setUserProfile,
+    fetchUserOrders,
+    updateProfile,
+    profileCompleteness: profileCompletenessInfo,
+    isProfileIncomplete: profileCompletenessInfo.isIncomplete,
+    getProfileCompleteness,
+    addAddress,
+    editAddress,
+    removeAddress,
+    isCartOpen,
+    isWishlistOpen,
+    toastMessage,
+    totalItemsCount,
+    subtotal,
+    freeShippingThreshold,
+    freeShippingProgress,
+    freeShippingRemaining,
+    setIsCartOpen,
+    setIsWishlistOpen,
+    addToCart,
+    moveToCart,
+    removeFromCart,
+    clearCart,
+    updateQuantity,
+    toggleWishlist,
+    removeFromWishlist,
+    showToast,
+    isAuthenticated,
+    isAuthModalOpen,
+    setIsAuthModalOpen,
+    authMode,
+    setAuthMode,
+    openAuthModal,
+    closeAuthModal,
+    login,
+    register,
+    logout,
+    selectedProduct,
+    openProductDetails,
+    closeProductDetails,
+    recentlyViewedIds,
+    addRecentlyViewed,
+    productReviews,
+    addProductReview,
+    fetchReviewsForProduct,
+    lastPlacedOrder,
+    setLastPlacedOrder,
+    appliedCoupon,
+    applyCoupon,
+    removeCoupon,
+    placeOrder,
+    sellerStatus,
+    setSellerStatus,
+    sellerProfile,
+    isSeller,
+    isSellerModalOpen,
+    setIsSellerModalOpen,
+    submitSellerApplication,
+    approveSellerApplication,
+    isAdmin,
+    adminStatus,
+    setAdminStatus,
+    USERS: registeredUsers,
+    registeredUsers,
+    isUserRegistered,
+    switchUser
+  }), [
+    products,
+    promotions,
+    cartItems,
+    selectedCartItems,
+    allCartItemsCount,
+    wishlist,
+    wishlistProducts,
+    userProfile,
+    profileCompletenessInfo,
+    isCartOpen,
+    isWishlistOpen,
+    toastMessage,
+    totalItemsCount,
+    subtotal,
+    freeShippingThreshold,
+    freeShippingProgress,
+    freeShippingRemaining,
+    isAuthenticated,
+    isAuthModalOpen,
+    authMode,
+    selectedProduct,
+    recentlyViewedIds,
+    productReviews,
+    lastPlacedOrder,
+    appliedCoupon,
+    sellerStatus,
+    sellerProfile,
+    isSeller,
+    isSellerModalOpen,
+    isAdmin,
+    adminStatus,
+    registeredUsers
+  ]);
+
   return (
-    <CartContext.Provider
-      value={{
-        products,
-        promotions,
-        cartItems,
-        selectedCartItems,
-        allCartItemsCount,
-        toggleCartItemSelection,
-        selectAllCartItems,
-        wishlist,
-        wishlistProducts,
-        isWishlisted,
-        userProfile,
-        setUserProfile,
-        updateProfile,
-        profileCompleteness: getProfileCompleteness(userProfile),
-        isProfileIncomplete: getProfileCompleteness(userProfile).isIncomplete,
-        getProfileCompleteness,
-        addAddress,
-        editAddress,
-        removeAddress,
-        isCartOpen,
-        isWishlistOpen,
-        toastMessage,
-        totalItemsCount,
-        subtotal,
-        freeShippingThreshold,
-        freeShippingProgress,
-        freeShippingRemaining,
-        setIsCartOpen,
-        setIsWishlistOpen,
-        addToCart,
-        moveToCart,
-        removeFromCart,
-        clearCart,
-        updateQuantity,
-        toggleWishlist,
-        removeFromWishlist,
-        showToast,
-        isAuthenticated,
-        isAuthModalOpen,
-        setIsAuthModalOpen,
-        authMode,
-        setAuthMode,
-        openAuthModal,
-        closeAuthModal,
-        login,
-        register,
-        logout,
-        selectedProduct,
-        openProductDetails,
-        closeProductDetails,
-        recentlyViewedIds,
-        addRecentlyViewed,
-        productReviews,
-        addProductReview,
-        fetchReviewsForProduct,
-        lastPlacedOrder,
-        setLastPlacedOrder,
-        appliedCoupon,
-        applyCoupon,
-        removeCoupon,
-        placeOrder,
-        sellerStatus,
-        setSellerStatus,
-        sellerProfile,
-        isSeller,
-        isSellerModalOpen,
-        setIsSellerModalOpen,
-        submitSellerApplication,
-        approveSellerApplication,
-        isAdmin,
-        adminStatus,
-        setAdminStatus,
-        USERS: registeredUsers,
-        registeredUsers,
-        isUserRegistered,
-        switchUser
-      }}
-    >
+    <CartContext.Provider value={contextValue}>
       {children}
     </CartContext.Provider>
   );

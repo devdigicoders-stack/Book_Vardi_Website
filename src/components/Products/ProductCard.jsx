@@ -5,7 +5,7 @@ import { resolveImageUrl, getProductMainImage } from '../../utils/api';
 
 import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
 
-export default function ProductCard({ product }) {
+function ProductCard({ product }) {
   const { wishlist, toggleWishlist, addToCart, openProductDetails, cartItems, showToast } = useCart();
   
   const [imgLoading, setImgLoading] = useState(true);
@@ -108,6 +108,7 @@ export default function ProductCard({ product }) {
               imgLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
             }`}
             loading="lazy"
+            decoding="async"
             onLoad={() => setImgLoading(false)}
             onError={() => {
               setImgError(true);
@@ -228,3 +229,14 @@ export default function ProductCard({ product }) {
     </div>
   );
 }
+
+export default React.memo(ProductCard, (prevProps, nextProps) => {
+  return (
+    prevProps.product?.id === nextProps.product?.id &&
+    prevProps.product?._id === nextProps.product?._id &&
+    prevProps.product?.price === nextProps.product?.price &&
+    prevProps.product?.stock === nextProps.product?.stock &&
+    prevProps.product?.mrp === nextProps.product?.mrp &&
+    prevProps.product?.name === nextProps.product?.name
+  );
+});

@@ -11,6 +11,7 @@ import {
 } from '../../utils/api';
 
 const EMPTY_ARRAY = [];
+const carouselMemoryCache = new Map();
 
 export default function HomeProductSections({ activeCategory, searchQuery, onNavigate }) {
   const { products: contextProducts = EMPTY_ARRAY, recentlyViewedIds = EMPTY_ARRAY } = useCart();
@@ -24,6 +25,7 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
 
   const safeRecentlyViewedIds = Array.isArray(recentlyViewedIds) ? recentlyViewedIds : EMPTY_ARRAY;
   const recentlyViewedKey = safeRecentlyViewedIds.join(',');
+  const cacheKey = `${activeCategory || 'all'}_${recentlyViewedKey}`;
 
   // Helper fallback for rotated context products if backend is empty/offline
   const getFallbackProducts = useCallback((offset, count, category = null) => {
@@ -38,6 +40,17 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
 
   // Fetch all 4 carousel rows from Backend
   const loadBackendCarouselData = useCallback(async (isMountedRef) => {
+    if (carouselMemoryCache.has(cacheKey)) {
+      const cached = carouselMemoryCache.get(cacheKey);
+      if (isMountedRef.current) {
+        setRecentlyViewed(cached.recentList);
+        setFeatured(cached.featuredList);
+        setSpecialOffers(cached.specialList);
+        setRecommended(cached.recommendedList);
+        setLoading(false);
+      }
+    }
+
     try {
       const [recentRes, featuredRes, specialRes, recommendedRes] = await Promise.all([
         fetchRecentlyViewedFromBackend({ ids: safeRecentlyViewedIds, category: activeCategory || undefined, limit: 8 }),
@@ -65,6 +78,8 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
       const featuredList = filterApproved(rawFeatured.length > 0 ? rawFeatured : (rawRecommended.length > 0 ? rawRecommended : getFallbackProducts(2, 8, activeCategory)));
       const specialList = filterApproved(rawSpecial.length > 0 ? rawSpecial : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(4, 8, activeCategory)));
       const recommendedList = filterApproved(rawRecommended.length > 0 ? rawRecommended : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(6, 8, activeCategory)));
+
+      carouselMemoryCache.set(cacheKey, { recentList, featuredList, specialList, recommendedList });
 
       setRecentlyViewed(recentList);
       setFeatured(featuredList);
