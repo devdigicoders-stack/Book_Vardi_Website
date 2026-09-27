@@ -15,17 +15,27 @@ import {
   ExternalLink,
   ShieldCheck,
   FileText,
-  Download
+  Download,
+  Boxes,
+  Navigation,
+  QrCode,
+  RotateCcw,
+  XCircle,
+  ArrowRightLeft
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import TaxInvoiceModal from '../Common/TaxInvoiceModal';
 import OrderTrackingModal from '../Common/OrderTrackingModal';
+import CancelOrderModal from '../Common/CancelOrderModal';
+import ReturnExchangeModal from '../Common/ReturnExchangeModal';
 
 export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, selectedOrder = null }) {
   const { lastPlacedOrder, userProfile, isAuthenticated } = useCart();
   const [copied, setCopied] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
 
   const [fallbackOrder] = useState(() => ({
     id: 'SC-99824',
@@ -69,6 +79,21 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
     ? order.shippingFee
     : (order.shippingCost !== undefined ? order.shippingCost : 0);
 
+  const currentStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+  const isCancelEligible = ['placed', 'pending', 'confirmed', 'processing', 'packed'].includes(currentStatus);
+  const isDelivered = ['delivered', 'completed'].includes(currentStatus);
+  const firstItem = order.items?.[0] || {};
+  const isReturnable = firstItem.isReturnable !== false;
+  const returnWindowDays = firstItem.returnWindowDays || 7;
+  const deliveredDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.date || order.createdAt || Date.now());
+  const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const isReturnWindowValid = isDelivered && isReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged'].includes(currentStatus);
+  const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+  const isCancelled = currentStatus === 'cancelled';
+  const isPaidOnline = order.paymentStatus === 'paid' || order.paymentStatus === 'Paid' || (order.paymentMethod && String(order.paymentMethod).toUpperCase() !== 'COD');
+
   const handleCopyOrderId = () => {
     if (order?.id) {
       navigator.clipboard?.writeText(order.id);
@@ -101,25 +126,58 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
 
         {!isDetailsOnly && (
           <div className="bg-white rounded-3xl p-8 sm:p-10 border border-teal-100 shadow-sm text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-brand-teal via-brand-yellow to-brand-pink" />
+            <div className={`absolute top-0 left-0 right-0 h-2 ${isCancelled ? 'bg-rose-500' : 'bg-gradient-to-r from-brand-teal via-brand-yellow to-brand-pink'}`} />
             <div className="absolute -top-16 -right-16 w-36 h-36 bg-brand-teal/5 rounded-full blur-2xl pointer-events-none" />
             <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-brand-yellow/10 rounded-full blur-2xl pointer-events-none" />
 
             <div className="relative inline-flex mb-5">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-emerald-50 border-4 border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
-                <CheckCircle2 size={46} className="animate-bounce-subtle" />
+              <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center shadow-inner ${isCancelled ? 'bg-rose-50 border-4 border-rose-100 text-rose-600' : 'bg-emerald-50 border-4 border-emerald-100 text-emerald-600'}`}>
+                {isCancelled ? <XCircle size={46} /> : <CheckCircle2 size={46} className="animate-bounce-subtle" />}
               </div>
-              <div className="absolute -bottom-1 -right-1 bg-brand-teal text-white p-2 rounded-full shadow-md">
+              <div className={`absolute -bottom-1 -right-1 text-white p-2 rounded-full shadow-md ${isCancelled ? 'bg-rose-600' : 'bg-brand-teal'}`}>
                 <Sparkles size={16} />
               </div>
             </div>
 
             <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-black text-gray-900 mb-2">
-              Order Placed Successfully! 🎉
+              {isCancelled ? 'Order Cancelled' : 'Order Placed Successfully! 🎉'}
             </h1>
             <p className="text-sm sm:text-base text-gray-600 max-w-lg mx-auto">
-              Thank you for shopping with <span className="font-bold text-brand-teal">BookVardi</span>. We’ve received your order and our campus dispatch team is packing your stationery!
+              {isCancelled
+                ? 'This order has been cancelled upon customer request.'
+                : <>Thank you for shopping with <span className="font-bold text-brand-teal">BookVardi</span>. We’ve received your order and our campus dispatch team is packing your stationery!</>}
             </p>
+
+            {/* Cancellation & Refund Alert Card */}
+            {isCancelled && (
+              <div className="mt-6 max-w-xl mx-auto bg-rose-50/90 border border-rose-200 rounded-2xl p-4 text-left space-y-3 shadow-xs">
+                <div className="flex items-center gap-2 text-rose-950 font-extrabold text-xs uppercase tracking-wider">
+                  <XCircle size={16} className="text-rose-600 shrink-0" />
+                  <span>Cancellation Recorded (Performed by Customer)</span>
+                </div>
+                <div className="text-xs text-rose-900 bg-white/70 p-3 rounded-xl border border-rose-100 space-y-1">
+                  <p><strong>Cancelled By:</strong> <span className="font-semibold text-gray-800">{order.cancelledBy || 'Customer'}</span></p>
+                  <p><strong>Reason:</strong> <span className="font-semibold text-gray-800">{order.cancellationReason || 'Cancelled by customer'}</span></p>
+                </div>
+                {isPaidOnline ? (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-xs flex items-start gap-2.5">
+                    <CreditCard size={18} className="text-emerald-700 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-black text-emerald-900 text-xs uppercase tracking-wider mb-0.5">
+                        💳 Online Refund Initiated (48 Working Hours)
+                      </strong>
+                      <span className="text-[11px] text-emerald-900 font-medium leading-relaxed">
+                        Since your order was paid online, a full refund of <strong className="text-emerald-950 font-black font-mono">₹{order.total || order.totalAmount}</strong> has been initiated and will be credited to your original payment mode (Bank / UPI / Card) within <strong>48 working hours</strong>.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-gray-600 font-medium">
+                    Cash on Delivery order cancelled. No payment was collected.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-3 bg-gray-50 border border-gray-200/80 rounded-2xl px-5 py-3">
               <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">
@@ -145,14 +203,17 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                   </>
                 )}
               </button>
-              <button
-                onClick={() => setIsInvoiceModalOpen(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark transition-colors cursor-pointer bg-brand-teal/10 hover:bg-brand-teal/20 px-3 py-1 rounded-lg border border-brand-teal/20 shadow-2xs"
-                title="View & Download Tax Invoice / Bill of Order"
-              >
-                <FileText size={13} />
-                <span>Tax Invoice & Bill</span>
-              </button>
+
+              {!isCancelled && (
+                <button
+                  onClick={() => setIsInvoiceModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark transition-colors cursor-pointer bg-brand-teal/10 hover:bg-brand-teal/20 px-3 py-1 rounded-lg border border-brand-teal/20 shadow-2xs"
+                  title="View & Download Tax Invoice / Bill of Order"
+                >
+                  <FileText size={13} />
+                  <span>Tax Invoice & Bill</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setIsTrackingModalOpen(true)}
@@ -162,6 +223,28 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                 <Truck size={13} />
                 <span>Track Live Courier Shipment</span>
               </button>
+
+              {isCancelEligible && (
+                <button
+                  onClick={() => setIsCancelModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors cursor-pointer px-3 py-1 rounded-lg shadow-2xs"
+                  title="Cancel Order before shipment"
+                >
+                  <XCircle size={13} />
+                  <span>Cancel Order</span>
+                </button>
+              )}
+
+              {isReturnWindowValid && (
+                <button
+                  onClick={() => setIsReturnModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 transition-colors cursor-pointer px-3 py-1 rounded-lg shadow-2xs"
+                  title={`Return or Exchange (Available till ${formattedTillDate})`}
+                >
+                  <ArrowRightLeft size={13} className="text-emerald-700" />
+                  <span>Return / Exchange (Till {formattedTillDate})</span>
+                </button>
+              )}
             </div>
 
             <p className="text-xs text-gray-500 mt-3">
@@ -184,53 +267,94 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2">
             <div>
               <h2 className="font-display text-lg sm:text-xl font-extrabold text-gray-900 flex items-center gap-2">
-                <Truck className="text-brand-teal" size={20} />
-                Live Order Tracking
+                {isCancelled ? (
+                  <>
+                    <XCircle className="text-rose-600 shrink-0" size={20} />
+                    <span>Tracking Terminated — Order Cancelled</span>
+                  </>
+                ) : (
+                  <>
+                    <Truck className="text-brand-teal animate-pulse" size={20} />
+                    <span>Live Order Tracking</span>
+                  </>
+                )}
               </h2>
               <p className="text-xs text-gray-500">
-                BlueDart Express Campus Priority Courier • AWB #{order.id?.replace('SC-', 'BD-') || order.trackingNumber || 'BD-88219'}
+                {isCancelled
+                  ? 'Fulfillment and courier tracking closed due to order cancellation.'
+                  : `BlueDart Express Campus Priority Courier • AWB #${order.id?.replace('SC-', 'BD-') || order.trackingNumber || 'BD-88219'}`}
               </p>
             </div>
-            <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3.5 py-1.5 rounded-full text-xs font-bold self-start sm:self-auto">
-              Estimated Delivery: {order.estimatedDelivery || 'Thursday, 10 Sep'}
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsTrackingModalOpen(true)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-all self-start sm:self-auto ${
+                isCancelled
+                  ? 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+                  : 'bg-brand-teal/10 hover:bg-brand-teal/20 text-brand-teal border border-brand-teal/20'
+              }`}
+            >
+              {isCancelled ? <XCircle size={14} className="text-rose-600" /> : <Truck size={14} className="text-brand-teal" />}
+              <span>{isCancelled ? 'View Cancellation Status' : 'Launch Live Tracking Modal'}</span>
+            </button>
           </div>
 
-          <div className="relative py-0">
-            <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
-              {[
-                { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: Check },
-                { id: 2, full: 'Processing & Packing', sub: 'At Central Warehouse', icon: Package },
-                { id: 3, full: 'Out for Campus Transit', sub: 'BlueDart Logistics', icon: Truck },
-                { id: 4, full: 'Delivered', sub: 'To your hostel desk', icon: MapPin }
-              ].map((step) => {
-                const stepIndex = order.status === 'Delivered' ? 4 : (order.status === 'In Transit' || order.status === 'Shipped' ? 3 : 2);
-                const isUpdated = step.id <= stepIndex;
-                const isCurrent = step.id === stepIndex;
-                const IconComp = step.icon;
+          {isCancelled ? (
+            <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200 text-rose-950 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold shrink-0">
+                  <XCircle size={22} />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-xs text-rose-900">Tracking Closed & Terminated</h4>
+                  <p className="text-[11px] text-rose-800 mt-0.5">
+                    Order cancelled by customer ({order.cancelledBy || 'User'}). Reason: {order.cancellationReason || 'Cancelled by customer'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-1 rounded-md bg-rose-200 text-rose-950 shrink-0 border border-rose-300">
+                Cancelled
+              </span>
+            </div>
+          ) : (
+            <div className="relative py-0">
+              <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
+                {[
+                  { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: FileText },
+                  { id: 2, full: 'Processing & Packing', sub: 'At Central Warehouse', icon: Boxes },
+                  { id: 3, full: 'Out for Campus Transit', sub: 'BlueDart Logistics', icon: Truck },
+                  { id: 4, full: 'Delivered', sub: 'To your hostel desk', icon: ShieldCheck }
+                ].map((step) => {
+                  const currentStatus = String(order.overallStatus || order.status || '').toLowerCase();
+                  const stepIndex = currentStatus === 'delivered' || currentStatus === 'completed' ? 4 : (currentStatus === 'in_transit' || currentStatus === 'shipped' || currentStatus === 'out_for_delivery' ? 3 : 2);
+                  const isUpdated = step.id <= stepIndex;
+                  const isCurrent = step.id === stepIndex;
+                  const IconComp = step.icon;
 
-                return (
-                  <div
-                    key={step.id}
-                    className="flex flex-col items-center justify-center h-16 group cursor-pointer shrink-0"
-                    title={`${step.full} • ${step.sub}`}
-                  >
+                  return (
                     <div
-                      className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${
-                        isCurrent
-                          ? 'bg-brand-teal text-white ring-4 ring-teal-100 scale-110 shadow-lg animate-pulse opacity-100'
-                          : isUpdated
-                          ? 'bg-emerald-500 text-white ring-4 ring-emerald-50 scale-105 shadow-sm opacity-100'
-                          : 'bg-gray-100 text-gray-600 border border-gray-300 opacity-90 hover:opacity-100'
-                      }`}
+                      key={step.id}
+                      onClick={() => setIsTrackingModalOpen(true)}
+                      className="flex flex-col items-center justify-center h-16 group cursor-pointer shrink-0"
+                      title={`${step.full} • ${step.sub}`}
                     >
-                      <IconComp size={22} />
+                      <div
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+                          isCurrent
+                            ? 'bg-brand-teal text-white ring-4 ring-brand-teal/30 scale-110 shadow-lg animate-pulse opacity-100'
+                            : isUpdated
+                            ? 'bg-emerald-600 text-white ring-4 ring-emerald-100 scale-105 shadow-sm opacity-100'
+                            : 'bg-gray-100 text-gray-400 border border-gray-200 opacity-90 hover:opacity-100'
+                        }`}
+                      >
+                        <IconComp size={22} />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -277,34 +401,135 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               ))}
             </div>
 
-            <div className="pt-4 border-t border-gray-100 space-y-2 text-xs">
-              <div className="flex justify-between text-gray-600">
-                <span>Items Subtotal:</span>
-                <span className="font-semibold text-gray-900">₹{order.subtotal}</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span>Delivery Charges:</span>
-                <span className="font-semibold text-emerald-600">
-                  {(!shippingFee || shippingFee === 0 || shippingFee === 'FREE') ? 'FREE (Campus Priority)' : `₹${shippingFee}`}
-                </span>
-              </div>
-              {order.discountAmount > 0 && (
-                <div className="flex justify-between text-emerald-600">
-                  <span>Coupon Discount:</span>
-                  <span className="font-semibold">-₹{order.discountAmount}</span>
+            {(() => {
+              const subtotalVal = Number(order.subtotal || order.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || order.total || 0);
+              const shipVal = Number(order.shippingFee ?? order.shippingCost ?? shippingFee ?? 0);
+              const couponVal = Number(order.discountAmount ?? order.discount ?? 0);
+              const pointsVal = Number(order.pointsDiscount ?? 0);
+              const grandVal = Number(order.total || order.totalAmount || (subtotalVal + shipVal - couponVal - pointsVal));
+              
+              let totalTaxable = 0;
+              let totalTax = 0;
+              (order.items || []).forEach(item => {
+                const qty = Number(item.quantity || 1);
+                const unitPrice = Number(item.price || 0);
+                const grossPrice = unitPrice * qty;
+                const gstRate = Number(item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.gst ?? 5);
+                if (gstRate > 0) {
+                  const taxable = grossPrice / (1 + gstRate / 100);
+                  totalTaxable += taxable;
+                  totalTax += (grossPrice - taxable);
+                } else {
+                  totalTaxable += grossPrice;
+                }
+              });
+
+              const parseStateKeyFromText = (text) => {
+                if (!text) return '';
+                const str = String(text).toLowerCase();
+                const states = [
+                  { key: 'uttarpradesh', aliases: ['uttar pradesh', 'uttarpradesh', 'up', 'noida', 'lucknow', 'kanpur', 'ghaziabad', 'agra', 'varanasi', 'prayagraj'] },
+                  { key: 'delhi', aliases: ['delhi', 'new delhi', 'nct of delhi', 'nct', 'dl'] },
+                  { key: 'maharashtra', aliases: ['maharashtra', 'mumbai', 'pune', 'nagpur', 'thane', 'mh'] },
+                  { key: 'karnataka', aliases: ['karnataka', 'bangalore', 'bengaluru', 'mysore', 'ka'] },
+                  { key: 'tamilnadu', aliases: ['tamil nadu', 'tamilnadu', 'chennai', 'coimbatore', 'tn'] },
+                  { key: 'haryana', aliases: ['haryana', 'gurugram', 'gurgaon', 'faridabad', 'hr'] },
+                  { key: 'rajasthan', aliases: ['rajasthan', 'jaipur', 'jodhpur', 'udaipur', 'rj'] },
+                  { key: 'westbengal', aliases: ['west bengal', 'westbengal', 'kolkata', 'wb'] },
+                  { key: 'gujarat', aliases: ['gujarat', 'ahmedabad', 'surat', 'vadodara', 'gj'] },
+                  { key: 'punjab', aliases: ['punjab', 'ludhiana', 'amritsar', 'pb'] },
+                  { key: 'madhyapradesh', aliases: ['madhya pradesh', 'madhyapradesh', 'bhopal', 'indore', 'mp'] },
+                  { key: 'bihar', aliases: ['bihar', 'patna', 'br'] },
+                  { key: 'telangana', aliases: ['telangana', 'hyderabad', 'tg', 'ts'] },
+                  { key: 'andhrapradesh', aliases: ['andhra pradesh', 'andhrapradesh', 'visakhapatnam', 'ap'] },
+                  { key: 'kerala', aliases: ['kerala', 'kochi', 'thiruvananthapuram', 'kl'] },
+                  { key: 'uttarakhand', aliases: ['uttarakhand', 'dehradun', 'uk'] }
+                ];
+
+                for (const st of states) {
+                  for (const alias of st.aliases) {
+                    if (new RegExp(`\\b${alias}\\b`, 'i').test(str)) {
+                      return st.key;
+                    }
+                  }
+                }
+                return str.trim();
+              };
+
+              const getDynamicState = (obj, fallbackText) => {
+                if (obj && typeof obj === 'object') {
+                  if (obj.state && String(obj.state).trim()) return parseStateKeyFromText(obj.state);
+                  const combined = `${obj.street || ''} ${obj.addressLine || ''} ${obj.city || ''} ${obj.address || ''}`;
+                  if (combined.trim()) return parseStateKeyFromText(combined);
+                }
+                return parseStateKeyFromText(fallbackText || '');
+              };
+
+              const firstSeller = order.items?.[0]?.sellerId;
+              const sellerStateKey = getDynamicState(firstSeller, `${order.sellerState || ''} ${order.sellerCity || ''} ${order.sellerAddress || ''}`);
+              const customerStateKey = getDynamicState(order.shippingAddress, typeof order.shippingAddress === 'string' ? order.shippingAddress : '');
+
+              const isSameState = !sellerStateKey || !customerStateKey || sellerStateKey === customerStateKey;
+              const sellerStateStr = (typeof firstSeller === 'object' ? firstSeller.state || firstSeller.city : '') || order.sellerState || sellerStateKey || 'Seller Location';
+              const customerStateStr = (typeof order.shippingAddress === 'object' ? order.shippingAddress?.state || order.shippingAddress?.city : '') || customerStateKey || 'Customer Location';
+
+              return (
+                <div className="pt-4 border-t border-gray-100 space-y-2.5 text-xs bg-gray-50/70 p-4 rounded-2xl border border-gray-200/80">
+                  <div className="flex justify-between text-gray-700 font-medium">
+                    <span>Items Subtotal:</span>
+                    <span className="font-semibold text-gray-900 font-mono">₹{subtotalVal.toFixed(2)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-gray-500 text-[11px]">
+                    <span>Base Taxable Amount (Excl. Tax):</span>
+                    <span className="font-mono">₹{totalTaxable.toFixed(2)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-emerald-800 text-[11px] bg-emerald-50/80 p-2 rounded-lg border border-emerald-100">
+                    <div>
+                      <span className="font-bold block text-emerald-950">GST Tax Breakdown ({isSameState ? 'Intra-State Same State' : 'Inter-State Different State'}):</span>
+                      {isSameState ? (
+                        <span className="text-[10px] text-emerald-900">CGST (50%): ₹{(totalTax / 2).toFixed(2)} • SGST (50%): ₹{(totalTax / 2).toFixed(2)}</span>
+                      ) : (
+                        <span className="text-[10px] text-emerald-900">IGST (Integrated 100%): ₹{totalTax.toFixed(2)} • Supply ({sellerStateStr} ➔ {customerStateStr})</span>
+                      )}
+                    </div>
+                    <span className="font-mono font-bold text-emerald-950 self-center">₹{totalTax.toFixed(2)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-gray-700 font-medium">
+                    <span>Delivery Charges:</span>
+                    <span className="font-semibold text-emerald-700 font-mono">
+                      {shipVal === 0 ? 'Not Applied (FREE)' : `₹${shipVal.toFixed(2)}`}
+                    </span>
+                  </div>
+
+                  {couponVal > 0 ? (
+                    <div className="flex justify-between text-emerald-700 font-bold">
+                      <span>Offer / Coupon Applied:</span>
+                      <span className="font-mono">-₹{couponVal.toFixed(2)}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-gray-400">
+                      <span>Offer / Coupon:</span>
+                      <span className="font-mono text-gray-400">Not Applied (₹0.00)</span>
+                    </div>
+                  )}
+
+                  {pointsVal > 0 && (
+                    <div className="flex justify-between text-amber-700 font-bold">
+                      <span>Reward Points Redeemed:</span>
+                      <span className="font-mono">-₹{pointsVal.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-3 border-t-2 border-gray-300 flex justify-between items-center text-sm font-black text-gray-900">
+                    <span>Total Amount Paid:</span>
+                    <span className="font-display text-lg text-brand-teal font-mono">₹{grandVal.toFixed(2)}</span>
+                  </div>
                 </div>
-              )}
-              {order.pointsDiscount > 0 && (
-                <div className="flex justify-between text-amber-600">
-                  <span>Reward Points Redeemed:</span>
-                  <span className="font-semibold">-₹{order.pointsDiscount}</span>
-                </div>
-              )}
-              <div className="pt-3 border-t border-dashed border-gray-200 flex justify-between items-baseline text-sm font-black text-gray-900">
-                <span>Total Amount Paid:</span>
-                <span className="font-display text-lg text-brand-teal">₹{order.total}</span>
-              </div>
-            </div>
+              );
+            })()}
           </div>
 
           <div className="space-y-6">
@@ -426,6 +651,24 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
         isOpen={isTrackingModalOpen}
         onClose={() => setIsTrackingModalOpen(false)}
         order={order}
+      />
+
+      <CancelOrderModal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        order={order}
+        onSuccess={() => {
+          onNavigate('profile', null, 'orders');
+        }}
+      />
+
+      <ReturnExchangeModal
+        isOpen={isReturnModalOpen}
+        onClose={() => setIsReturnModalOpen(false)}
+        order={order}
+        onSuccess={() => {
+          onNavigate('profile', null, 'orders');
+        }}
       />
     </div>
   );

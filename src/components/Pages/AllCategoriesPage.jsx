@@ -1,83 +1,113 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight } from 'lucide-react';
-import { fetchCategoriesFromBackend } from '../../utils/api';
+import { ArrowRight, ChevronRight, Layers } from 'lucide-react';
+import { fetchCategoryTreeFromBackend } from '../../utils/api';
+import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 export default function AllCategoriesPage({ onNavigate }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCategoriesFromBackend()
+    fetchCategoryTreeFromBackend()
       .then((data) => {
-        setCategories(Array.isArray(data) ? data : []);
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(data);
+        } else {
+          setCategories(CATEGORY_STRUCTURE);
+        }
         setLoading(false);
       })
       .catch(() => {
-        setCategories([]);
+        setCategories(CATEGORY_STRUCTURE);
         setLoading(false);
       });
   }, []);
 
+  const displayList = categories && categories.length > 0 ? categories : CATEGORY_STRUCTURE;
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gray-50/60 pb-20">
       {/* Header Banner */}
       <div className="bg-brand-teal text-white py-12 px-4 border-b border-white/10 relative overflow-hidden">
         <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-yellow/10 blur-3xl pointer-events-none" />
         <div className="container mx-auto max-w-5xl text-center relative z-10">
           <h1 className="font-display text-3xl md:text-4xl font-extrabold text-white tracking-tight mb-3">
-            All Categories
+            All Product Categories
           </h1>
-          <p className="text-white/80 max-w-xl mx-auto">
-            Browse our complete catalog of school supplies, from uniforms and NCERT textbooks to stationery and backpacks.
+          <p className="text-white/80 max-w-xl mx-auto text-sm">
+            Browse our complete catalog of school supplies, uniforms, NCERT textbooks, stationary, footwear and backpacks.
           </p>
         </div>
       </div>
 
-      <div className="container mx-auto max-w-5xl px-4 mt-12">
-        {categories.length === 0 ? (
-          <div className="text-center py-12 text-sm font-semibold text-gray-500 bg-white rounded-2xl border border-dashed border-gray-200">
-            No categories related found.
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-            {categories.map((cat) => {
-              const catId = cat.slug || cat.id || cat._id || cat.name?.toLowerCase().replace(/\s+/g, '_');
-              const catImg = cat.imageUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=300&auto=format&fit=crop&q=80';
+      <div className="container mx-auto max-w-6xl px-4 mt-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {displayList.map((cat, idx) => {
+            const catName = cat.name || cat.title || 'Category';
+            const catImg = cat.imageUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=400&auto=format&fit=crop&q=80';
+            const subList = Array.isArray(cat.subCategories) ? cat.subCategories : [];
 
-              return (
+            return (
+              <div
+                key={cat._id || cat.id || idx}
+                className="bg-white rounded-3xl p-6 shadow-xs border border-gray-100 hover:shadow-xl hover:border-brand-teal/20 transition-all duration-300 flex flex-col justify-between group"
+              >
+                <div>
+                  {/* Category Header */}
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-brand-teal/10 p-0.5 bg-gray-50 shrink-0 group-hover:scale-105 transition-transform">
+                      <img
+                        src={catImg}
+                        alt={catName}
+                        className="w-full h-full object-cover rounded-xl"
+                        loading="lazy"
+                      />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold text-brand-teal group-hover:text-brand-pink transition-colors">
+                        {catName}
+                      </h3>
+                      <p className="text-xs text-gray-500 line-clamp-1">
+                        {cat.description || `${subList.length} subcategories available`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Subcategories Badges List */}
+                  <div className="space-y-2 mb-6">
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                      Sub-Categories
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {subList.map((sub, sIdx) => {
+                        const subName = typeof sub === 'string' ? sub : (sub.name || sub.title);
+                        return (
+                          <button
+                            key={sub._id || sub.slug || sIdx}
+                            onClick={() => onNavigate('products', catName, subName)}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-gray-50 text-gray-700 hover:bg-brand-teal hover:text-white transition-all cursor-pointer border border-gray-100 hover:border-brand-teal"
+                          >
+                            {subName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* View All In Category Action */}
                 <button
-                  key={cat._id || cat.id || catId}
-                  className="group flex flex-col items-center bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-xl hover:border-brand-teal/20 transition-all duration-300 transform hover:-translate-y-1 cursor-pointer text-center"
-                  onClick={() => {
-                    if (catId === 'school_specific') {
-                      onNavigate('school-directory');
-                    } else {
-                      onNavigate('products', catId);
-                    }
-                  }}
+                  onClick={() => onNavigate('products', catName)}
+                  className="w-full py-2.5 px-4 bg-brand-teal/5 hover:bg-brand-teal hover:text-white text-brand-teal rounded-xl font-bold text-xs flex items-center justify-between transition-colors cursor-pointer group/btn"
                 >
-                  <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden mb-4 border-2 border-gray-100 group-hover:border-brand-yellow group-hover:ring-4 group-hover:ring-brand-yellow/20 transition-all p-1 bg-gray-50 shadow-xs">
-                    <img
-                      src={catImg}
-                      alt={cat.name}
-                      className="w-full h-full object-cover rounded-full transition-transform duration-500 group-hover:scale-110"
-                      loading="lazy"
-                    />
-                  </div>
-                  <h3 className="text-sm font-extrabold tracking-wider text-brand-teal uppercase mb-2 group-hover:text-brand-pink transition-colors">
-                    {cat.name}
-                  </h3>
-                  <div className="inline-flex items-center gap-1 text-xs font-bold text-brand-teal bg-brand-teal/5 group-hover:bg-brand-pink group-hover:text-white px-3 py-1.5 rounded-lg transition-colors mt-auto">
-                    <span>Explore</span>
-                    <ArrowRight size={14} />
-                  </div>
+                  <span>Explore All {catName}</span>
+                  <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
                 </button>
-              );
-            })}
-          </div>
-        )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
-

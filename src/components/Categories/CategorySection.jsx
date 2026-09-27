@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { fetchCategoriesFromBackend } from '../../utils/api';
+import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 export default function CategorySection({ activeCategory, onSelectCategory, onNavigate }) {
   const [categories, setCategories] = useState([]);
@@ -10,11 +11,15 @@ export default function CategorySection({ activeCategory, onSelectCategory, onNa
   useEffect(() => {
     fetchCategoriesFromBackend()
       .then((data) => {
-        setCategories(Array.isArray(data) ? data : []);
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(data);
+        } else {
+          setCategories(CATEGORY_STRUCTURE);
+        }
         setLoading(false);
       })
       .catch(() => {
-        setCategories([]);
+        setCategories(CATEGORY_STRUCTURE);
         setLoading(false);
       });
   }, []);
@@ -76,6 +81,7 @@ export default function CategorySection({ activeCategory, onSelectCategory, onNa
                         alt={cat.name}
                         className="w-full h-full object-cover rounded-full transition-transform duration-300 group-hover:scale-110"
                         loading="lazy"
+                        decoding="async"
                       />
                     </div>
 

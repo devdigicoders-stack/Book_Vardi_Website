@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, X, Package, MapPin, Clock, ExternalLink, CheckCircle2, ShieldCheck, Loader2 } from 'lucide-react';
+import { 
+  Truck, 
+  X, 
+  Package, 
+  MapPin, 
+  Clock, 
+  ExternalLink, 
+  CheckCircle2, 
+  ShieldCheck, 
+  Loader2,
+  FileText,
+  Boxes,
+  QrCode,
+  Navigation,
+  Compass,
+  XCircle,
+  CreditCard
+} from 'lucide-react';
 import { trackAwbApi } from '../../utils/api';
 
 export default function OrderTrackingModal({ isOpen, onClose, order }) {
@@ -31,38 +48,51 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   }, [isOpen, awbNumber]);
 
   const steps = [
-    { key: 'placed', label: 'Order Placed', desc: 'Received by store' },
-    { key: 'packed', label: 'Packed', desc: 'Satchel sealed' },
-    { key: 'awb_generated', label: 'AWB Generated', desc: 'Courier assigned' },
-    { key: 'in_transit', label: 'In Transit', desc: 'Hub routing' },
-    { key: 'out_for_delivery', label: 'Out for Delivery', desc: 'Rider arriving' },
-    { key: 'delivered', label: 'Delivered', desc: 'Package received' }
+    { key: 'placed', label: 'Order Placed', desc: 'Received by store', icon: FileText },
+    { key: 'packed', label: 'Packed & Sealed', desc: 'Satchel ready', icon: Boxes },
+    { key: 'awb_generated', label: 'AWB Assigned', desc: 'Courier linked', icon: QrCode },
+    { key: 'in_transit', label: 'In Transit', desc: 'Hub routing', icon: Truck },
+    { key: 'out_for_delivery', label: 'Out for Delivery', desc: 'Rider arriving', icon: Navigation },
+    { key: 'delivered', label: 'Delivered', desc: 'Handed over', icon: ShieldCheck }
   ];
 
-  const currentStatus = order.overallStatus || order.status || 'shipped';
+  const currentStatus = String(order.overallStatus || order.status || 'shipped').toLowerCase().trim();
   let activeIndex = 3; // default shipped / in transit
   if (currentStatus === 'placed' || currentStatus === 'pending') activeIndex = 0;
   else if (currentStatus === 'confirmed') activeIndex = 1;
   else if (currentStatus === 'packed') activeIndex = 2;
-  else if (currentStatus === 'shipped') activeIndex = 3;
-  else if (currentStatus === 'out_for_delivery') activeIndex = 4;
-  else if (currentStatus === 'delivered') activeIndex = 5;
+  else if (currentStatus === 'shipped' || currentStatus === 'in_transit' || currentStatus === 'in transit') activeIndex = 3;
+  else if (currentStatus === 'out_for_delivery' || currentStatus === 'out for delivery') activeIndex = 4;
+  else if (currentStatus === 'delivered' || currentStatus === 'completed') activeIndex = 5;
+
+  const isCancelled = currentStatus === 'cancelled';
+  const CurrentStatusIcon = isCancelled ? XCircle : (steps[activeIndex]?.icon || Truck);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[90vh]">
         
         {/* Top Control Bar */}
-        <div className="bg-brand-teal-dark text-white px-6 py-4 flex items-center justify-between shrink-0">
+        <div className={`${isCancelled ? 'bg-slate-900' : 'bg-brand-teal-dark'} text-white px-6 py-4 flex items-center justify-between shrink-0`}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-brand-yellow text-brand-teal-dark flex items-center justify-center font-bold">
-              <Truck size={20} />
+            <div className="relative">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shadow-sm ${isCancelled ? 'bg-rose-500 text-white' : 'bg-brand-yellow text-brand-teal-dark'}`}>
+                <CurrentStatusIcon size={22} className={!isCancelled && (activeIndex === 3 || activeIndex === 4) ? "animate-pulse" : ""} />
+              </div>
+              {!isCancelled && activeIndex < 5 && (
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+              )}
             </div>
             <div>
-              <h3 className="font-display font-extrabold text-sm sm:text-base text-white">
-                Live Shipment Tracking — Order #{orderId}
+              <h3 className="font-display font-extrabold text-sm sm:text-base text-white flex items-center gap-2">
+                {isCancelled ? `Tracking Terminated — Order #${orderId}` : `Live Shipment Tracking — Order #${orderId}`}
               </h3>
-              <p className="text-[11px] text-teal-200">AWB Code: <strong className="font-mono text-white">{awbNumber}</strong></p>
+              <p className="text-[11px] text-teal-200">
+                {isCancelled ? 'Status: Order Cancelled' : <>AWB Code: <strong className="font-mono text-white">{awbNumber}</strong></>}
+              </p>
             </div>
           </div>
 
@@ -77,30 +107,132 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs text-gray-800">
           
-          {/* Visual Progress Stepper */}
-          <div className="bg-gray-50/80 p-4 sm:p-5 rounded-2xl border border-gray-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-extrabold text-brand-teal uppercase tracking-wider flex items-center gap-1">
-                <Clock size={14} /> Live Fulfillment Journey
-              </span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-900 font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200">
-                {courierPartnerName}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-6 gap-1 text-center font-bold text-[10px] pt-1">
-              {steps.map((s, idx) => {
-                const isPassed = activeIndex >= idx;
-                const isCurrent = activeIndex === idx;
-                return (
-                  <div key={s.key} className="space-y-1.5">
-                    <div className={`h-2 rounded-full transition-all ${isPassed ? 'bg-brand-teal' : 'bg-gray-200'} ${isCurrent ? 'ring-2 ring-brand-teal-light ring-offset-1 animate-pulse' : ''}`} />
-                    <div className={isPassed ? 'text-gray-900 font-black' : 'text-gray-400 font-normal'}>{s.label}</div>
+          {currentStatus === 'cancelled' && (
+            <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl text-rose-950 space-y-2">
+              <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-rose-700">
+                <XCircle size={16} />
+                <span>Order Cancelled (Performed by Customer)</span>
+              </div>
+              <p className="text-xs text-rose-900">
+                <strong>Cancelled By:</strong> {order.cancelledBy || 'Customer'} • <strong>Reason:</strong> {order.cancellationReason || 'Cancelled by customer'}
+              </p>
+              {(order.paymentStatus === 'paid' || order.paymentStatus === 'Paid' || (order.paymentMethod && String(order.paymentMethod).toUpperCase() !== 'COD')) ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-xs flex items-start gap-2 mt-2">
+                  <CreditCard size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-extrabold text-emerald-900">Online Refund Initiated</strong>
+                    <span>Since this order was paid online, your refund of <strong>₹{order.total || order.totalAmount}</strong> will be credited to your original payment account within <strong>48 working hours</strong>.</span>
                   </div>
-                );
-              })}
+                </div>
+              ) : (
+                <p className="text-[11px] text-gray-600 font-medium">Cash on Delivery order cancelled. No payment was collected.</p>
+              )}
+            </div>
+          )}
+
+          {/* Dynamic Live Status Highlight Banner */}
+          <div className={`${isCancelled ? 'bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 border-rose-800/50' : 'bg-gradient-to-r from-teal-900 via-brand-teal-dark to-slate-900 border-teal-700/50'} text-white p-4 rounded-2xl shadow-md relative overflow-hidden flex items-center justify-between gap-4 border`}>
+            <div className="flex items-center gap-3.5 relative z-10">
+              <div className="relative">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner border ${isCancelled ? 'bg-rose-500/20 text-rose-300 border-rose-400/30' : 'bg-white/10 text-brand-yellow border-white/20'}`}>
+                  <CurrentStatusIcon size={24} className={!isCancelled && (activeIndex === 3 || activeIndex === 4) ? "animate-pulse" : ""} />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] uppercase font-black tracking-widest px-2 py-0.5 rounded-md border ${isCancelled ? 'bg-rose-500/20 text-rose-200 border-rose-400/40' : 'bg-brand-yellow/15 text-brand-yellow border-brand-yellow/30'}`}>
+                    {isCancelled ? 'Tracking Closed' : 'Live Status Icon'}
+                  </span>
+                  {!isCancelled && (
+                    <span className="text-[11px] font-mono text-teal-200">
+                      Active Step #{activeIndex + 1} of {steps.length}
+                    </span>
+                  )}
+                </div>
+                <h4 className="font-display font-extrabold text-sm sm:text-base text-white mt-0.5">
+                  {isCancelled ? 'Tracking Terminated — Order Cancelled' : steps[activeIndex]?.label}
+                </h4>
+                <p className="text-[11px] text-teal-100/90 font-medium">
+                  {isCancelled
+                    ? 'Shipping & courier fulfillment stopped due to order cancellation.'
+                    : `${steps[activeIndex]?.desc} — Courier dispatch active`}
+                </p>
+              </div>
+            </div>
+            
+            <div className="hidden sm:flex flex-col items-end shrink-0 relative z-10 text-right">
+              <span className="text-[10px] text-teal-300 font-medium">{isCancelled ? 'Fulfillment Status' : 'Courier Partner'}</span>
+              <span className="text-xs font-black text-white">{isCancelled ? 'Cancelled' : courierPartnerName}</span>
             </div>
           </div>
+
+          {/* Visual Progress Stepper with Icon Status Nodes */}
+          {isCancelled ? (
+            <div className="bg-rose-50/70 p-5 rounded-2xl border border-rose-200 text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+                <XCircle size={22} />
+              </div>
+              <h4 className="font-extrabold text-xs text-rose-900">Shipment Journey Halted</h4>
+              <p className="text-[11px] text-rose-800 max-w-sm mx-auto leading-relaxed">
+                Courier transit and delivery tracking system closed permanently for this order. No further package movement will occur.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-brand-teal uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock size={15} className="animate-spin-slow" /> Live Fulfillment Journey
+                </span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-950 font-extrabold px-3 py-1 rounded-full border border-emerald-300 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  {courierPartnerName}
+                </span>
+              </div>
+
+              <div className="relative py-2 px-1">
+                {/* Connector Line */}
+                <div className="absolute top-[22px] left-[30px] right-[30px] h-1 bg-gray-200 -z-0">
+                  <div
+                    className="h-full bg-brand-teal transition-all duration-500 rounded-full"
+                    style={{ width: `${(activeIndex / (steps.length - 1)) * 100}%` }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-6 gap-1 text-center relative z-10">
+                  {steps.map((s, idx) => {
+                    const isPassed = activeIndex >= idx;
+                    const isCurrent = activeIndex === idx;
+                    const StepIcon = s.icon;
+
+                    return (
+                      <div key={s.key} className="flex flex-col items-center group cursor-pointer">
+                        <div
+                          className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-2xs ${
+                            isCurrent
+                              ? 'bg-brand-teal text-white ring-4 ring-brand-teal/30 scale-110 shadow-md animate-pulse'
+                              : isPassed
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-white text-gray-400 border border-gray-200'
+                          }`}
+                          title={`${s.label} (${s.desc})`}
+                        >
+                          {isPassed && !isCurrent ? (
+                            <CheckCircle2 size={18} className="text-white" />
+                          ) : (
+                            <StepIcon size={18} />
+                          )}
+                        </div>
+                        <div className={`text-[10px] font-extrabold mt-2 leading-tight transition-colors ${isCurrent ? 'text-brand-teal font-black' : isPassed ? 'text-gray-900' : 'text-gray-400'}`}>
+                          {s.label}
+                        </div>
+                        <div className="text-[9px] text-gray-500 font-medium hidden sm:block mt-0.5">{s.desc}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Courier Details Card */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-brand-teal/5 p-4 rounded-2xl border border-brand-teal/20">

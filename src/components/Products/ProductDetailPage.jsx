@@ -25,13 +25,16 @@ import {
   CreditCard,
   Banknote,
   Loader2,
-  ArrowRight
+  ArrowRight,
+  XCircle,
+  ArrowRightLeft
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import { resolveImageUrl, parseSizeVariants } from '../../utils/api';
 import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
+import { isCouponApplicableToProduct } from '../../utils/couponApplicability';
 import GrabKitSection from './GrabKitSection';
 
 export { getProductPaymentRestrictions };
@@ -98,7 +101,8 @@ export default function ProductDetailPage({ onNavigate }) {
     products = [],
     promotions = [],
     applyCoupon,
-    appliedCoupon
+    appliedCoupon,
+    freeShippingThreshold = 499
   } = useCart();
 
   const [quantity, setQuantity] = useState(1);
@@ -243,19 +247,86 @@ export default function ProductDetailPage({ onNavigate }) {
   const currentProductIdKey = selectedProduct?.id || selectedProduct?._id || 'default_product';
   const currentAppliedCouponCode = appliedProductCouponMap[currentProductIdKey] || null;
 
-  // Available Offers & Coupons list (Loaded strictly from database promotions)
-  const availableCoupons = (promotions || []).map((p) => ({
-    code: p.code,
-    title: p.title || `${p.code} Promo Offer`,
-    subtitle: p.description || `Special offer on ${p.code}`,
-    discountType: p.discountType || (p.type === 'percent' ? 'percentage' : 'flat'),
-    discountValue: p.discountValue ? `${p.discountValue}%` : (p.value ? `${p.value}%` : 'Special Discount'),
-    minOrder: p.minOrderValue || p.minOrderAmount || 0,
-    minOrderLabel: (p.minOrderValue || p.minOrderAmount) ? `Min Order Value ₹${p.minOrderValue || p.minOrderAmount}` : 'No Minimum Limit',
-    expiry: p.expiryDate ? new Date(p.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Limited Time',
-    colorScheme: 'teal',
-    details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`
-  }));
+  // Available Offers & Coupons list (Loaded strictly from database promotions applicable to current product)
+  const availableCoupons = (promotions || [])
+    .filter((p) => isCouponApplicableToProduct(p, selectedProduct))
+    .map((p) => ({
+      code: p.code,
+      title: p.title || `${p.code} Promo Offer`,
+      subtitle: p.description || `Special offer on ${p.code}`,
+      discountType: p.discountType || (p.type === 'percent' ? 'percentage' : 'flat'),
+      discountValue: p.discountValue ? `${p.discountValue}%` : (p.value ? `${p.value}%` : 'Special Discount'),
+      minOrder: p.minOrderValue || p.minOrderAmount || 0,
+      minOrderLabel: (p.minOrderValue || p.minOrderAmount) ? `Min Order Value ₹${p.minOrderValue || p.minOrderAmount}` : 'No Minimum Limit',
+      expiry: p.expiryDate ? new Date(p.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Limited Time',
+      colorScheme: 'teal',
+      details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`
+    }));
+
+  // Dynamic Confidence Badges Calculation
+  const isApprovedOrAdminCertified = Boolean(
+    selectedProduct?.adminCertified === true ||
+    selectedProduct?.isAdminApproved === true ||
+    String(selectedProduct?.approvalStatus || '').toLowerCase() === 'approved'
+  );
+
+  const dispatchLabel = (() => {
+    if (selectedProduct?.dispatchInHours) {
+      return `Dispatched in ${selectedProduct.dispatchInHours} Hrs`;
+    }
+    if (selectedProduct?.dispatchDays) {
+      return `Dispatched in ${selectedProduct.dispatchDays} Days`;
+    }
+    if (selectedProduct?.dispatchTime) {
+      return `Dispatched in ${selectedProduct.dispatchTime}`;
+    }
+    return `Dispatched in 24 Hrs`;
+  })();
+
+  const returnLabel = (selectedProduct?.isReturnable === false || selectedProduct?.returnPolicy === 'non_returnable')
+    ? 'Non-Returnable Item'
+    : `${selectedProduct?.returnWindowDays || selectedProduct?.returnPolicyDays || 7}-Day Easy Returns`;
+
+  const renderConfidenceBadges = (className = '') => (
+    <div className={`grid grid-cols-2 gap-2.5 ${className}`}>
+      {/* 1. Dynamic Free Delivery */}
+      <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
+        <Truck size={16} className="text-brand-teal shrink-0" />
+        <span>Free delivery on ₹{freeShippingThreshold || 499}+</span>
+      </div>
+
+      {/* 2. Dynamic Dispatch Timeline */}
+      <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
+        <Zap size={16} className="text-brand-ochre shrink-0" />
+        <span>{dispatchLabel}</span>
+      </div>
+
+      {/* 3. Dynamic Return Policy */}
+      <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
+        {selectedProduct?.isReturnable === false || selectedProduct?.returnPolicy === 'non_returnable' ? (
+          <>
+            <XCircle size={16} className="text-gray-400 shrink-0" />
+            <span className="text-gray-500 font-medium">Non-Returnable Item</span>
+          </>
+        ) : (
+          <>
+            <RotateCcw size={16} className="text-brand-pink shrink-0" />
+            <span>{returnLabel}</span>
+          </>
+        )}
+      </div>
+
+      {/* 4. Dynamic Admin Certification */}
+      <div className={`p-2.5 rounded-xl border flex items-center gap-2 text-[11px] ${
+        isApprovedOrAdminCertified
+          ? 'bg-emerald-50/80 border-emerald-200/80 text-emerald-900 font-bold'
+          : 'bg-gray-50 border-gray-100 text-gray-700'
+      }`}>
+        <ShieldCheck size={16} className={isApprovedOrAdminCertified ? 'text-emerald-700 shrink-0' : 'text-brand-teal shrink-0'} />
+        <span>{isApprovedOrAdminCertified ? '100% Genuine & Admin Certified' : '100% Genuine Certified'}</span>
+      </div>
+    </div>
+  );
 
   const handleApplyCouponAndCheckout = (couponCode) => {
     if (selectedProduct) {
@@ -603,8 +674,8 @@ export default function ProductDetailPage({ onNavigate }) {
       specs.push({ label: 'Stock Available', value: p.stock > 0 ? `${p.stock} units` : 'Out of Stock' });
     }
     specs.push({
-      label: 'Return Policy',
-      value: p.isReturnable === false ? 'Non-Returnable' : `${p.returnWindowDays || 7}-Day Easy Return Policy`
+      label: 'Return & Exchange Policy',
+      value: p.isReturnable === false ? 'Non-Returnable Product (Final Sale)' : `${p.returnWindowDays || 7}-Day Easy Return & Size Exchange`
     });
     if (p.sellerStoreName || p.storeName || p.legalBusinessName || p.sellerName || p.seller) {
       const sName = p.sellerStoreName || p.storeName || p.legalBusinessName || p.sellerName || (typeof p.seller === 'string' ? p.seller : p.seller?.storeName || 'Book Vardi Verified Seller');
@@ -720,24 +791,7 @@ export default function ProductDetailPage({ onNavigate }) {
                 </div>
 
                 {/* Student Confidence Badges (Desktop) */}
-                <div className="hidden md:grid grid-cols-2 gap-2.5 pt-2">
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <Truck size={16} className="text-brand-teal shrink-0" />
-                    <span>Free delivery on ₹499+</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <Zap size={16} className="text-brand-ochre shrink-0" />
-                    <span>Dispatched in 24 Hrs</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <RotateCcw size={16} className="text-brand-pink shrink-0" />
-                    <span>7-Day Easy Returns</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <ShieldCheck size={16} className="text-green-700 shrink-0" />
-                    <span>100% Genuine Certified</span>
-                  </div>
-                </div>
+                {renderConfidenceBadges('hidden md:grid pt-2')}
               </div>
 
               {/* Right: Product Details & Purchase Actions */}
@@ -828,13 +882,14 @@ export default function ProductDetailPage({ onNavigate }) {
 
 
                       {selectedProduct.isReturnable === false ? (
-                        <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
-                          Non-Returnable
+                        <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-md border border-gray-200 flex items-center gap-1">
+                          <XCircle size={11} className="text-gray-400" />
+                          <span>Non-Returnable Item</span>
                         </span>
                       ) : (
-                        <span className="text-[11px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-md border border-green-200 flex items-center gap-1">
-                          <RotateCcw size={11} />
-                          <span>{selectedProduct.returnWindowDays || 7}-Day Returns</span>
+                        <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                          <RotateCcw size={11} className="text-emerald-600" />
+                          <span>{selectedProduct.returnWindowDays || 7}-Day Return & Exchange</span>
                         </span>
                       )}
 
@@ -1207,24 +1262,7 @@ export default function ProductDetailPage({ onNavigate }) {
                 </div>
 
                 {/* Student Confidence Badges (Mobile Only - Just above offers) */}
-                <div className="grid md:hidden grid-cols-2 gap-2.5 mt-2 pt-4 border-t border-gray-100">
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <Truck size={16} className="text-brand-teal shrink-0" />
-                    <span>Free delivery on ₹499+</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <Zap size={16} className="text-brand-ochre shrink-0" />
-                    <span>Dispatched in 24 Hrs</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <RotateCcw size={16} className="text-brand-pink shrink-0" />
-                    <span>7-Day Easy Returns</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-                    <ShieldCheck size={16} className="text-green-700 shrink-0" />
-                    <span>100% Genuine Certified</span>
-                  </div>
-                </div>
+                {renderConfidenceBadges('grid md:hidden mt-2 pt-4 border-t border-gray-100')}
               </div>
             </div>
 
@@ -1247,11 +1285,16 @@ export default function ProductDetailPage({ onNavigate }) {
                 )}
               </div>
               
-              <div
-                className="flex flex-nowrap overflow-x-auto gap-3 pb-3 hide-scrollbar snap-x snap-mandatory scroll-smooth"
-                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-              >
-                {availableCoupons.map((coupon, cIdx) => {
+              {availableCoupons.length === 0 ? (
+                <div className="p-4 bg-gray-50/80 border border-dashed border-gray-200 rounded-2xl text-center text-xs text-gray-500 font-medium">
+                  No product-specific coupons available for this product at this time.
+                </div>
+              ) : (
+                <div
+                  className="flex flex-nowrap overflow-x-auto gap-3 pb-3 hide-scrollbar snap-x snap-mandatory scroll-smooth"
+                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                  {availableCoupons.map((coupon, cIdx) => {
                   const isApplied = currentAppliedCouponCode === coupon.code;
                   return (
                     <div 
@@ -1323,6 +1366,7 @@ export default function ProductDetailPage({ onNavigate }) {
                   );
                 })}
               </div>
+              )}
             </div>
 
             {/* VIEW ALL COUPONS POPUP DIV MODAL (70vh height, overflow hidden, scrollbar hidden) */}
@@ -1588,16 +1632,46 @@ export default function ProductDetailPage({ onNavigate }) {
               )}
 
               {activeTab === 'specs' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {getProductSpecs().map((spec, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 border border-gray-100"
-                    >
-                      <span className="font-bold text-gray-500">{spec.label}</span>
-                      <span className="font-semibold text-gray-800 text-right">{spec.value}</span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {getProductSpecs().map((spec, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 border border-gray-100"
+                      >
+                        <span className="font-bold text-gray-500">{spec.label}</span>
+                        <span className="font-semibold text-gray-800 text-right">{spec.value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Return & Exchange Policy Highlight Card */}
+                  <div className={`p-4 rounded-2xl border text-xs leading-relaxed ${
+                    selectedProduct.isReturnable === false
+                      ? 'bg-slate-50 border-slate-200/80 text-slate-700'
+                      : 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950'
+                  }`}>
+                    <div className="flex items-center gap-2 font-bold mb-1">
+                      {selectedProduct.isReturnable === false ? (
+                        <>
+                          <XCircle size={16} className="text-slate-500 shrink-0" />
+                          <span className="text-slate-900 font-extrabold text-xs uppercase tracking-wider">Non-Returnable & Non-Exchangeable Product</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw size={16} className="text-emerald-700 shrink-0" />
+                          <span className="text-emerald-900 font-extrabold text-xs uppercase tracking-wider">
+                            {selectedProduct.returnWindowDays || 7}-Day Hassle-Free Returns & Size Exchange Guarantee
+                          </span>
+                        </>
+                      )}
                     </div>
-                  ))}
+                    <p className="text-[11px] text-gray-600">
+                      {selectedProduct.isReturnable === false
+                        ? 'This item is classified as final sale due to hygiene, customized uniform printing, or consumable stationaries policy. It cannot be returned or exchanged once delivered unless defective.'
+                        : `You can initiate a return or size exchange within ${selectedProduct.returnWindowDays || 7} days of delivery directly from your Order History page. Ensure items are unused with original tags.`}
+                    </p>
+                  </div>
                 </div>
               )}
 

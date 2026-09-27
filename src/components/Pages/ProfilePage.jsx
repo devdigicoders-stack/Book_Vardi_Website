@@ -29,7 +29,12 @@ import {
   Check,
   Store,
   AlertTriangle,
-  Building2
+  Building2,
+  Navigation,
+  Boxes,
+  XCircle,
+  ArrowRightLeft,
+  CreditCard
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
@@ -41,6 +46,9 @@ import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi } from '../../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
+import OrderTrackingModal from '../Common/OrderTrackingModal';
+import CancelOrderModal from '../Common/CancelOrderModal';
+import ReturnExchangeModal from '../Common/ReturnExchangeModal';
 
 export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
@@ -72,13 +80,96 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     isAdmin,
     setLastPlacedOrder,
     USERS,
-    switchUser
+    switchUser,
+    fetchUserOrders
   } = useCart();
   const { userSubdistrict } = useLocation();
 
   const [activeTab, setActiveTab] = useState(initialTab); // 'profile' | 'wishlist' | 'orders' | 'cart' | 'addresses' | 'seller-data' | 'bulk-orders'
   const [customerBulkOrders, setCustomerBulkOrders] = useState([]);
   const [selectedBulkOrder, setSelectedBulkOrder] = useState(null);
+  const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
+  const [trackingModalOrder, setTrackingModalOrder] = useState(null);
+  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
+  const [cancelModalOrder, setCancelModalOrder] = useState(null);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [returnModalOrder, setReturnModalOrder] = useState(null);
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+
+  const getOrderStatusMeta = (status) => {
+    const s = String(status || '').toLowerCase().trim();
+    if (s === 'delivered' || s === 'completed') {
+      return {
+        icon: CheckCircle2,
+        label: 'Delivered',
+        badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+        iconClass: 'text-emerald-600'
+      };
+    }
+    if (s === 'return_requested' || s === 'returned') {
+      return {
+        icon: RotateCcw,
+        label: s === 'returned' ? 'Order Returned' : 'Return Requested',
+        badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
+        iconClass: 'text-amber-600'
+      };
+    }
+    if (s === 'exchange_requested' || s === 'exchanged') {
+      return {
+        icon: ArrowRightLeft,
+        label: s === 'exchanged' ? 'Item Exchanged' : 'Exchange Requested',
+        badgeClass: 'bg-indigo-100 text-indigo-950 border border-indigo-300',
+        iconClass: 'text-indigo-600'
+      };
+    }
+    if (s === 'out_for_delivery' || s === 'out for delivery') {
+      return {
+        icon: Navigation,
+        label: 'Out for Delivery',
+        badgeClass: 'bg-purple-100 text-purple-950 border border-purple-300',
+        iconClass: 'text-purple-600 animate-pulse'
+      };
+    }
+    if (s === 'shipped' || s === 'in_transit' || s === 'in transit') {
+      return {
+        icon: Truck,
+        label: 'In Transit',
+        badgeClass: 'bg-teal-100 text-teal-950 border border-teal-300',
+        iconClass: 'text-brand-teal animate-pulse'
+      };
+    }
+    if (s === 'packed' || s === 'confirmed') {
+      return {
+        icon: Boxes,
+        label: s === 'packed' ? 'Packed & Sealed' : 'Confirmed',
+        badgeClass: 'bg-blue-100 text-blue-950 border border-blue-300',
+        iconClass: 'text-blue-600'
+      };
+    }
+    if (s === 'cancelled' || s === 'canceled') {
+      return {
+        icon: XCircle,
+        label: 'Cancelled',
+        badgeClass: 'bg-red-100 text-red-950 border border-red-300',
+        iconClass: 'text-red-600'
+      };
+    }
+    return {
+      icon: Clock,
+      label: status || 'Placed',
+      badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
+      iconClass: 'text-amber-600'
+    };
+  };
+
+  useEffect(() => {
+    if (activeTab === 'orders' || activeTab === 'profile') {
+      if (fetchUserOrders) {
+        setIsRefreshingOrders(true);
+        fetchUserOrders().finally(() => setIsRefreshingOrders(false));
+      }
+    }
+  }, [activeTab, fetchUserOrders]);
 
   useEffect(() => {
     if (activeTab === 'bulk-orders' || activeTab === 'profile') {
@@ -1476,8 +1567,25 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                       Track packages, view past stationery orders, and filter your purchase history.
                     </p>
                   </div>
-                  <div className="text-xs font-bold text-gray-500">
-                    Showing <strong className="text-brand-teal">{filteredOrders.length}</strong> of {allOrders.length} orders
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (fetchUserOrders) {
+                          setIsRefreshingOrders(true);
+                          fetchUserOrders().finally(() => setIsRefreshingOrders(false));
+                        }
+                      }}
+                      disabled={isRefreshingOrders}
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-light bg-brand-teal/10 hover:bg-brand-teal/20 px-3 py-1.5 rounded-xl transition-all cursor-pointer border border-brand-teal/20 disabled:opacity-60"
+                      title="Sync latest order status from server"
+                    >
+                      <RotateCcw size={13} className={isRefreshingOrders ? 'animate-spin' : ''} />
+                      <span>{isRefreshingOrders ? 'Syncing...' : 'Refresh Orders'}</span>
+                    </button>
+                    <div className="text-xs font-bold text-gray-500">
+                      Showing <strong className="text-brand-teal">{filteredOrders.length}</strong> of {allOrders.length} orders
+                    </div>
                   </div>
                 </div>
 
@@ -1577,6 +1685,22 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 {filteredOrders.length > 0 ? (
                   <div className="space-y-4">
                     {filteredOrders.map((order) => {
+                      const currentStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+                      const statusMeta = getOrderStatusMeta(currentStatus);
+                      const StatusIcon = statusMeta.icon;
+
+                      const isCancelEligible = ['placed', 'pending', 'confirmed', 'processing', 'packed'].includes(currentStatus);
+                      const isDelivered = ['delivered', 'completed'].includes(currentStatus);
+                      const firstItem = order.items?.[0] || {};
+                      const isReturnable = firstItem.isReturnable !== false;
+                      const returnWindowDays = firstItem.returnWindowDays || 7;
+                      const deliveredDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.date || order.createdAt || Date.now());
+                      const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
+                      const now = new Date();
+                      const isReturnWindowValid = isDelivered && isReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged'].includes(currentStatus);
+                      const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                      const daysLeft = Math.max(0, Math.ceil((returnTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
                       const handleViewOrder = (e) => {
                         e.stopPropagation();
                         setLastPlacedOrder(order);
@@ -1601,18 +1725,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                             <div className="flex items-center gap-3">
                               <span
-                                className={`inline-flex items-center gap-1 text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider ${
-                                  order.status === 'Delivered'
-                                    ? 'bg-green-100 text-green-700'
-                                    : 'bg-amber-100 text-amber-800'
-                                }`}
+                                className={`inline-flex items-center gap-1.5 text-[11px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider ${statusMeta.badgeClass}`}
                               >
-                                {order.status === 'Delivered' ? (
-                                  <CheckCircle2 size={12} />
-                                ) : (
-                                  <Truck size={12} />
-                                )}
-                                <span>{order.status}</span>
+                                <StatusIcon size={13} className={statusMeta.iconClass} />
+                                <span>{statusMeta.label}</span>
                               </span>
 
                               <span className="font-display text-sm font-extrabold text-brand-teal">
@@ -1644,31 +1760,102 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             ))}
                           </div>
 
+                          {/* Cancellation & Refund Status Banner for Cancelled Orders */}
+                          {currentStatus === 'cancelled' && (
+                            <div className="mb-3 p-3 rounded-xl text-xs space-y-1.5 border bg-rose-50/80 border-rose-200 text-rose-950">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <XCircle size={14} className="text-rose-600 shrink-0" />
+                                  <span>Order Cancelled by Customer ({order.cancelledBy || 'User'})</span>
+                                </div>
+                                {(order.paymentStatus === 'paid' || order.paymentStatus === 'Paid' || (order.paymentMethod && String(order.paymentMethod).toUpperCase() !== 'COD')) && (
+                                  <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <CreditCard size={11} className="text-emerald-700" />
+                                    <span>Refund Initiated (48 Working Hrs)</span>
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-rose-900">
+                                <strong>Reason:</strong> {order.cancellationReason || 'Cancelled by customer'}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Return / Exchange Policy Tag Banner for Delivered Orders */}
+                          {isDelivered && (
+                            <div className="mb-3 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border bg-emerald-50/70 border-emerald-200/80 text-emerald-950 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <RotateCcw size={13} className="text-emerald-600 shrink-0" />
+                                <span>
+                                  {isReturnWindowValid ? (
+                                    <>Return / Exchange available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
+                                  ) : isReturnable ? (
+                                    <>Return / Exchange window closed on <strong className="font-mono">{formattedTillDate}</strong></>
+                                  ) : (
+                                    <>Non-Returnable Product Policy</>
+                                  )}
+                                </span>
+                              </div>
+                              {isReturnWindowValid && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReturnModalOrder(order);
+                                    setIsReturnModalOpen(true);
+                                  }}
+                                  className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
+                                >
+                                  <ArrowRightLeft size={12} />
+                                  <span>Return or Exchange</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
                           {/* Order Footer */}
                           <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 flex-wrap gap-2">
                             <span className="flex items-center gap-1">
                               <Clock size={12} />
-                              Tracking: <strong className="text-gray-700 font-mono text-[11px]">{order.trackingNumber}</strong>
+                              Tracking: <strong className="text-gray-700 font-mono text-[11px]">{order.trackingNumber || `SHIP-${order.id}`}</strong>
                             </span>
 
                             <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={handleViewOrder}
-                                className="inline-flex items-center gap-1 text-xs font-bold bg-brand-teal hover:bg-brand-teal-light text-white px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer"
-                              >
-                                <Truck size={13} />
-                                <span>Track & Details</span>
-                              </button>
+                              {isCancelEligible && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCancelModalOrder(order);
+                                    setIsCancelModalOpen(true);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                                  title="Cancel this order before shipment"
+                                >
+                                  <XCircle size={13} />
+                                  <span>Cancel Order</span>
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onNavigate('products');
+                                  setTrackingModalOrder(order);
+                                  setIsTrackingModalOpen(true);
                                 }}
-                                className="text-xs font-bold text-gray-600 hover:text-brand-teal hover:underline px-2 py-1 cursor-pointer"
+                                className="inline-flex items-center gap-1.5 text-xs font-bold bg-brand-teal hover:bg-brand-teal-light text-white px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer"
+                                title="Open Live Tracking Status Modal"
                               >
-                                Order Again
+                                <StatusIcon size={13} className="text-brand-yellow" />
+                                <span>Track Live Courier</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleViewOrder}
+                                className="inline-flex items-center gap-1 text-xs font-bold text-gray-600 hover:text-brand-teal hover:underline px-2 py-1 cursor-pointer"
+                              >
+                                Details
                               </button>
                             </div>
                           </div>
@@ -2462,6 +2649,30 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       <BulkOrderPreviewModal
         order={selectedBulkOrder}
         onClose={() => setSelectedBulkOrder(null)}
+      />
+
+      <OrderTrackingModal
+        isOpen={isTrackingModalOpen}
+        onClose={() => setIsTrackingModalOpen(false)}
+        order={trackingModalOrder}
+      />
+
+      <CancelOrderModal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        order={cancelModalOrder}
+        onSuccess={(updatedOrder) => {
+          if (fetchUserOrders) fetchUserOrders();
+        }}
+      />
+
+      <ReturnExchangeModal
+        isOpen={isReturnModalOpen}
+        onClose={() => setIsReturnModalOpen(false)}
+        order={returnModalOrder}
+        onSuccess={(updatedOrder) => {
+          if (fetchUserOrders) fetchUserOrders();
+        }}
       />
     </div>
   );
