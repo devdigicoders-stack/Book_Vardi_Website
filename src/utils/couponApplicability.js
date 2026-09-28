@@ -10,52 +10,56 @@
  * @param {Object} product - The product object
  * @returns {boolean} True if coupon can be applied to product, false otherwise
  */
-export const isCouponApplicableToProduct = (coupon, product) => {
+export const isCouponApplicableToProduct = (coupon, product, options = {}) => {
   if (!coupon || !product) return false;
 
   // 1. Status Check: Must be active if status field exists
-  if (coupon.status && coupon.status !== 'active' && coupon.status !== 'Active') return false;
+  if (coupon.status && String(coupon.status).toLowerCase() !== 'active') return false;
 
-  // 2. Expiry Check: Must not be past expiry date
+  // 2. Expiry Check: Must not be past expiry date (with end-of-day allowance for date strings)
   if (coupon.expiryDate) {
     const expiry = new Date(coupon.expiryDate);
-    const now = new Date();
-    if (!isNaN(expiry.getTime()) && expiry < now) {
+    if (!isNaN(expiry.getTime())) {
+      if (typeof coupon.expiryDate === 'string' && !coupon.expiryDate.includes('T')) {
+        expiry.setHours(23, 59, 59, 999);
+      }
+      if (expiry < new Date()) {
+        return false;
+      }
+    }
+  }
+
+  // 3. Optional strict price threshold (off by default so product detail page displays available promos)
+  if (options.requirePriceAboveMin) {
+    const minVal = Number(coupon.minOrderValue || coupon.minOrderAmount || coupon.minAmount || coupon.minPurchase || 0);
+    const prodPrice = Number(product.price || product.discountPrice || product.sellingPrice || 0);
+    if (minVal > 0 && prodPrice > 0 && prodPrice < minVal) {
       return false;
     }
   }
 
-  // 3. Price threshold check for single product context
-  const minVal = Number(coupon.minOrderValue || coupon.minOrderAmount || coupon.minAmount || coupon.minPurchase || 0);
-  const prodPrice = Number(product.price || product.discountPrice || product.sellingPrice || 0);
-  if (minVal > 0 && prodPrice > 0 && prodPrice < minVal) {
-    return false;
-  }
+  const extractId = (val) => {
+    if (!val) return null;
+    if (typeof val === 'object') {
+      return String(val._id || val.id || val.$oid || '').toLowerCase().trim();
+    }
+    return String(val).toLowerCase().trim();
+  };
 
   // 4. Extract target IDs from coupon
-  const isSellerScoped = Boolean(coupon.createdRole === 'seller' || coupon.sellerId || coupon.storeId);
-  const targetSellerId = coupon.sellerId ? String(coupon.sellerId) : (coupon.storeId ? String(coupon.storeId) : null);
-  const applicableProds = (coupon.applicableProducts || coupon.specificProducts || []).map((p) => String(p));
+  const targetSellerId = extractId(coupon.sellerId) || extractId(coupon.storeId);
+  const isSellerScoped = Boolean(coupon.createdRole === 'seller' || targetSellerId);
+  const applicableProds = (coupon.applicableProducts || coupon.specificProducts || [])
+    .map((p) => extractId(p))
+    .filter(Boolean);
   if (coupon.specificProductId) {
-    applicableProds.push(String(coupon.specificProductId));
+    const specId = extractId(coupon.specificProductId);
+    if (specId) applicableProds.push(specId);
   }
 
   // 5. Extract IDs from product
-  const prodSellerId = product.sellerId
-    ? String(product.sellerId)
-    : product.seller
-    ? String(product.seller)
-    : product.storeId
-    ? String(product.storeId)
-    : null;
-    
-  const prodId = product.id
-    ? String(product.id)
-    : product._id
-    ? String(product._id)
-    : product.productId
-    ? String(product.productId)
-    : null;
+  const prodSellerId = extractId(product.sellerId) || extractId(product.seller) || extractId(product.storeId) || extractId(product.userId);
+  const cleanProdId = extractId(product.id) || extractId(product._id) || extractId(product.productId);
 
   // 6. Seller Scoped Coupon Logic
   if (isSellerScoped) {
@@ -65,14 +69,14 @@ export const isCouponApplicableToProduct = (coupon, product) => {
     }
     // If specific products array is specified on seller coupon, product ID must match
     if (applicableProds.length > 0) {
-      return prodId ? applicableProds.includes(prodId) : false;
+      return cleanProdId ? applicableProds.includes(cleanProdId) : false;
     }
     return true;
   }
 
   // 7. Admin Scoped Coupon Logic
   if (applicableProds.length > 0) {
-    return prodId ? applicableProds.includes(prodId) : false;
+    return cleanProdId ? applicableProds.includes(cleanProdId) : false;
   }
 
   // Admin store-wide coupon (applies to all products)

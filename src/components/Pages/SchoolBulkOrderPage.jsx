@@ -54,7 +54,10 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
       category: 'Custom School Uniforms',
       itemName: '',
       quantity: 100,
+      budgetPerUnit: 500,
       sampleImage: '',
+      sampleImages: [],
+      customizations: '',
       notes: ''
     }
   ]);
@@ -116,7 +119,10 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
         category: 'Custom School Uniforms',
         itemName: '',
         quantity: 100,
+        budgetPerUnit: 500,
         sampleImage: '',
+        sampleImages: [],
+        customizations: '',
         notes: ''
       }
     ]);
@@ -136,20 +142,62 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     );
   };
 
-  const handleSampleImageUpload = async (id, file) => {
-    if (!file) return;
-    try {
-      const compressed = await compressImageToWebP(file, 1024, 1024, 0.85);
-      handleRequirementChange(id, 'sampleImage', compressed.dataUrl);
-      showToast('📸 Sample image compressed & attached successfully!');
-    } catch (err) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        handleRequirementChange(id, 'sampleImage', e.target.result);
-      };
-      reader.readAsDataURL(file);
+  const handleMultipleImageUpload = async (id, files) => {
+    if (!files || files.length === 0) return;
+    const fileList = Array.from(files);
+    
+    for (const file of fileList) {
+      try {
+        const compressed = await compressImageToWebP(file, 1024, 1024, 0.85);
+        setRequirements((prev) =>
+          prev.map((item) => {
+            if (item.id === id) {
+              const currentArr = Array.isArray(item.sampleImages) ? item.sampleImages : (item.sampleImage ? [item.sampleImage] : []);
+              const updated = [...currentArr, compressed.dataUrl];
+              return { ...item, sampleImages: updated, sampleImage: updated[0] };
+            }
+            return item;
+          })
+        );
+      } catch (err) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setRequirements((prev) =>
+            prev.map((item) => {
+              if (item.id === id) {
+                const currentArr = Array.isArray(item.sampleImages) ? item.sampleImages : (item.sampleImage ? [item.sampleImage] : []);
+                const updated = [...currentArr, e.target.result];
+                return { ...item, sampleImages: updated, sampleImage: updated[0] };
+              }
+              return item;
+            })
+          );
+        };
+        reader.readAsDataURL(file);
+      }
     }
+    showToast(`📸 ${fileList.length} photo(s) attached successfully!`);
   };
+
+  const handleRemoveSampleImage = (id, imgIndex) => {
+    setRequirements((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const currentArr = Array.isArray(item.sampleImages) ? item.sampleImages : (item.sampleImage ? [item.sampleImage] : []);
+          const updated = currentArr.filter((_, idx) => idx !== imgIndex);
+          return { ...item, sampleImages: updated, sampleImage: updated[0] || '' };
+        }
+        return item;
+      })
+    );
+  };
+
+  // Calculate total overall budget
+  const calculatedOverallBudget = requirements.reduce((sum, item) => {
+    const qty = Number(item.quantity) || 0;
+    const rate = Number(item.budgetPerUnit) || 0;
+    return sum + (qty * rate);
+  }, 0);
 
   // Validate form fields before opening preview or submitting
   const validateForm = () => {
@@ -210,11 +258,12 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
       pincode: pincode.trim(),
       requirements,
       totalQuantity: totalQty,
+      overallBudget: calculatedOverallBudget,
       targetDeliveryDate,
       logoEmbroideryRequired,
-      targetBudgetPerKit: targetBudgetPerKit.trim(),
+      targetBudgetPerKit: String(calculatedOverallBudget || targetBudgetPerKit || ''),
       additionalNotes: additionalNotes.trim(),
-      assignmentMode: 'unassigned', // DEFAULT TO UNASSIGNED SO ONLY ADMIN RECEIVES IT FIRST UNTIL ADMIN DISTRIBUTES IT
+      assignmentMode: 'unassigned',
       status: 'pending'
     };
 
@@ -706,7 +755,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
 
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
                       {/* Category */}
-                      <div className="sm:col-span-4">
+                      <div className="sm:col-span-3">
                         <label className="block text-[11px] font-bold text-gray-700 mb-1">
                           Category Demand
                         </label>
@@ -726,7 +775,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                       </div>
 
                       {/* Item Name / Specification */}
-                      <div className="sm:col-span-5">
+                      <div className="sm:col-span-4">
                         <label className="block text-[11px] font-bold text-gray-700 mb-1">
                           Item Requirement Title <span className="text-red-500">*</span>
                         </label>
@@ -741,9 +790,9 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                       </div>
 
                       {/* Quantity */}
-                      <div className="sm:col-span-3">
+                      <div className="sm:col-span-2">
                         <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                          Quantity Demanded (Units)
+                          Quantity (Units)
                         </label>
                         <input
                           type="number"
@@ -753,58 +802,108 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                           className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-brand-teal focus:ring-2 focus:ring-brand-teal"
                         />
                       </div>
-                    </div>
 
-                    {/* Sample Image Upload & Notes */}
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 pt-1 items-start">
-                      {/* Sample Upload */}
-                      <div className="sm:col-span-5">
+                      {/* Budget Per Unit */}
+                      <div className="sm:col-span-3">
                         <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                          Upload Sample Image / Design Preview (Optional)
-                        </label>
-
-                        {reqItem.sampleImage ? (
-                          <div className="relative w-28 h-20 rounded-xl overflow-hidden border border-brand-teal/40 shadow-2xs group/img">
-                            <img src={reqItem.sampleImage} alt="Sample" className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={() => handleRequirementChange(reqItem.id, 'sampleImage', '')}
-                              className="absolute top-1 right-1 bg-black/70 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                              title="Remove photo"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ) : (
-                          <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-dashed border-gray-300 bg-white text-gray-600 hover:border-brand-teal hover:text-brand-teal text-xs transition-all cursor-pointer">
-                            <Camera size={15} />
-                            <span>Attach Sample Photo</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleSampleImageUpload(reqItem.id, e.target.files?.[0])}
-                              className="hidden"
-                            />
-                          </label>
-                        )}
-                      </div>
-
-                      {/* Specific Notes */}
-                      <div className="sm:col-span-7">
-                        <label className="block text-[11px] font-bold text-gray-700 mb-1">
-                          Specific Notes (Fabric, Color, Size Breakdown, etc.)
+                          Target Budget / Unit (₹)
                         </label>
                         <input
-                          type="text"
-                          value={reqItem.notes}
-                          onChange={(e) => handleRequirementChange(reqItem.id, 'notes', e.target.value)}
-                          placeholder="e.g. 100% cotton, sizes 28 to 38, golden logo buttons"
-                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-brand-teal"
+                          type="number"
+                          min="0"
+                          value={reqItem.budgetPerUnit || ''}
+                          onChange={(e) => handleRequirementChange(reqItem.id, 'budgetPerUnit', e.target.value)}
+                          placeholder="e.g. 500"
+                          className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-emerald-800 focus:ring-2 focus:ring-brand-teal"
                         />
                       </div>
                     </div>
+
+                    {/* Customizations & Sample Images */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 pt-1 items-start">
+                      {/* Sample Image Upload (Multiple Allowed) */}
+                      <div className="sm:col-span-5 space-y-2">
+                        <label className="block text-[11px] font-bold text-gray-700">
+                          Sample Images / Design Previews (Multiple Allowed)
+                        </label>
+
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {Array.isArray(reqItem.sampleImages) && reqItem.sampleImages.map((imgSrc, imgIdx) => (
+                            <div key={imgIdx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-brand-teal/40 shadow-2xs group/img">
+                              <img src={imgSrc} alt={`Sample ${imgIdx + 1}`} className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSampleImage(reqItem.id, imgIdx)}
+                                className="absolute top-0.5 right-0.5 bg-black/70 text-white rounded-full p-0.5 hover:bg-red-600 transition-colors"
+                                title="Remove photo"
+                              >
+                                <X size={10} />
+                              </button>
+                            </div>
+                          ))}
+
+                          <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-gray-300 bg-white text-gray-600 hover:border-brand-teal hover:text-brand-teal text-xs transition-all cursor-pointer">
+                            <Camera size={14} />
+                            <span>Add Photo(s)</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              onChange={(e) => handleMultipleImageUpload(reqItem.id, e.target.files)}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Customizations & Specific Notes */}
+                      <div className="sm:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                            Customizations (Logo, Color, Fabric, etc.)
+                          </label>
+                          <input
+                            type="text"
+                            value={reqItem.customizations || ''}
+                            onChange={(e) => handleRequirementChange(reqItem.id, 'customizations', e.target.value)}
+                            placeholder="e.g. Logo embroidery on pocket, cotton blend"
+                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-brand-teal"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                            Extra Notes / Size Distribution
+                          </label>
+                          <input
+                            type="text"
+                            value={reqItem.notes || ''}
+                            onChange={(e) => handleRequirementChange(reqItem.id, 'notes', e.target.value)}
+                            placeholder="e.g. Sizes: 28(30), 30(40), 32(30)"
+                            className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-brand-teal"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600 font-medium">
+                      <span>Item Line Budget Summary:</span>
+                      <strong className="text-teal-900 font-bold">
+                        {reqItem.quantity || 0} Units × ₹{reqItem.budgetPerUnit || 0} = <span className="text-brand-teal font-extrabold text-sm">₹{((Number(reqItem.quantity) || 0) * (Number(reqItem.budgetPerUnit) || 0)).toLocaleString()}</span>
+                      </strong>
+                    </div>
                   </div>
                 ))}
+              </div>
+
+              {/* Calculated Overall Budget Summary Banner */}
+              <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-teal-950 shadow-2xs">
+                <div className="flex items-center gap-2.5 font-extrabold text-xs sm:text-sm text-teal-900 uppercase tracking-wider">
+                  <Sparkles size={18} className="text-teal-600 shrink-0" />
+                  <span>Calculated Overall Requirement Budget Summary</span>
+                </div>
+                <div className="font-mono font-black text-base sm:text-lg text-teal-950 bg-white px-4 py-1.5 rounded-xl border border-teal-200 shadow-2xs">
+                  Overall Budget: <span className="text-emerald-700">₹{calculatedOverallBudget.toLocaleString()}</span>
+                </div>
               </div>
             </div>
 

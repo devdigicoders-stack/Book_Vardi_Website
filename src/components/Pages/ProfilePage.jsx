@@ -1692,7 +1692,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                       const isCancelEligible = ['placed', 'pending', 'confirmed', 'processing', 'packed'].includes(currentStatus);
                       const isDelivered = ['delivered', 'completed'].includes(currentStatus);
                       const firstItem = order.items?.[0] || {};
-                      const isReturnable = firstItem.isReturnable !== false;
+                      const isItemReturnable = firstItem.isReturnable ?? firstItem.product?.isReturnable ?? true;
+                      const isItemRefundable = firstItem.isRefundable ?? firstItem.product?.isRefundable ?? true;
+                      const isItemExchangeable = firstItem.isExchangeable ?? firstItem.product?.isExchangeable ?? true;
+                      const isReturnable = isItemReturnable || isItemRefundable || isItemExchangeable;
                       const returnWindowDays = firstItem.returnWindowDays || 7;
                       const deliveredDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.date || order.createdAt || Date.now());
                       const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
@@ -2649,6 +2652,29 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       <BulkOrderPreviewModal
         order={selectedBulkOrder}
         onClose={() => setSelectedBulkOrder(null)}
+        userRole="consumer"
+        onApproveQuote={async (orderId, quoteId) => {
+          try {
+            const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            const res = await fetch(`${apiBase}/api/schools/bulk-orders/${orderId}/approve-quote`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ quoteId })
+            });
+            const data = await res.json();
+            if (data.success) {
+              if (showToast) showToast('🎉 Quotation Accepted! Order placed with vendor.');
+              if (data.order) {
+                setSelectedBulkOrder(data.order);
+                setCustomerBulkOrders(prev => prev.map(o => (o.id === orderId || o._id === orderId ? data.order : o)));
+              }
+            } else {
+              alert(data.message || 'Failed to accept quotation.');
+            }
+          } catch (err) {
+            alert('Network error approving quotation.');
+          }
+        }}
       />
 
       <OrderTrackingModal
