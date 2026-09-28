@@ -23,6 +23,7 @@ import {
   addReviewToBackend,
   deleteReviewInBackend,
   fetchProductsFromBackend,
+  fetchActiveCouponsFromBackend,
   fetchPublicSettingsFromBackend,
   getProductMainImage
 } from '../utils/api';
@@ -419,6 +420,22 @@ export function CartProvider({ children }) {
     }
   }, [isAuthenticated, userProfile?.phone, userProfile?.id, fetchUserOrders]);
 
+  const fetchActivePromotions = useCallback(async () => {
+    if (!backendEnabled) return;
+    try {
+      const res = await fetchActiveCouponsFromBackend();
+      const list = Array.isArray(res) ? res : (res?.coupons || res?.value || []);
+      if (Array.isArray(list) && list.length > 0) {
+        setPromotions(list);
+        try {
+          localStorage.setItem('bv_sync_promotions', JSON.stringify(list));
+        } catch (e) {}
+      }
+    } catch (err) {
+      console.warn('Failed to fetch active coupons:', err);
+    }
+  }, []);
+
   useEffect(() => {
     if (backendEnabled) {
       fetchProductsFromBackend({ limit: 100 })
@@ -436,8 +453,37 @@ export function CartProvider({ children }) {
           }
         })
         .catch(() => {});
+
+      fetchActivePromotions();
     }
-  }, []);
+  }, [fetchActivePromotions]);
+
+  useEffect(() => {
+    const handleCouponSync = (e) => {
+      const raw = (e.detail && Array.isArray(e.detail) && e.detail.length > 0)
+        ? e.detail
+        : (() => {
+            try {
+              const saved = localStorage.getItem('bv_sync_promotions') || localStorage.getItem('admin_coupons');
+              return saved ? JSON.parse(saved) : [];
+            } catch (err) {
+              return [];
+            }
+          })();
+
+      if (Array.isArray(raw) && raw.length > 0) {
+        setPromotions(raw);
+      } else {
+        fetchActivePromotions();
+      }
+    };
+    window.addEventListener('bv_coupons_updated', handleCouponSync);
+    window.addEventListener('adminCouponsUpdated', handleCouponSync);
+    return () => {
+      window.removeEventListener('bv_coupons_updated', handleCouponSync);
+      window.removeEventListener('adminCouponsUpdated', handleCouponSync);
+    };
+  }, [fetchActivePromotions]);
 
   useEffect(() => {
     const handleSync = (e) => {
@@ -1460,11 +1506,26 @@ export function CartProvider({ children }) {
     showToast('Logged out successfully. See you soon! 👋');
   };
 
-  const applyCoupon = async (codeRaw) => {
+  const applyCoupon = async (codeRaw, customCartTotal, customCartItems) => {
     const code = (codeRaw || '').trim().toUpperCase();
     if (!code) {
       showToast('Please enter a coupon code.');
       return { success: false, message: 'Please enter a coupon code.' };
+    }
+
+    const effectiveCartItems = customCartItems !== undefined
+      ? customCartItems
+      : (selectedCartItems.length > 0 ? selectedCartItems : (cartItems.length > 0 ? cartItems : []));
+
+    const effectiveCartTotal = customCartTotal !== undefined
+      ? Number(customCartTotal)
+      : (subtotal > 0
+          ? subtotal
+          : effectiveCartItems.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 1)), 0));
+
+    if (effectiveCartTotal <= 0 || effectiveCartItems.length === 0) {
+      showToast('⚠️ Please add items to your cart before applying a coupon.');
+      return { success: false, message: 'Please add items to your cart before applying a coupon.' };
     }
 
     // Try Backend API verification if backend is enabled
@@ -1476,15 +1537,15 @@ export function CartProvider({ children }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             code,
-            cartTotal: subtotal,
-            cartItems: displayedCartItems
+            cartTotal: effectiveCartTotal,
+            cartItems: effectiveCartItems
           })
         });
         const data = await res.json();
-        if (res.ok && data.coupon) {
+        if (res.ok && data.success !== false && data.coupon) {
           const couponObj = {
             code: data.coupon.code,
-            type: data.coupon.type === 'fixed' ? 'flat' : 'percent',
+            type: (data.coupon.type === 'fixed' || data.coupon.type === 'flat') ? 'flat' : 'percent',
             value: data.coupon.discount,
             discountAmount: data.discountAmount,
             label: `${data.coupon.code} Applied (${data.coupon.discount}${data.coupon.type === 'percentage' ? '%' : '₹'} off eligible items)`
@@ -1512,8 +1573,8 @@ export function CartProvider({ children }) {
         ? [String(dynamicPromo.specificProductId)]
         : (Array.isArray(dynamicPromo.applicableProducts) ? dynamicPromo.applicableProducts.map(String) : []);
 
-      const eligibleItems = displayedCartItems.filter((item) => {
-        const itemSeller = item.sellerId || item.seller || item.storeId;
+      const eligibleItems = effectiveCartItems.filter((item) => {
+        const itemSeller = item.sellerId || item.seller || item.storeId || item.userId;
         const itemProd = item.id || item._id || item.productId;
         if (isSeller) {
           if (targetSeller && String(itemSeller) !== String(targetSeller)) return false;
@@ -1530,7 +1591,7 @@ export function CartProvider({ children }) {
         return { success: false, message: 'Coupon not applicable to items in cart.' };
       }
 
-      const eligibleSubtotal = eligibleItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const eligibleSubtotal = eligibleItems.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 1)), 0);
       const minVal = dynamicPromo.minOrderValue || dynamicPromo.minOrderAmount || dynamicPromo.minAmount || 0;
 
       if (eligibleSubtotal < minVal) {
@@ -1702,7 +1763,6 @@ export function CartProvider({ children }) {
 
   const placeOrder = (orderData) => {
     const randomId = `SC-${Math.floor(1000 + Math.random() * 9000)}`;
-    const randomTracking = `BLUEDART-${Math.floor(10000000 + Math.random() * 90000000)}`;
     const today = new Date();
     const formattedDate = today.toLocaleDateString('en-GB', {
       day: '2-digit',
@@ -1718,7 +1778,11 @@ export function CartProvider({ children }) {
       date: formattedDate,
       status: 'Processing',
       statusColor: 'blue',
-      trackingNumber: randomTracking,
+      trackingNumber: orderData.trackingNumber || '',
+      courierName: orderData.courierName || '',
+      deliveryMode: orderData.deliveryMode || '',
+      sellerDetails: orderData.sellerDetails || null,
+      selfDeliveryDetails: orderData.selfDeliveryDetails || null,
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
       items: [...itemsToBuy],
       subtotal: orderData.subtotal,
@@ -1912,6 +1976,7 @@ export function CartProvider({ children }) {
     appliedCoupon,
     applyCoupon,
     removeCoupon,
+    fetchActivePromotions,
     placeOrder,
     sellerStatus,
     setSellerStatus,
@@ -1954,6 +2019,7 @@ export function CartProvider({ children }) {
     productReviews,
     lastPlacedOrder,
     appliedCoupon,
+    fetchActivePromotions,
     sellerStatus,
     sellerProfile,
     isSeller,

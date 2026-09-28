@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, HelpCircle } from 'lucide-react';
+import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2 } from 'lucide-react';
 import { requestReturnExchangeApi } from '../../utils/api';
 
 export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess }) {
@@ -9,11 +9,26 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   const userPhone = order.customer?.phone || order.shippingAddress?.phone || '';
   const firstItem = order.items?.[0] || {};
 
-  const [activeType, setActiveType] = useState('return'); // 'return' | 'exchange'
+  const isReturnable = firstItem.isReturnable ?? firstItem.product?.isReturnable ?? true;
+  const isExchangeable = firstItem.isExchangeable ?? firstItem.product?.isExchangeable ?? true;
+
+  const [activeType, setActiveType] = useState(() => {
+    if (!isReturnable && isExchangeable) return 'exchange';
+    return 'return';
+  });
   const [reason, setReason] = useState('Size too small / large');
   const [comment, setComment] = useState('');
   const [exchangeSize, setExchangeSize] = useState('M');
-  const [refundMethod, setRefundMethod] = useState('Original Payment Method');
+  const [refundMethod, setRefundMethod] = useState('UPI / Bank Transfer');
+
+  // Refund payout details state for return
+  const [payoutMode, setPayoutMode] = useState('UPI'); // 'UPI' | 'BANK'
+  const [upiId, setUpiId] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [ifscCode, setIfscCode] = useState('');
+  const [accountHolderName, setAccountHolderName] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -41,15 +56,50 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   const availableSizes = ['24', '26', '28', '30', '32', '34', 'S', 'M', 'L', 'XL', 'XXL'];
 
   const handleSubmit = async () => {
+    if (activeType === 'return' && !isReturnable) {
+      setErrorMsg('This item is not eligible for return/refund.');
+      return;
+    }
+    if (activeType === 'exchange' && !isExchangeable) {
+      setErrorMsg('This item is not eligible for exchange.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg('');
+
+    let refundDetailsPayload = null;
+    if (activeType === 'return') {
+      if (payoutMode === 'UPI') {
+        if (!upiId.trim() || !upiId.includes('@')) {
+          setLoading(false);
+          setErrorMsg('Please enter a valid UPI ID (e.g. username@bank)');
+          return;
+        }
+        refundDetailsPayload = { method: 'UPI', upiId: upiId.trim() };
+      } else {
+        if (!bankName.trim() || !accountNumber.trim() || !ifscCode.trim() || !accountHolderName.trim()) {
+          setLoading(false);
+          setErrorMsg('Please enter complete Bank Details (Bank Name, Account Number, IFSC Code, Account Holder Name)');
+          return;
+        }
+        refundDetailsPayload = {
+          method: 'BANK',
+          bankName: bankName.trim(),
+          accountNumber: accountNumber.trim(),
+          ifscCode: ifscCode.trim().toUpperCase(),
+          accountHolderName: accountHolderName.trim()
+        };
+      }
+    }
 
     const payload = {
       type: activeType,
       reason,
       comment,
       exchangeSize: activeType === 'exchange' ? exchangeSize : '',
-      refundMethod: activeType === 'return' ? refundMethod : ''
+      refundMethod: activeType === 'return' ? refundMethod : '',
+      refundDetails: refundDetailsPayload
     };
 
     try {
@@ -99,38 +149,52 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
         </div>
 
         {/* Tab Selector Header */}
-        <div className="grid grid-cols-2 bg-gray-100 p-1.5 border-b border-gray-200 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveType('return');
-              setReason('Size too small / large');
-            }}
-            className={`py-2 text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeType === 'return'
-                ? 'bg-white text-brand-teal shadow-xs'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <RotateCcw size={14} />
-            <span>1. Return for Refund</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveType('exchange');
-              setReason('Need larger size');
-            }}
-            className={`py-2 text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeType === 'exchange'
-                ? 'bg-white text-brand-teal shadow-xs'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <ArrowRightLeft size={14} />
-            <span>2. Exchange Size / Variant</span>
-          </button>
-        </div>
+        {!isReturnable && !isExchangeable ? (
+          <div className="bg-rose-50 border-b border-rose-200 p-3 text-center text-xs font-bold text-rose-800">
+            ⚠️ This item is marked as non-returnable and non-exchangeable.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 bg-gray-100 p-1.5 border-b border-gray-200 shrink-0">
+            <button
+              type="button"
+              disabled={!isReturnable}
+              onClick={() => {
+                if (!isReturnable) return;
+                setActiveType('return');
+                setReason('Size too small / large');
+              }}
+              className={`py-2 text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                !isReturnable
+                  ? 'opacity-50 cursor-not-allowed text-gray-400 bg-gray-200'
+                  : activeType === 'return'
+                  ? 'bg-white text-brand-teal shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <RotateCcw size={14} />
+              <span>1. Return for Refund {!isReturnable && '(Not Eligible)'}</span>
+            </button>
+            <button
+              type="button"
+              disabled={!isExchangeable}
+              onClick={() => {
+                if (!isExchangeable) return;
+                setActiveType('exchange');
+                setReason('Need larger size');
+              }}
+              className={`py-2 text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                !isExchangeable
+                  ? 'opacity-50 cursor-not-allowed text-gray-400 bg-gray-200'
+                  : activeType === 'exchange'
+                  ? 'bg-white text-brand-teal shadow-xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <ArrowRightLeft size={14} />
+              <span>2. Exchange Size {!isExchangeable && '(Not Eligible)'}</span>
+            </button>
+          </div>
+        )}
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs text-gray-800">
@@ -140,7 +204,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
             <div className="text-xs">
               <strong className="font-extrabold text-emerald-900">Easy {returnWindowDays}-Day Hassle-Free Policy</strong>
               <p className="text-[11px] text-emerald-800 mt-0.5">
-                Our doorstep pickup executive will collect the satchel item within 24-48 hours.
+                Our doorstep pickup executive will collect the item within 24-48 hours.
               </p>
             </div>
           </div>
@@ -148,7 +212,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
           {/* Reason Selection */}
           <div>
             <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider mb-2">
-              Reason for {activeType === 'return' ? 'Return' : 'Exchange'}
+              Reason for {activeType === 'return' ? 'Return' : 'Exchange'} *
             </label>
             <div className="space-y-2">
               {(activeType === 'return' ? returnReasons : exchangeReasons).map((r) => (
@@ -199,37 +263,98 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
             </div>
           )}
 
-          {/* If Return: Select Refund Option */}
+          {/* If Return: Receiving Payout Details */}
           {activeType === 'return' && (
-            <div>
-              <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider mb-2">
-                Preferred Refund Method
-              </label>
-              <div className="space-y-2">
-                {[
-                  { id: 'Original Payment Method', label: 'Original Payment Method (UPI / Bank Card)' },
-                  { id: 'UPI / Bank Transfer', label: 'Instant Bank UPI Transfer' },
-                  { id: 'BookVardi Wallet Store Credit', label: 'BookVardi Store Wallet Credit (+5% Bonus)' }
-                ].map((m) => (
-                  <label
-                    key={m.id}
-                    onClick={() => setRefundMethod(m.id)}
-                    className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                      refundMethod === m.id
-                        ? 'border-brand-teal bg-brand-teal/5 text-brand-teal font-bold'
-                        : 'border-gray-200 bg-gray-50/50 text-gray-700 hover:bg-gray-100'
+            <div className="space-y-4 pt-2 border-t border-gray-100">
+              <div>
+                <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider mb-1">
+                  Receiving Refund Payout Account *
+                </label>
+                <p className="text-[11px] text-gray-500 mb-3">
+                  Enter your UPI ID or Bank account details where your refund will be transferred once the product return is received.
+                </p>
+
+                {/* Mode Selector */}
+                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setPayoutMode('UPI')}
+                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      payoutMode === 'UPI' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    <span className="text-xs">{m.label}</span>
+                    <CreditCard size={14} />
+                    <span>UPI ID</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPayoutMode('BANK')}
+                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      payoutMode === 'BANK' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Building2 size={14} />
+                    <span>Bank Transfer</span>
+                  </button>
+                </div>
+
+                {payoutMode === 'UPI' ? (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Receiving UPI ID *</label>
                     <input
-                      type="radio"
-                      name="refundMethod"
-                      checked={refundMethod === m.id}
-                      onChange={() => setRefundMethod(m.id)}
-                      className="accent-brand-teal w-4 h-4 cursor-pointer"
+                      type="text"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      placeholder="e.g. username@upi or mobile@okaxis"
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-900 font-mono focus:outline-none focus:border-brand-teal"
                     />
-                  </label>
-                ))}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Account Holder Name *</label>
+                      <input
+                        type="text"
+                        value={accountHolderName}
+                        onChange={(e) => setAccountHolderName(e.target.value)}
+                        placeholder="e.g. Anjali Sharma"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 focus:outline-none focus:border-brand-teal"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Bank Name *</label>
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder="e.g. State Bank of India"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 focus:outline-none focus:border-brand-teal"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">IFSC Code *</label>
+                        <input
+                          type="text"
+                          value={ifscCode}
+                          onChange={(e) => setIfscCode(e.target.value)}
+                          placeholder="e.g. SBIN0001234"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 font-mono uppercase focus:outline-none focus:border-brand-teal"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Bank Account Number *</label>
+                      <input
+                        type="text"
+                        value={accountNumber}
+                        onChange={(e) => setAccountNumber(e.target.value)}
+                        placeholder="Enter 9-18 digit account number"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 font-mono focus:outline-none focus:border-brand-teal"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -258,7 +383,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
         {/* Modal Footer */}
         <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-between gap-3 shrink-0">
           <span className="text-[11px] text-gray-500 font-medium hidden sm:inline">
-            Free pickup from your address
+            Free doorstep pickup from address
           </span>
           <div className="flex items-center gap-2 ml-auto">
             <button
@@ -293,3 +418,4 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     </div>
   );
 }
+

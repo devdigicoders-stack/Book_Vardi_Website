@@ -282,7 +282,9 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               <p className="text-xs text-gray-500">
                 {isCancelled
                   ? 'Fulfillment and courier tracking closed due to order cancellation.'
-                  : `BlueDart Express Campus Priority Courier • AWB #${order.id?.replace('SC-', 'BD-') || order.trackingNumber || 'BD-88219'}`}
+                  : (order.deliveryMode === 'self_delivery' || order.selfDeliveryDetails?.deliveryPartnerToken
+                      ? `Direct Store Self-Delivery • ${order.sellerDetails?.storeName || 'Partner Merchant'} Fleet`
+                      : (order.courierName ? `${order.courierName} Logistics • ${order.trackingNumber ? `AWB #${order.trackingNumber}` : 'Awaiting Dispatch'}` : 'Standard Marketplace Logistics Delivery'))}
               </p>
             </div>
             <button
@@ -321,9 +323,9 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
                 {[
                   { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: FileText },
-                  { id: 2, full: 'Processing & Packing', sub: 'At Central Warehouse', icon: Boxes },
-                  { id: 3, full: 'Out for Campus Transit', sub: 'BlueDart Logistics', icon: Truck },
-                  { id: 4, full: 'Delivered', sub: 'To your hostel desk', icon: ShieldCheck }
+                  { id: 2, full: 'Processing & Packing', sub: 'At Merchant Facility', icon: Boxes },
+                  { id: 3, full: 'Out for Delivery / Transit', sub: order.deliveryMode === 'self_delivery' ? 'Store Rider Dispatch' : (order.courierName || 'Logistics Carrier'), icon: Truck },
+                  { id: 4, full: 'Delivered', sub: 'To your doorstep/campus', icon: ShieldCheck }
                 ].map((step) => {
                   const currentStatus = String(order.overallStatus || order.status || '').toLowerCase();
                   const stepIndex = currentStatus === 'delivered' || currentStatus === 'completed' ? 4 : (currentStatus === 'in_transit' || currentStatus === 'shipped' || currentStatus === 'out_for_delivery' ? 3 : 2);

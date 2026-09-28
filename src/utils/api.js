@@ -536,6 +536,13 @@ export async function fetchSpecialOffersFromBackend(options = 10) {
   });
 }
 
+export async function fetchActiveCouponsFromBackend() {
+  return requestApi('/coupons/active', {
+    method: 'GET',
+    fallback: []
+  });
+}
+
 export async function fetchRecommendedProductsFromBackend(options = {}) {
   const params = typeof options === 'number'
     ? { limit: options }
@@ -856,10 +863,11 @@ export async function checkServiceabilityWebsiteApi(deliveryPincode, weightKg = 
   });
 }
 
-export async function cancelOrderApi(orderId, reason = '', phone = '') {
+export async function cancelOrderApi(orderId, payload = '', phone = '') {
+  const data = typeof payload === 'object' && payload !== null ? payload : { reason: String(payload) };
   return requestApi(`/orders/${orderId}/cancel`, {
     method: 'POST',
-    data: { reason },
+    data,
     headers: phone ? { 'x-user-phone': phone } : {},
     fallback: { success: true, message: 'Order cancelled successfully' }
   });

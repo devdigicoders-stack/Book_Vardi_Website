@@ -252,10 +252,10 @@ export default function CheckoutPage({ onNavigate }) {
   };
 
   // Handle coupon submission
-  const handleApplyCoupon = (e) => {
+  const handleApplyCoupon = async (e) => {
     e?.preventDefault();
     if (!couponInput) return;
-    applyCoupon(couponInput);
+    await applyCoupon(couponInput);
     setCouponInput('');
   };
 

@@ -29,7 +29,7 @@ import {
   XCircle,
   ArrowRightLeft
 } from 'lucide-react';
-import { useCart } from '../../context/CartContext';
+import { useCart, getCartItemKey } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import { resolveImageUrl, parseSizeVariants } from '../../utils/api';
@@ -102,7 +102,10 @@ export default function ProductDetailPage({ onNavigate }) {
     promotions = [],
     applyCoupon,
     appliedCoupon,
-    freeShippingThreshold = 499
+    freeShippingThreshold = 499,
+    isAuthenticated,
+    openAuthModal,
+    fetchActivePromotions
   } = useCart();
 
   const [quantity, setQuantity] = useState(1);
@@ -247,21 +250,43 @@ export default function ProductDetailPage({ onNavigate }) {
   const currentProductIdKey = selectedProduct?.id || selectedProduct?._id || 'default_product';
   const currentAppliedCouponCode = appliedProductCouponMap[currentProductIdKey] || null;
 
-  // Available Offers & Coupons list (Loaded strictly from database promotions applicable to current product)
-  const availableCoupons = (promotions || [])
-    .filter((p) => isCouponApplicableToProduct(p, selectedProduct))
-    .map((p) => ({
+  const formatPromoItem = (p) => {
+    const isPercent = p.discountType === 'percentage' || p.type === 'percentage' || p.type === 'percent';
+    const discVal = Number(p.discountValue ?? p.discount ?? p.value ?? 0);
+    const formattedDiscount = isPercent ? `${discVal}% OFF` : `₹${discVal} OFF`;
+    const minVal = Number(p.minOrderValue || p.minOrderAmount || p.minAmount || 0);
+
+    return {
       code: p.code,
       title: p.title || `${p.code} Promo Offer`,
-      subtitle: p.description || `Special offer on ${p.code}`,
-      discountType: p.discountType || (p.type === 'percent' ? 'percentage' : 'flat'),
-      discountValue: p.discountValue ? `${p.discountValue}%` : (p.value ? `${p.value}%` : 'Special Discount'),
-      minOrder: p.minOrderValue || p.minOrderAmount || 0,
-      minOrderLabel: (p.minOrderValue || p.minOrderAmount) ? `Min Order Value ₹${p.minOrderValue || p.minOrderAmount}` : 'No Minimum Limit',
+      subtitle: p.subtitle || p.description || `${formattedDiscount} on eligible stationery`,
+      discountType: isPercent ? 'percentage' : 'flat',
+      discountValue: formattedDiscount,
+      minOrder: minVal,
+      minOrderLabel: minVal > 0 ? `Min Order Value ₹${minVal}` : 'No Minimum Limit',
       expiry: p.expiryDate ? new Date(p.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Limited Time',
       colorScheme: 'teal',
-      details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`
-    }));
+      details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`,
+      isStorewide: !p.sellerId && !p.storeId && (!p.applicableProducts || p.applicableProducts.length === 0)
+    };
+  };
+
+  // Product-specific applicable coupons
+  const productSpecificCoupons = (promotions || [])
+    .filter((p) => isCouponApplicableToProduct(p, selectedProduct))
+    .map(formatPromoItem);
+
+  // All active store/platform coupons
+  const allActiveCoupons = (promotions || []).map(formatPromoItem);
+
+  // Prioritize product-specific coupons first, followed by storewide/active coupons (deduplicated)
+  const prioritizedCoupons = [
+    ...productSpecificCoupons,
+    ...allActiveCoupons.filter(ac => !productSpecificCoupons.some(pc => (pc.code && ac.code && pc.code.toLowerCase() === ac.code.toLowerCase()) || (pc.id && ac.id && pc.id === ac.id)))
+  ];
+
+  const availableCoupons = prioritizedCoupons;
+  const allCouponsForModal = prioritizedCoupons;
 
   // Dynamic Confidence Badges Calculation
   const isApprovedOrAdminCertified = Boolean(
@@ -283,9 +308,17 @@ export default function ProductDetailPage({ onNavigate }) {
     return `Dispatched in 24 Hrs`;
   })();
 
-  const returnLabel = (selectedProduct?.isReturnable === false || selectedProduct?.returnPolicy === 'non_returnable')
-    ? 'Non-Returnable Item'
-    : `${selectedProduct?.returnWindowDays || selectedProduct?.returnPolicyDays || 7}-Day Easy Returns`;
+  const returnWindow = selectedProduct?.returnWindowDays || selectedProduct?.returnPolicyDays || 7;
+  const isRet = selectedProduct?.isReturnable !== false && selectedProduct?.returnPolicy !== 'non_returnable';
+  const isExc = selectedProduct?.isExchangeable !== false && selectedProduct?.isRefundable !== false;
+
+  const returnLabel = (isRet && isExc)
+    ? `${returnWindow}-Day Return & Exchange`
+    : (isRet && !isExc)
+    ? `${returnWindow}-Day Return Only (Non-Exchangeable)`
+    : (!isRet && isExc)
+    ? `${returnWindow}-Day Exchange Only (No Return)`
+    : 'Non-Returnable & Non-Exchangeable';
 
   const renderConfidenceBadges = (className = '') => (
     <div className={`grid grid-cols-2 gap-2.5 ${className}`}>
@@ -301,17 +334,17 @@ export default function ProductDetailPage({ onNavigate }) {
         <span>{dispatchLabel}</span>
       </div>
 
-      {/* 3. Dynamic Return Policy */}
+      {/* 3. Dynamic Return & Exchange Policy */}
       <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
-        {selectedProduct?.isReturnable === false || selectedProduct?.returnPolicy === 'non_returnable' ? (
+        {!isRet && !isExc ? (
           <>
             <XCircle size={16} className="text-gray-400 shrink-0" />
-            <span className="text-gray-500 font-medium">Non-Returnable Item</span>
+            <span className="text-gray-500 font-medium">Non-Returnable & Non-Exchangeable</span>
           </>
         ) : (
           <>
             <RotateCcw size={16} className="text-brand-pink shrink-0" />
-            <span>{returnLabel}</span>
+            <span className="font-semibold text-gray-800">{returnLabel}</span>
           </>
         )}
       </div>
@@ -328,12 +361,56 @@ export default function ProductDetailPage({ onNavigate }) {
     </div>
   );
 
-  const handleApplyCouponAndCheckout = (couponCode) => {
-    if (selectedProduct) {
-      addToCart(productPayload, quantity);
+  const handleApplyCouponAndCheckout = async (couponCode) => {
+    if (!selectedProduct) return;
+
+    if (!isAuthenticated) {
+      if (typeof openAuthModal === 'function') {
+        openAuthModal('login');
+      }
+      showToast('Please log in to apply this offer! 🛍️');
+      return;
     }
-    const res = applyCoupon(couponCode);
-    if (res && res.success !== false) {
+
+    const prodId = selectedProduct?.id !== undefined ? selectedProduct.id : selectedProduct?._id;
+    const computedKey = getCartItemKey(productPayload);
+    const cartItemId = productPayload?.cartItemId || computedKey;
+    const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
+    const itemPrice = Number(productPayload?.price || selectedProduct?.price || 0);
+
+    // Add item to cart state & backend
+    addToCart(productPayload, qtyToAdd);
+
+    // Build projected cart so coupon check knows about this item immediately
+    let projectedItems = [...(cartItems || [])];
+    const existingIndex = projectedItems.findIndex((item) => (item.cartItemId || getCartItemKey(item)) === cartItemId);
+    if (existingIndex > -1) {
+      projectedItems[existingIndex] = {
+        ...projectedItems[existingIndex],
+        quantity: projectedItems[existingIndex].quantity + qtyToAdd,
+        selected: true
+      };
+    } else {
+      projectedItems.push({
+        ...productPayload,
+        id: prodId,
+        productId: prodId,
+        cartItemId: cartItemId,
+        price: itemPrice,
+        quantity: qtyToAdd,
+        sellerId: productPayload?.sellerId || selectedProduct?.sellerId || selectedProduct?.userId,
+        seller: productPayload?.seller || selectedProduct?.seller,
+        storeId: productPayload?.storeId || selectedProduct?.storeId,
+        selected: true
+      });
+    }
+
+    const projectedSubtotal = projectedItems
+      .filter((it) => it.selected !== false)
+      .reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.quantity || 1)), 0);
+
+    const res = await applyCoupon(couponCode, projectedSubtotal, projectedItems);
+    if (res && res.success) {
       setAppliedProductCouponMap((prev) => ({
         ...prev,
         [currentProductIdKey]: couponCode
@@ -395,6 +472,14 @@ export default function ProductDetailPage({ onNavigate }) {
       }
     }
   }, [selectedProduct]);
+
+  useEffect(() => {
+    if (!promotions || promotions.length === 0) {
+      if (typeof fetchActivePromotions === 'function') {
+        fetchActivePromotions();
+      }
+    }
+  }, [promotions, fetchActivePromotions]);
 
   if (!selectedProduct) {
     return (
@@ -673,9 +758,17 @@ export default function ProductDetailPage({ onNavigate }) {
     if (p.stock !== undefined && p.stock !== null) {
       specs.push({ label: 'Stock Available', value: p.stock > 0 ? `${p.stock} units` : 'Out of Stock' });
     }
+    const pIsRet = p.isReturnable !== false && p.returnPolicy !== 'non_returnable';
+    const pIsExc = p.isExchangeable !== false && p.isRefundable !== false;
     specs.push({
       label: 'Return & Exchange Policy',
-      value: p.isReturnable === false ? 'Non-Returnable Product (Final Sale)' : `${p.returnWindowDays || 7}-Day Easy Return & Size Exchange`
+      value: pIsRet && pIsExc
+        ? `${p.returnWindowDays || 7}-Day Easy Return & Size Exchange`
+        : pIsRet && !pIsExc
+        ? `${p.returnWindowDays || 7}-Day Return Only (Non-Exchangeable)`
+        : !pIsRet && pIsExc
+        ? `${p.returnWindowDays || 7}-Day Size Exchange Only (No Return)`
+        : 'Non-Returnable & Non-Exchangeable (Final Sale)'
     });
     if (p.sellerStoreName || p.storeName || p.legalBusinessName || p.sellerName || p.seller) {
       const sName = p.sellerStoreName || p.storeName || p.legalBusinessName || p.sellerName || (typeof p.seller === 'string' ? p.seller : p.seller?.storeName || 'Book Vardi Verified Seller');
@@ -881,15 +974,25 @@ export default function ProductDetailPage({ onNavigate }) {
                     </div>
 
 
-                      {selectedProduct.isReturnable === false ? (
-                        <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-md border border-gray-200 flex items-center gap-1">
-                          <XCircle size={11} className="text-gray-400" />
-                          <span>Non-Returnable Item</span>
-                        </span>
-                      ) : (
+                      {isRet && isExc ? (
                         <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
                           <RotateCcw size={11} className="text-emerald-600" />
                           <span>{selectedProduct.returnWindowDays || 7}-Day Return & Exchange</span>
+                        </span>
+                      ) : isRet && !isExc ? (
+                        <span className="text-[11px] font-bold text-blue-800 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200 flex items-center gap-1">
+                          <RotateCcw size={11} className="text-blue-600" />
+                          <span>{selectedProduct.returnWindowDays || 7}-Day Return Only (Non-Exchangeable)</span>
+                        </span>
+                      ) : !isRet && isExc ? (
+                        <span className="text-[11px] font-bold text-purple-800 bg-purple-50 px-2.5 py-0.5 rounded-md border border-purple-200 flex items-center gap-1">
+                          <RotateCcw size={11} className="text-purple-600" />
+                          <span>{selectedProduct.returnWindowDays || 7}-Day Exchange Only (No Return)</span>
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-md border border-gray-200 flex items-center gap-1">
+                          <XCircle size={11} className="text-gray-400" />
+                          <span>Non-Returnable & Non-Exchangeable</span>
                         </span>
                       )}
 
@@ -1273,13 +1376,13 @@ export default function ProductDetailPage({ onNavigate }) {
                   <Tag size={14} className="text-brand-pink" />
                   Available Offers & Coupons
                 </h3>
-                {availableCoupons.length > 0 && (
+                {allCouponsForModal.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setShowAllCouponsModal(true)}
                     className="text-xs font-extrabold text-brand-teal hover:text-brand-teal-light flex items-center gap-1 cursor-pointer transition-colors"
                   >
-                    <span>View All ({availableCoupons.length})</span>
+                    <span>View All ({allCouponsForModal.length})</span>
                     <ArrowRight size={13} />
                   </button>
                 )}
@@ -1287,7 +1390,7 @@ export default function ProductDetailPage({ onNavigate }) {
               
               {availableCoupons.length === 0 ? (
                 <div className="p-4 bg-gray-50/80 border border-dashed border-gray-200 rounded-2xl text-center text-xs text-gray-500 font-medium">
-                  No product-specific coupons available for this product at this time.
+                  No active offers or coupons available at this time.
                 </div>
               ) : (
                 <div
@@ -1378,7 +1481,7 @@ export default function ProductDetailPage({ onNavigate }) {
                     <div className="flex items-center gap-2">
                       <Ticket size={18} className="text-brand-pink" />
                       <h3 className="font-display font-extrabold text-base text-brand-teal">
-                        Available Coupons & Offers ({availableCoupons.length})
+                        Available Coupons & Offers ({allCouponsForModal.length})
                       </h3>
                     </div>
                     <button
@@ -1395,7 +1498,7 @@ export default function ProductDetailPage({ onNavigate }) {
                     className="flex-1 overflow-y-auto p-5 space-y-3.5 hide-scrollbar"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                   >
-                    {availableCoupons.map((coupon, cIdx) => {
+                    {allCouponsForModal.map((coupon, cIdx) => {
                       const isApplied = currentAppliedCouponCode === coupon.code;
                       return (
                         <div
@@ -1647,29 +1750,51 @@ export default function ProductDetailPage({ onNavigate }) {
 
                   {/* Return & Exchange Policy Highlight Card */}
                   <div className={`p-4 rounded-2xl border text-xs leading-relaxed ${
-                    selectedProduct.isReturnable === false
-                      ? 'bg-slate-50 border-slate-200/80 text-slate-700'
-                      : 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950'
+                    isRet && isExc
+                      ? 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950'
+                      : isRet
+                      ? 'bg-blue-50/60 border-blue-200/80 text-blue-950'
+                      : isExc
+                      ? 'bg-purple-50/60 border-purple-200/80 text-purple-950'
+                      : 'bg-slate-50 border-slate-200/80 text-slate-700'
                   }`}>
                     <div className="flex items-center gap-2 font-bold mb-1">
-                      {selectedProduct.isReturnable === false ? (
-                        <>
-                          <XCircle size={16} className="text-slate-500 shrink-0" />
-                          <span className="text-slate-900 font-extrabold text-xs uppercase tracking-wider">Non-Returnable & Non-Exchangeable Product</span>
-                        </>
-                      ) : (
+                      {isRet && isExc ? (
                         <>
                           <RotateCcw size={16} className="text-emerald-700 shrink-0" />
                           <span className="text-emerald-900 font-extrabold text-xs uppercase tracking-wider">
                             {selectedProduct.returnWindowDays || 7}-Day Hassle-Free Returns & Size Exchange Guarantee
                           </span>
                         </>
+                      ) : isRet && !isExc ? (
+                        <>
+                          <RotateCcw size={16} className="text-blue-700 shrink-0" />
+                          <span className="text-blue-900 font-extrabold text-xs uppercase tracking-wider">
+                            {selectedProduct.returnWindowDays || 7}-Day Return Policy (Refund Only, Non-Exchangeable)
+                          </span>
+                        </>
+                      ) : !isRet && isExc ? (
+                        <>
+                          <RotateCcw size={16} className="text-purple-700 shrink-0" />
+                          <span className="text-purple-900 font-extrabold text-xs uppercase tracking-wider">
+                            {selectedProduct.returnWindowDays || 7}-Day Size Exchange Only Policy
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle size={16} className="text-slate-500 shrink-0" />
+                          <span className="text-slate-900 font-extrabold text-xs uppercase tracking-wider">Non-Returnable & Non-Exchangeable Product</span>
+                        </>
                       )}
                     </div>
                     <p className="text-[11px] text-gray-600">
-                      {selectedProduct.isReturnable === false
-                        ? 'This item is classified as final sale due to hygiene, customized uniform printing, or consumable stationaries policy. It cannot be returned or exchanged once delivered unless defective.'
-                        : `You can initiate a return or size exchange within ${selectedProduct.returnWindowDays || 7} days of delivery directly from your Order History page. Ensure items are unused with original tags.`}
+                      {isRet && isExc
+                        ? `You can initiate a return or size exchange within ${selectedProduct.returnWindowDays || 7} days of delivery directly from your Order History page. Ensure items are unused with original tags.`
+                        : isRet && !isExc
+                        ? `You can initiate a return for refund within ${selectedProduct.returnWindowDays || 7} days of delivery. Size replacement/exchange is not applicable for this item.`
+                        : !isRet && isExc
+                        ? `This item is eligible for size exchange or replacement within ${selectedProduct.returnWindowDays || 7} days of delivery. Return for monetary refund is not supported.`
+                        : 'This item is classified as final sale due to hygiene, customized printing, or consumable policy. It cannot be returned or exchanged once delivered unless defective.'}
                     </p>
                   </div>
                 </div>
