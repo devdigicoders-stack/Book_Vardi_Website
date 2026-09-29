@@ -284,7 +284,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                   ? 'Fulfillment and courier tracking closed due to order cancellation.'
                   : (order.deliveryMode === 'self_delivery' || order.selfDeliveryDetails?.deliveryPartnerToken
                       ? `Direct Store Self-Delivery • ${order.sellerDetails?.storeName || 'Partner Merchant'} Fleet`
-                      : (order.courierName ? `${order.courierName} Logistics • ${order.trackingNumber ? `AWB #${order.trackingNumber}` : 'Awaiting Dispatch'}` : 'Standard Marketplace Logistics Delivery'))}
+                      : ((order.courierName && order.courierName !== 'N/A') ? `${order.courierName} Logistics • ${order.trackingNumber ? `AWB #${order.trackingNumber}` : 'Awaiting Dispatch'}` : (order.trackingNumber ? `Standard Logistics • AWB #${order.trackingNumber}` : 'Standard Marketplace Logistics Delivery')))}
               </p>
             </div>
             <button
@@ -324,7 +324,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                 {[
                   { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: FileText },
                   { id: 2, full: 'Processing & Packing', sub: 'At Merchant Facility', icon: Boxes },
-                  { id: 3, full: 'Out for Delivery / Transit', sub: order.deliveryMode === 'self_delivery' ? 'Store Rider Dispatch' : (order.courierName || 'Logistics Carrier'), icon: Truck },
+                  { id: 3, full: 'Out for Delivery / Transit', sub: order.deliveryMode === 'self_delivery' ? 'Store Rider Dispatch' : ((order.courierName && order.courierName !== 'N/A') ? order.courierName : 'Logistics Carrier'), icon: Truck },
                   { id: 4, full: 'Delivered', sub: 'To your doorstep/campus', icon: ShieldCheck }
                 ].map((step) => {
                   const currentStatus = String(order.overallStatus || order.status || '').toLowerCase();
@@ -409,71 +409,6 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               const couponVal = Number(order.discountAmount ?? order.discount ?? 0);
               const pointsVal = Number(order.pointsDiscount ?? 0);
               const grandVal = Number(order.total || order.totalAmount || (subtotalVal + shipVal - couponVal - pointsVal));
-              
-              let totalTaxable = 0;
-              let totalTax = 0;
-              (order.items || []).forEach(item => {
-                const qty = Number(item.quantity || 1);
-                const unitPrice = Number(item.price || 0);
-                const grossPrice = unitPrice * qty;
-                const gstRate = Number(item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.gst ?? 5);
-                if (gstRate > 0) {
-                  const taxable = grossPrice / (1 + gstRate / 100);
-                  totalTaxable += taxable;
-                  totalTax += (grossPrice - taxable);
-                } else {
-                  totalTaxable += grossPrice;
-                }
-              });
-
-              const parseStateKeyFromText = (text) => {
-                if (!text) return '';
-                const str = String(text).toLowerCase();
-                const states = [
-                  { key: 'uttarpradesh', aliases: ['uttar pradesh', 'uttarpradesh', 'up', 'noida', 'lucknow', 'kanpur', 'ghaziabad', 'agra', 'varanasi', 'prayagraj'] },
-                  { key: 'delhi', aliases: ['delhi', 'new delhi', 'nct of delhi', 'nct', 'dl'] },
-                  { key: 'maharashtra', aliases: ['maharashtra', 'mumbai', 'pune', 'nagpur', 'thane', 'mh'] },
-                  { key: 'karnataka', aliases: ['karnataka', 'bangalore', 'bengaluru', 'mysore', 'ka'] },
-                  { key: 'tamilnadu', aliases: ['tamil nadu', 'tamilnadu', 'chennai', 'coimbatore', 'tn'] },
-                  { key: 'haryana', aliases: ['haryana', 'gurugram', 'gurgaon', 'faridabad', 'hr'] },
-                  { key: 'rajasthan', aliases: ['rajasthan', 'jaipur', 'jodhpur', 'udaipur', 'rj'] },
-                  { key: 'westbengal', aliases: ['west bengal', 'westbengal', 'kolkata', 'wb'] },
-                  { key: 'gujarat', aliases: ['gujarat', 'ahmedabad', 'surat', 'vadodara', 'gj'] },
-                  { key: 'punjab', aliases: ['punjab', 'ludhiana', 'amritsar', 'pb'] },
-                  { key: 'madhyapradesh', aliases: ['madhya pradesh', 'madhyapradesh', 'bhopal', 'indore', 'mp'] },
-                  { key: 'bihar', aliases: ['bihar', 'patna', 'br'] },
-                  { key: 'telangana', aliases: ['telangana', 'hyderabad', 'tg', 'ts'] },
-                  { key: 'andhrapradesh', aliases: ['andhra pradesh', 'andhrapradesh', 'visakhapatnam', 'ap'] },
-                  { key: 'kerala', aliases: ['kerala', 'kochi', 'thiruvananthapuram', 'kl'] },
-                  { key: 'uttarakhand', aliases: ['uttarakhand', 'dehradun', 'uk'] }
-                ];
-
-                for (const st of states) {
-                  for (const alias of st.aliases) {
-                    if (new RegExp(`\\b${alias}\\b`, 'i').test(str)) {
-                      return st.key;
-                    }
-                  }
-                }
-                return str.trim();
-              };
-
-              const getDynamicState = (obj, fallbackText) => {
-                if (obj && typeof obj === 'object') {
-                  if (obj.state && String(obj.state).trim()) return parseStateKeyFromText(obj.state);
-                  const combined = `${obj.street || ''} ${obj.addressLine || ''} ${obj.city || ''} ${obj.address || ''}`;
-                  if (combined.trim()) return parseStateKeyFromText(combined);
-                }
-                return parseStateKeyFromText(fallbackText || '');
-              };
-
-              const firstSeller = order.items?.[0]?.sellerId;
-              const sellerStateKey = getDynamicState(firstSeller, `${order.sellerState || ''} ${order.sellerCity || ''} ${order.sellerAddress || ''}`);
-              const customerStateKey = getDynamicState(order.shippingAddress, typeof order.shippingAddress === 'string' ? order.shippingAddress : '');
-
-              const isSameState = !sellerStateKey || !customerStateKey || sellerStateKey === customerStateKey;
-              const sellerStateStr = (typeof firstSeller === 'object' ? firstSeller.state || firstSeller.city : '') || order.sellerState || sellerStateKey || 'Seller Location';
-              const customerStateStr = (typeof order.shippingAddress === 'object' ? order.shippingAddress?.state || order.shippingAddress?.city : '') || customerStateKey || 'Customer Location';
 
               return (
                 <div className="pt-4 border-t border-gray-100 space-y-2.5 text-xs bg-gray-50/70 p-4 rounded-2xl border border-gray-200/80">
@@ -482,27 +417,13 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                     <span className="font-semibold text-gray-900 font-mono">₹{subtotalVal.toFixed(2)}</span>
                   </div>
 
-                  <div className="flex justify-between text-gray-500 text-[11px]">
-                    <span>Base Taxable Amount (Excl. Tax):</span>
-                    <span className="font-mono">₹{totalTaxable.toFixed(2)}</span>
-                  </div>
-
-                  <div className="flex justify-between text-emerald-800 text-[11px] bg-emerald-50/80 p-2 rounded-lg border border-emerald-100">
+                  <div className="flex justify-between items-start text-gray-700 font-medium">
                     <div>
-                      <span className="font-bold block text-emerald-950">GST Tax Breakdown ({isSameState ? 'Intra-State Same State' : 'Inter-State Different State'}):</span>
-                      {isSameState ? (
-                        <span className="text-[10px] text-emerald-900">CGST (50%): ₹{(totalTax / 2).toFixed(2)} • SGST (50%): ₹{(totalTax / 2).toFixed(2)}</span>
-                      ) : (
-                        <span className="text-[10px] text-emerald-900">IGST (Integrated 100%): ₹{totalTax.toFixed(2)} • Supply ({sellerStateStr} ➔ {customerStateStr})</span>
-                      )}
+                      <span>Delivery Charges:</span>
+                      <span className="text-[10px] text-gray-400 block font-normal">(Incl. 18% GST)</span>
                     </div>
-                    <span className="font-mono font-bold text-emerald-950 self-center">₹{totalTax.toFixed(2)}</span>
-                  </div>
-
-                  <div className="flex justify-between text-gray-700 font-medium">
-                    <span>Delivery Charges:</span>
                     <span className="font-semibold text-emerald-700 font-mono">
-                      {shipVal === 0 ? 'Not Applied (FREE)' : `₹${shipVal.toFixed(2)}`}
+                      {shipVal === 0 ? 'FREE' : `₹${shipVal.toFixed(2)}`}
                     </span>
                   </div>
 
@@ -514,7 +435,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                   ) : (
                     <div className="flex justify-between text-gray-400">
                       <span>Offer / Coupon:</span>
-                      <span className="font-mono text-gray-400">Not Applied (₹0.00)</span>
+                      <span className="font-mono text-gray-400">None Applied (₹0.00)</span>
                     </div>
                   )}
 
@@ -525,8 +446,11 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                     </div>
                   )}
 
-                  <div className="pt-3 border-t-2 border-gray-300 flex justify-between items-center text-sm font-black text-gray-900">
-                    <span>Total Amount Paid:</span>
+                  <div className="pt-3 border-t-2 border-gray-300 flex justify-between items-baseline">
+                    <div>
+                      <span className="text-sm font-black text-gray-900 block">Total Amount Paid:</span>
+                      <span className="text-[10px] text-gray-500 font-normal">(Inclusive of all taxes)</span>
+                    </div>
                     <span className="font-display text-lg text-brand-teal font-mono">₹{grandVal.toFixed(2)}</span>
                   </div>
                 </div>
@@ -611,10 +535,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           <button
             type="button"
             onClick={() => setIsInvoiceModalOpen(true)}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 border-brand-teal text-brand-teal hover:bg-brand-teal/5 font-extrabold text-xs transition-colors cursor-pointer"
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 font-extrabold text-xs transition-colors cursor-pointer ${
+              isCancelled
+                ? 'border-rose-600 text-rose-600 hover:bg-rose-50'
+                : 'border-brand-teal text-brand-teal hover:bg-brand-teal/5'
+            }`}
           >
             <Printer size={15} />
-            Print Tax Invoice & Bill
+            {isCancelled ? 'Print Credit Note & Refund Voucher' : 'Print Tax Invoice & Bill'}
           </button>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">

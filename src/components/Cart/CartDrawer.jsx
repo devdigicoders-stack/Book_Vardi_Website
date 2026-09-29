@@ -217,14 +217,21 @@ export default function CartDrawer({ onNavigate }) {
                         </button>
                         <span className="w-8 text-center text-xs font-extrabold text-gray-900 bg-white py-1">{item.quantity}</span>
                         <button
-                          className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
+                          disabled={item.stock !== undefined && item.stock !== Infinity && item.quantity >= Number(item.stock)}
+                          className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                           onClick={() => updateQuantity(itemKey, 1)}
                           aria-label="Increase quantity"
-                          title="Increase quantity (add more)"
+                          title={item.stock !== undefined && item.quantity >= Number(item.stock) ? "Max stock reached" : "Increase quantity"}
                         >
                           <Plus size={12} strokeWidth={2.5} />
                         </button>
                       </div>
+
+                      {item.stock !== undefined && item.stock !== Infinity && item.quantity >= Number(item.stock) && (
+                        <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          Max Stock
+                        </span>
+                      )}
 
                       <button
                         className="text-gray-400 hover:text-brand-pink transition-colors p-1.5 hover:bg-rose-50 rounded-md cursor-pointer"
@@ -337,6 +344,8 @@ export default function CartDrawer({ onNavigate }) {
                     <Loader2 size={16} className="animate-spin text-brand-teal-dark" />
                     <span>Loading...</span>
                   </>
+                ) : cartPaymentRestrictions.areAllPaymentsDisabled ? (
+                  <span>NOT AVAILABLE</span>
                 ) : (
                   <>
                     <span>CHECKOUT ({selectedCartItems.length})</span>

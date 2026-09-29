@@ -16,17 +16,16 @@ import SplashScreen from './components/Common/SplashScreen';
 
 const lazyWithRetry = (componentImport) =>
   lazy(async () => {
-    const pageHasBeenReloaded = sessionStorage.getItem('bv_page_reloaded');
     try {
-      const component = await componentImport();
-      sessionStorage.removeItem('bv_page_reloaded');
-      return component;
+      return await componentImport();
     } catch (error) {
-      if (!pageHasBeenReloaded) {
-        sessionStorage.setItem('bv_page_reloaded', 'true');
-        window.location.reload();
+      console.warn('Initial chunk load failed, retrying smoothly...', error);
+      try {
+        return await componentImport();
+      } catch (retryErr) {
+        console.error('Failed to load component dynamically:', retryErr);
+        throw retryErr;
       }
-      throw error;
     }
   });
 
@@ -96,7 +95,7 @@ const LocationPermissionModal = lazyWithRetry(() => import('./components/Common/
 // Pre-fetch critical secondary route chunks in background during browser idle time
 export const prefetchSecondaryRoutes = () => {
   if (typeof window === 'undefined') return;
-  const scheduleIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1200));
+  const scheduleIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 400));
 
   scheduleIdle(() => {
     import('./components/Pages/AllProductsPage');
@@ -105,6 +104,12 @@ export const prefetchSecondaryRoutes = () => {
     import('./components/Wishlist/WishlistDrawer');
     import('./components/Auth/AuthModal');
     import('./components/Pages/CheckoutPage');
+    import('./components/Pages/ProfilePage');
+    import('./components/Pages/AllCategoriesPage');
+    import('./components/Pages/SchoolBulkOrderPage');
+    import('./components/Pages/OrderSuccessPage');
+    import('./components/Pages/AboutUsPage');
+    import('./components/Pages/ContactUsPage');
     import('./components/Common/LocationPermissionModal');
   });
 };
@@ -241,11 +246,18 @@ function MainStore() {
   };
 
   const [hasAnnouncement, setHasAnnouncement] = useState(true);
+  const [shouldRenderSplash] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && !sessionStorage.getItem('bv_splash_shown');
+    } catch {
+      return false;
+    }
+  });
 
   return (
     <div className={`min-h-screen flex flex-col ${hasAnnouncement ? 'pt-[104px]' : 'pt-[76px]'} text-gray-900 font-sans selection:bg-brand-yellow/30 selection:text-brand-teal transition-all duration-200`}>
-      {/* Brand Splash Screen on Initial Load */}
-      <SplashScreen />
+      {/* Brand Splash Screen on Initial Load Only */}
+      {shouldRenderSplash && <SplashScreen />}
 
       {/* Top Banner with announcements pinned to the viewport */}
       <TopAnnouncementBar onNavigate={navigateTo} onVisibilityChange={setHasAnnouncement} />
@@ -262,9 +274,9 @@ function MainStore() {
       {/* Main Storefront Views */}
       <main className="flex-grow">
         <Suspense fallback={
-          <div className="container mx-auto px-4 py-16 text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-teal-800 border-t-transparent"></div>
-            <p className="mt-3 text-sm font-semibold text-teal-800">Loading page...</p>
+          <div className="w-full py-12 flex flex-col items-center justify-center transition-opacity duration-200">
+            <div className="w-6 h-6 border-2 border-brand-teal/20 border-t-brand-teal rounded-full animate-spin mb-2" />
+            <span className="text-[11px] font-semibold text-gray-400">Loading view...</span>
           </div>
         }>
           <PageErrorBoundary>

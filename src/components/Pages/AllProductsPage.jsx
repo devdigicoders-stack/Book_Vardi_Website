@@ -22,10 +22,10 @@ export default function AllProductsPage({
   searchQuery: externalSearchQuery = '',
   onSearchChange: externalOnSearchChange = null
 }) {
-  const { wishlist } = useCart();
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { wishlist, products: contextProducts = [] } = useCart();
+  const [products, setProducts] = useState(() => (Array.isArray(contextProducts) && contextProducts.length > 0 ? contextProducts : []));
+  const [categories, setCategories] = useState(() => CATEGORY_STRUCTURE);
+  const [loading, setLoading] = useState(() => !contextProducts || contextProducts.length === 0);
 
   const [onlyLiked, setOnlyLiked] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
@@ -59,10 +59,12 @@ export default function AllProductsPage({
       .catch(() => setCategories(CATEGORY_STRUCTURE));
   }, []);
 
-  // Fetch products from backend
+  // Fetch products from backend with smooth background revalidation
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
+    if (products.length === 0) {
+      setLoading(true);
+    }
 
     fetchProductsFromBackend({
       category: selectedCategory || undefined,
@@ -72,12 +74,15 @@ export default function AllProductsPage({
       .then((res) => {
         if (!isMounted) return;
         const list = res?.products || res || [];
-        setProducts(Array.isArray(list) ? list : []);
+        if (Array.isArray(list) && list.length > 0) {
+          setProducts(list);
+        } else if (products.length === 0) {
+          setProducts([]);
+        }
         setLoading(false);
       })
       .catch(() => {
         if (!isMounted) return;
-        setProducts([]);
         setLoading(false);
       });
 
@@ -101,9 +106,16 @@ export default function AllProductsPage({
   // Filter and sort products
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
-      // Exclude Pending or Rejected products from website display
-      const appStat = String(product.approvalStatus || product.status || '').toLowerCase();
-      if (appStat === 'pending' || appStat === 'rejected') return false;
+      // Exclude unapproved products & kits from website display
+      const isKit = product.category === 'kits' || product.bundleType === 'kit' || (Array.isArray(product.kitItems) && product.kitItems.length > 0);
+      const appStat = String(product.approvalStatus || product.approval_status || '').toLowerCase().trim();
+      if (isKit) {
+        if (appStat !== 'approved') return false;
+      } else {
+        const prodStat = String(product.approvalStatus || product.status || '').toLowerCase().trim();
+        if (prodStat === 'pending' || prodStat === 'rejected') return false;
+      }
+      if (product.status === 'deleted' || product.status === 'inactive' || product.isDeleted) return false;
 
       // Category match
       const catSlug = selectedCategory;

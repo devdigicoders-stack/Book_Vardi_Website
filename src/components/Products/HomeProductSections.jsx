@@ -16,16 +16,17 @@ const carouselMemoryCache = new Map();
 export default function HomeProductSections({ activeCategory, searchQuery, onNavigate }) {
   const { products: contextProducts = EMPTY_ARRAY, recentlyViewedIds = EMPTY_ARRAY } = useCart();
 
-  const [recentlyViewed, setRecentlyViewed] = useState([]);
-  const [featured, setFeatured] = useState([]);
-  const [specialOffers, setSpecialOffers] = useState([]);
-  const [recommended, setRecommended] = useState([]);
-  const [searchResults, setSearchResults] = useState([]);
-  const [loading, setLoading] = useState(true);
-
   const safeRecentlyViewedIds = Array.isArray(recentlyViewedIds) ? recentlyViewedIds : EMPTY_ARRAY;
   const recentlyViewedKey = safeRecentlyViewedIds.join(',');
   const cacheKey = `${activeCategory || 'all'}_${recentlyViewedKey}`;
+  const initialCached = carouselMemoryCache.get(cacheKey);
+
+  const [recentlyViewed, setRecentlyViewed] = useState(() => initialCached?.recentList || []);
+  const [featured, setFeatured] = useState(() => initialCached?.featuredList || []);
+  const [specialOffers, setSpecialOffers] = useState(() => initialCached?.specialList || []);
+  const [recommended, setRecommended] = useState(() => initialCached?.recommendedList || []);
+  const [searchResults, setSearchResults] = useState([]);
+  const [loading, setLoading] = useState(() => !initialCached && contextProducts.length === 0);
 
   // Helper fallback for rotated context products if backend is empty/offline
   const getFallbackProducts = useCallback((offset, count, category = null) => {
@@ -69,7 +70,12 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
       const filterApproved = (list) => {
         if (!Array.isArray(list)) return [];
         return list.filter(p => {
-          const appStat = String(p.approvalStatus || '').toLowerCase();
+          if (!p) return false;
+          const isKit = p.category === 'kits' || p.bundleType === 'kit' || (Array.isArray(p.kitItems) && p.kitItems.length > 0);
+          const appStat = String(p.approvalStatus || p.approval_status || '').toLowerCase().trim();
+          if (isKit) {
+            return appStat === 'approved';
+          }
           return appStat !== 'pending' && appStat !== 'rejected';
         });
       };

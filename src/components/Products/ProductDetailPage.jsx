@@ -124,14 +124,15 @@ export default function ProductDetailPage({ onNavigate }) {
   const handleAddToCartWithLoader = () => {
     if (isAddingToCart) return;
     setIsAddingToCart(true);
-    addToCart(productPayload, quantity);
+    addToCart(finalProductPayload, quantity);
     setTimeout(() => setIsAddingToCart(false), 400);
   };
 
   const handleBuyNowWithLoader = () => {
     if (isBuyingNow) return;
     setIsBuyingNow(true);
-    handleBuyNow();
+    addToCart(finalProductPayload, quantity);
+    setIsCartOpen(true);
     setTimeout(() => setIsBuyingNow(false), 500);
   };
 
@@ -154,7 +155,7 @@ export default function ProductDetailPage({ onNavigate }) {
     realBaseMrp = Math.round(basePrice / (1 - baseDiscountPct / 100));
   }
 
-  // Size Variants & Base Version handling with individual prices, MRPs and images
+  // Size Variants & Base Version handling with individual prices, MRPs, images, and stocks
   const parsedVariants = parseSizeVariants(selectedProduct);
   const rawSizeVariants = parsedVariants.length > 0
     ? parsedVariants
@@ -163,22 +164,44 @@ export default function ProductDetailPage({ onNavigate }) {
             if (typeof s === 'object' && s !== null) {
               const vPrice = Number(s.price || basePrice);
               const vMrp = Number(s.mrp || s.originalPrice || s.regularPrice || (vPrice && baseDiscountPct > 0 ? Math.round(vPrice / (1 - baseDiscountPct / 100)) : realBaseMrp));
-              return { size: s.size || s.label || 'Standard', price: vPrice, mrp: vMrp, image: s.image };
+              const vStock = s.stock !== undefined ? Number(s.stock) : (s.stockQuantity !== undefined ? Number(s.stockQuantity) : Number(selectedProduct?.stock ?? selectedProduct?.stockQuantity ?? 50));
+              return {
+                size: s.size || s.label || 'Standard',
+                price: vPrice,
+                mrp: vMrp,
+                image: s.image,
+                stock: vStock,
+                stockQuantity: vStock
+              };
             }
+            const fallbackStock = Number(selectedProduct?.stock ?? selectedProduct?.stockQuantity ?? 50);
             return {
               size: String(s),
               price: basePrice,
-              mrp: realBaseMrp
+              mrp: realBaseMrp,
+              stock: fallbackStock,
+              stockQuantity: fallbackStock
             };
           })
         : []);
+
+  // Variant Stock & Overall Product Stock calculation (sum of variants if variants exist)
+  const totalVariantStock = rawSizeVariants.length > 0
+    ? rawSizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 0))), 0)
+    : Number(selectedProduct?.stock !== undefined ? selectedProduct.stock : (selectedProduct?.stockQuantity !== undefined ? selectedProduct.stockQuantity : 50));
+
+  const totalProductStock = rawSizeVariants.length > 0
+    ? totalVariantStock
+    : Number(selectedProduct?.stock !== undefined ? selectedProduct.stock : (selectedProduct?.stockQuantity !== undefined ? selectedProduct.stockQuantity : 50));
 
   const baseVariantOption = (basePrice > 0) ? {
     size: 'Base Product',
     price: basePrice,
     mrp: realBaseMrp,
     image: selectedProduct?.image,
-    isBase: true
+    isBase: true,
+    stock: totalProductStock,
+    stockQuantity: totalProductStock
   } : null;
 
   const sizeVariants = (baseVariantOption && rawSizeVariants.length > 0 && !rawSizeVariants.some(v => String(v.size || '').toLowerCase().includes('base')))
@@ -204,6 +227,12 @@ export default function ProductDetailPage({ onNavigate }) {
   }, [selectedProduct?.id, selectedProduct?._id]);
 
   const activeVariant = sizeVariants.find(v => String(v.size) === String(selectedSize)) || (sizeVariants.length > 0 ? sizeVariants[0] : null);
+
+  const currentVariantStock = activeVariant
+    ? Math.max(0, Number(activeVariant.stock !== undefined ? activeVariant.stock : (activeVariant.stockQuantity !== undefined ? activeVariant.stockQuantity : totalProductStock)))
+    : Math.max(0, totalProductStock);
+
+  const isCurrentVariantOutOfStock = currentVariantStock <= 0;
 
   const currentPrice = (activeVariant?.price !== undefined && activeVariant?.price !== null && Number(activeVariant.price) > 0)
     ? Number(activeVariant.price)
@@ -236,6 +265,10 @@ export default function ProductDetailPage({ onNavigate }) {
     } else {
       setVariantImageOverride(null);
     }
+    const vStock = Number(variant.stock !== undefined ? variant.stock : (variant.stockQuantity !== undefined ? variant.stockQuantity : totalProductStock));
+    if (vStock > 0 && quantity > vStock) {
+      setQuantity(vStock);
+    }
   };
 
   const productPayload = {
@@ -243,9 +276,85 @@ export default function ProductDetailPage({ onNavigate }) {
     price: currentPrice,
     originalPrice: currentMrp,
     mrp: currentMrp,
+    stock: currentVariantStock,
+    stockQuantity: currentVariantStock,
     selectedSize: selectedSize || undefined,
+    variantName: selectedSize || undefined,
     image: variantImageOverride || activeVariant?.image || selectedProduct?.image
   };
+
+  const isKitProduct = Boolean(
+    selectedProduct?.category === 'kits' ||
+    selectedProduct?.bundleType === 'kit' ||
+    (Array.isArray(selectedProduct?.kitItems) && selectedProduct.kitItems.length > 0)
+  );
+
+  const normalizedKitItems = isKitProduct && Array.isArray(selectedProduct?.kitItems)
+    ? selectedProduct.kitItems.map((item, idx) => ({
+        ...item,
+        id: String(item.id || item._id || idx),
+        price: Number(item.price || 0)
+      }))
+    : [];
+
+  const isCustomizedKit = isKitProduct && (selectedBundleItems.length !== normalizedKitItems.length);
+
+  const kitSubtotal = normalizedKitItems
+    .filter((item) => selectedBundleItems.includes(item.id))
+    .reduce((sum, item) => sum + item.price, 0);
+
+  const effectiveProductPrice = (isKitProduct && isCustomizedKit) ? kitSubtotal : currentPrice;
+
+  const selectedKitProducts = isKitProduct
+    ? normalizedKitItems.filter((item) => selectedBundleItems.includes(item.id))
+    : [];
+
+  const finalProductPayload = isKitProduct ? {
+    ...selectedProduct,
+    id: isCustomizedKit
+      ? `kit-${selectedProduct?.id || selectedProduct?._id}-${selectedBundleItems.slice().sort().join('-')}`
+      : (selectedProduct?.id || selectedProduct?._id),
+    name: isCustomizedKit ? `${selectedProduct?.name} (Custom Bundle)` : selectedProduct?.name,
+    price: effectiveProductPrice,
+    originalPrice: isCustomizedKit ? kitSubtotal : currentMrp,
+    mrp: isCustomizedKit ? kitSubtotal : currentMrp,
+    stock: currentVariantStock,
+    stockQuantity: currentVariantStock,
+    image: variantImageOverride || activeVariant?.image || selectedProduct?.image,
+    kitItems: selectedKitProducts.length > 0 ? selectedKitProducts : normalizedKitItems,
+    bundleType: 'kit'
+  } : productPayload;
+
+  // Size Chart logic: "Default Guide" only available when category is School Uniform
+  const hasCustomSizeChart = Boolean(
+    selectedProduct?.sizeChart?.rows &&
+    Array.isArray(selectedProduct.sizeChart.rows) &&
+    selectedProduct.sizeChart.rows.length > 0
+  );
+
+  const productCategoryStr = String(
+    selectedProduct?.category ||
+    selectedProduct?.categoryName ||
+    selectedProduct?.primaryCategory ||
+    ''
+  ).toLowerCase().trim();
+
+  const productSubCategoryStr = String(
+    selectedProduct?.subCategory ||
+    selectedProduct?.subcategory ||
+    ''
+  ).toLowerCase().trim();
+
+  const isSchoolUniformCategory =
+    productCategoryStr === 'school uniform' ||
+    productCategoryStr === 'school uniforms' ||
+    productCategoryStr === 'uniform' ||
+    productCategoryStr === 'uniforms' ||
+    productCategoryStr.includes('uniform') ||
+    ['ready to wear', 'unstitched', 'winter wear', 'sports wear'].includes(productSubCategoryStr) ||
+    String(selectedProduct?.name || '').toLowerCase().includes('school uniform');
+
+  const showSizeChartButton = isSchoolUniformCategory || hasCustomSizeChart;
 
   const currentProductIdKey = selectedProduct?.id || selectedProduct?._id || 'default_product';
   const currentAppliedCouponCode = appliedProductCouponMap[currentProductIdKey] || null;
@@ -468,7 +577,14 @@ export default function ProductDetailPage({ onNavigate }) {
       setActiveImageIndex(0);
       window.scrollTo(0, 0);
       if (fetchReviewsForProduct) {
-        fetchReviewsForProduct(selectedProduct.id);
+        fetchReviewsForProduct(selectedProduct.id || selectedProduct._id);
+      }
+      const isKit = selectedProduct.category === 'kits' || selectedProduct.bundleType === 'kit' || (Array.isArray(selectedProduct.kitItems) && selectedProduct.kitItems.length > 0);
+      if (isKit && Array.isArray(selectedProduct.kitItems)) {
+        const allIds = selectedProduct.kitItems.map((item, idx) => String(item.id || item._id || idx));
+        setSelectedBundleItems(allIds);
+      } else {
+        setSelectedBundleItems([]);
       }
     }
   }, [selectedProduct]);
@@ -486,6 +602,24 @@ export default function ProductDetailPage({ onNavigate }) {
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
         <h2 className="text-2xl font-bold text-gray-500 mb-4">Product not found.</h2>
         <button onClick={() => onNavigate && onNavigate('home')} className="px-4 py-2 bg-brand-teal text-white rounded-lg">Go Home</button>
+      </div>
+    );
+  }
+
+  const isKitTarget = Boolean(
+    selectedProduct?.category === 'kits' ||
+    selectedProduct?.bundleType === 'kit' ||
+    (Array.isArray(selectedProduct?.kitItems) && selectedProduct.kitItems.length > 0)
+  );
+  const isKitTargetApproved = String(selectedProduct?.approvalStatus || selectedProduct?.approval_status || '').trim().toLowerCase() === 'approved';
+  if (isKitTarget && (!isKitTargetApproved || selectedProduct?.status === 'deleted' || selectedProduct?.status === 'inactive' || selectedProduct?.isDeleted)) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">School Kit Not Available</h2>
+        <p className="text-gray-500 mb-6 max-w-md">This kit bundle is currently under verification or not approved for public display.</p>
+        <button onClick={() => onNavigate ? onNavigate('home') : closeProductDetails()} className="px-6 py-2.5 bg-brand-teal text-white font-bold rounded-xl hover:bg-brand-teal/90 transition-all cursor-pointer">
+          Continue Shopping
+        </button>
       </div>
     );
   }
@@ -509,15 +643,19 @@ export default function ProductDetailPage({ onNavigate }) {
 
   const isApprovedProduct = (p) => {
     if (!p) return false;
-    if (p.approvalStatus) {
-      const stat = String(p.approvalStatus).toLowerCase().trim();
+    const isKit = p.category === 'kits' || p.bundleType === 'kit' || (Array.isArray(p.kitItems) && p.kitItems.length > 0);
+    const stat = String(p.approvalStatus || p.approval_status || '').toLowerCase().trim();
+    if (isKit) {
+      if (stat !== 'approved') return false;
+    } else {
       if (stat === 'pending' || stat === 'rejected') return false;
-      if (stat !== 'approved' && stat !== 'verified') return false;
+      if (p.approvalStatus && stat !== 'approved' && stat !== 'verified') return false;
     }
     if (p.status) {
       const st = String(p.status).toLowerCase().trim();
       if (st === 'inactive' || st === 'deleted' || st === 'draft') return false;
     }
+    if (p.isDeleted) return false;
     return true;
   };
 
@@ -528,11 +666,14 @@ export default function ProductDetailPage({ onNavigate }) {
 
   // 1. Recommended Kits row (Approved kits / bundles only)
   let recommendedKits = approvedCandidates.filter((p) => {
-    return p.category === 'kits' || p.bundleType === 'kit' || (Array.isArray(p.kitItems) && p.kitItems.length > 0) || p.school;
+    const isKit = p.category === 'kits' || p.bundleType === 'kit' || (Array.isArray(p.kitItems) && p.kitItems.length > 0);
+    if (!isKit) return false;
+    const stat = String(p.approvalStatus || p.approval_status || '').toLowerCase().trim();
+    return stat === 'approved';
   }).slice(0, 8);
 
   if (recommendedKits.length === 0) {
-    recommendedKits = approvedCandidates.slice(0, 6);
+    recommendedKits = approvedCandidates.filter(p => !p.category?.includes('kit')).slice(0, 6);
   }
 
   // 2. Complete Your Kit / Featured Products (Approved products from other categories)
@@ -755,7 +896,12 @@ export default function ProductDetailPage({ onNavigate }) {
     if (p.unit) {
       specs.push({ label: 'Packaging Unit', value: p.unit });
     }
-    if (p.stock !== undefined && p.stock !== null) {
+    if (sizeVariants.length > 0) {
+      specs.push({
+        label: 'Stock Available',
+        value: totalProductStock > 0 ? `${totalProductStock} units available across sizes` : 'Out of Stock'
+      });
+    } else if (p.stock !== undefined && p.stock !== null) {
       specs.push({ label: 'Stock Available', value: p.stock > 0 ? `${p.stock} units` : 'Out of Stock' });
     }
     const pIsRet = p.isReturnable !== false && p.returnPolicy !== 'non_returnable';
@@ -949,21 +1095,21 @@ export default function ProductDetailPage({ onNavigate }) {
                         {tag}
                       </span>
                     ))}
-                    {selectedProduct.stock !== undefined && (
-                        <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
-                          selectedProduct.stock > 10
-                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                            : selectedProduct.stock > 0
-                            ? 'text-amber-800 bg-amber-50 border-amber-200'
-                            : 'text-rose-700 bg-rose-50 border-rose-200'
-                        }`}>
-                          {selectedProduct.stock > 10
-                            ? 'In Stock'
-                            : selectedProduct.stock > 0
-                            ? `Only ${selectedProduct.stock} Left`
-                            : 'Out of Stock'}
-                        </span>
-                      )}
+                    {currentVariantStock !== undefined && (
+                      <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                        currentVariantStock > 10
+                          ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                          : currentVariantStock > 0
+                          ? 'text-amber-800 bg-amber-50 border-amber-200'
+                          : 'text-rose-700 bg-rose-50 border-rose-200'
+                      }`}>
+                        {currentVariantStock > 10
+                          ? (sizeVariants.length > 0 && selectedSize ? `In Stock (${currentVariantStock} left in ${selectedSize})` : `In Stock (${currentVariantStock} units)`)
+                          : currentVariantStock > 0
+                          ? `Only ${currentVariantStock} Left in ${selectedSize || 'Stock'}`
+                          : `${selectedSize ? `${selectedSize}: ` : ''}Out of Stock`}
+                      </span>
+                    )}
                   </div>
 
                   {/* Seller & Stock Status Bar */}
@@ -996,18 +1142,18 @@ export default function ProductDetailPage({ onNavigate }) {
                         </span>
                       )}
 
-                      {selectedProduct.stock !== undefined && (
+                      {currentVariantStock !== undefined && (
                         <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
-                          selectedProduct.stock > 10
+                          currentVariantStock > 10
                             ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                            : selectedProduct.stock > 0
+                            : currentVariantStock > 0
                             ? 'text-amber-800 bg-amber-50 border-amber-200'
                             : 'text-rose-700 bg-rose-50 border-rose-200'
                         }`}>
-                          {selectedProduct.stock > 10
-                            ? 'In Stock'
-                            : selectedProduct.stock > 0
-                            ? `Only ${selectedProduct.stock} Left`
+                          {currentVariantStock > 10
+                            ? (sizeVariants.length > 0 && selectedSize ? `In Stock (${currentVariantStock} in ${selectedSize})` : 'In Stock')
+                            : currentVariantStock > 0
+                            ? `Only ${currentVariantStock} Left`
                             : 'Out of Stock'}
                         </span>
                       )}
@@ -1021,13 +1167,18 @@ export default function ProductDetailPage({ onNavigate }) {
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Price:</span>
                         <span className="font-display text-2xl sm:text-3xl font-extrabold text-brand-teal">
-                          ₹{currentPrice}
+                          ₹{effectiveProductPrice}
                         </span>
+                        {isCustomizedKit && (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-brand-yellow text-brand-teal-dark border border-brand-yellow-hover shadow-2xs">
+                            ⚡ Customized Pack
+                          </span>
+                        )}
                       </div>
 
                       <span className="text-xs sm:text-sm text-red-500 flex items-center gap-1 ml-1 font-semibold">
                         <span className="text-xs text-red-500 font-semibold uppercase">M.R.P.:</span>
-                        <span className="line-through text-red-500 font-semibold decoration-red-500">₹{currentMrp || currentPrice}</span>
+                        <span className="line-through text-red-500 font-semibold decoration-red-500">₹{isCustomizedKit ? kitSubtotal : (currentMrp || currentPrice)}</span>
                       </span>
                     </div>
 
@@ -1071,9 +1222,9 @@ export default function ProductDetailPage({ onNavigate }) {
                           return 'Select Size:';
                         })()} <strong className="text-brand-teal ml-1">{selectedSize}</strong>
                       </span>
-                      {activeVariant?.stock !== undefined && (
-                        <span className={`text-[11px] font-bold ${activeVariant.stock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                          {activeVariant.stock > 0 ? `${activeVariant.stock} in stock` : 'Out of Stock'}
+                      {currentVariantStock !== undefined && (
+                        <span className={`text-[11px] font-bold ${currentVariantStock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                          {currentVariantStock > 0 ? `${currentVariantStock} in stock` : 'Out of Stock'}
                         </span>
                       )}
                     </div>
@@ -1082,6 +1233,8 @@ export default function ProductDetailPage({ onNavigate }) {
                       {sizeVariants.map((variant, vIdx) => {
                         const variantVal = variant.size || variant.measureValue || `size-${vIdx}`;
                         const isSelected = selectedSize === variantVal;
+                        const vStock = Number(variant.stock !== undefined ? variant.stock : (variant.stockQuantity !== undefined ? variant.stockQuantity : totalProductStock));
+                        const isVOutOfStock = vStock <= 0;
                         const rawVImg = variant.image || (Array.isArray(variant.images) && variant.images[0]) || selectedProduct?.image || (Array.isArray(selectedProduct?.images) && selectedProduct.images[0]);
                         const vImgUrl = rawVImg ? resolveImageUrl(rawVImg) : '';
 
@@ -1093,11 +1246,13 @@ export default function ProductDetailPage({ onNavigate }) {
                             className={`flex items-center gap-2.5 p-2 rounded-2xl border transition-all cursor-pointer shrink-0 text-left ${
                               isSelected
                                 ? 'bg-teal-950 text-white border-teal-950 ring-2 ring-teal-700/30 shadow-md scale-[1.02]'
+                                : isVOutOfStock
+                                ? 'bg-gray-50 text-gray-400 border-gray-200 opacity-60 hover:border-gray-300'
                                 : 'bg-white text-gray-800 border-gray-200 hover:border-brand-teal/50 hover:bg-teal-50/20'
                             }`}
                           >
                             <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border overflow-hidden ${
-                              isSelected ? 'bg-teal-800 text-teal-100 border-teal-700' : 'bg-gray-100 text-gray-600 border-gray-200'
+                              isSelected ? 'bg-teal-800 text-teal-100 border-teal-700' : isVOutOfStock ? 'bg-gray-200 text-gray-400 border-gray-200' : 'bg-gray-100 text-gray-600 border-gray-200'
                             }`}>
                               {vImgUrl ? (
                                 <img
@@ -1119,7 +1274,7 @@ export default function ProductDetailPage({ onNavigate }) {
                                 )}
                               </div>
                               {variant.price && (
-                                <div className={`text-[11px] font-bold mt-0.5 ${isSelected ? 'text-amber-300' : 'text-brand-teal'}`}>
+                                <div className={`text-[11px] font-bold mt-0.5 ${isSelected ? 'text-amber-300' : isVOutOfStock ? 'text-gray-400' : 'text-brand-teal'}`}>
                                   ₹{variant.price}
                                   {variant.mrp && Number(variant.mrp) > Number(variant.price) && (
                                     <span className={`ml-1 text-[9px] line-through font-normal ${isSelected ? 'text-teal-200' : 'text-gray-400'}`}>
@@ -1128,6 +1283,11 @@ export default function ProductDetailPage({ onNavigate }) {
                                   )}
                                 </div>
                               )}
+                              <div className={`text-[10px] font-semibold mt-0.5 ${
+                                isSelected ? 'text-teal-100' : isVOutOfStock ? 'text-rose-500 font-bold' : (vStock <= 5 ? 'text-amber-600 font-bold' : 'text-gray-500')
+                              }`}>
+                                {isVOutOfStock ? 'Sold Out' : `${vStock} left`}
+                              </div>
                             </div>
                           </button>
                         );
@@ -1136,8 +1296,8 @@ export default function ProductDetailPage({ onNavigate }) {
                   </div>
                 )}
 
-                {/* Size Chart Popup Button for Clothing, Apparel & Uniforms */}
-                {(selectedProduct.category === 'Uniforms' || selectedProduct.category === 'uniforms' || selectedProduct.category === 'shoes' || selectedProduct.sizeChart || Array.isArray(selectedProduct.sizes) || ['shirt', 'pant', 'blazer', 'trousers', 'skirt', 'uniform', 'shoe', 'apparel', 'wear', 'dress'].some(k => (selectedProduct.name || '').toLowerCase().includes(k))) && (
+                {/* Size Chart Popup Button - Only for School Uniform category (or if seller provided a custom size chart) */}
+                {showSizeChartButton && (
                   <div className="pt-1">
                     <button
                       type="button"
@@ -1147,24 +1307,31 @@ export default function ProductDetailPage({ onNavigate }) {
                       <Sparkles size={14} className="text-teal-600" />
                       <span>View Size Chart & Measurement Guide</span>
                       <span className="text-[10px] font-bold text-teal-700 bg-white/80 px-1.5 py-0.5 rounded border border-teal-200">
-                        {selectedProduct.sizeChart?.rows && selectedProduct.sizeChart.rows.length > 0 ? 'Custom Guide' : 'Default Guide'}
+                        {hasCustomSizeChart ? 'Custom Guide' : 'Default Guide'}
                       </span>
                     </button>
                   </div>
                 )}
 
-                {selectedProduct.category === 'kits' && selectedProduct.kitItems && (
-                  <div className="rounded-2xl border border-brand-teal/20 bg-brand-teal/5 p-4">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-brand-teal">Build Your Bundle</span>
-                      <span className="text-[11px] font-bold text-gray-600">₹{bundleTotal || currentPrice}</span>
+                {isKitProduct && normalizedKitItems.length > 0 && (
+                  <div className="rounded-2xl border border-brand-teal/20 bg-brand-teal/5 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-extrabold uppercase tracking-wider text-brand-teal">Build Your Bundle</span>
+                        <span className="text-[10px] font-bold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">
+                          Selected: {selectedBundleItems.length} of {normalizedKitItems.length} items
+                        </span>
+                      </div>
+                      <span className="text-xs font-extrabold text-brand-teal">
+                        Total: ₹{isCustomizedKit ? kitSubtotal : currentPrice}
+                      </span>
                     </div>
-                    <div className="space-y-2">
-                      {selectedProduct.kitItems.map((item, itemIdx) => {
-                        const isChecked = selectedBundleItems.includes(item.id || item._id);
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {normalizedKitItems.map((item, itemIdx) => {
+                        const isChecked = selectedBundleItems.includes(item.id);
                         return (
                           <button
-                            key={item.id || item._id || item.name || `kit-item-${itemIdx}`}
+                            key={item.id || `kit-item-${itemIdx}`}
                             type="button"
                             onClick={() => setSelectedBundleItems((prev) =>
                               prev.includes(item.id)
@@ -1172,16 +1339,16 @@ export default function ProductDetailPage({ onNavigate }) {
                                 : [...prev, item.id]
                             )}
                             className={`w-full flex items-center justify-between rounded-xl border p-2.5 text-left transition-all cursor-pointer ${
-                              isChecked ? 'border-brand-teal bg-white' : 'border-gray-200 bg-white/80 hover:border-brand-teal/30'
+                              isChecked ? 'border-brand-teal bg-white shadow-2xs' : 'border-gray-200 bg-white/60 text-gray-400 hover:border-brand-teal/30'
                             }`}
                           >
                             <div className="flex items-center gap-3">
-                              <div className={`w-4 h-4 rounded border flex items-center justify-center ${isChecked ? 'bg-brand-teal border-brand-teal text-white' : 'border-gray-300 bg-white'}`}>
-                                <Check size={10} />
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isChecked ? 'bg-brand-teal border-brand-teal text-white' : 'border-gray-300 bg-white'}`}>
+                                {isChecked && <Check size={10} strokeWidth={3} />}
                               </div>
-                              <span className="text-xs font-bold text-gray-700">{item.name}</span>
+                              <span className={`text-xs font-bold ${isChecked ? 'text-gray-800' : 'text-gray-400 line-through'}`}>{item.name}</span>
                             </div>
-                            <span className="text-[11px] font-bold text-brand-teal">₹{item.price}</span>
+                            <span className={`text-xs font-extrabold ${isChecked ? 'text-brand-teal' : 'text-gray-400'}`}>₹{item.price}</span>
                           </button>
                         );
                       })}
@@ -1267,18 +1434,26 @@ export default function ProductDetailPage({ onNavigate }) {
                         <button
                           type="button"
                           onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-2xs hover:bg-gray-100 text-gray-700 cursor-pointer"
+                          disabled={quantity <= 1 || isCurrentVariantOutOfStock}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-2xs hover:bg-gray-100 text-gray-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Decrease quantity"
                         >
                           <Minus size={14} />
                         </button>
                         <span className="w-10 text-center font-bold text-sm text-gray-900">
-                          {quantity}
+                          {isCurrentVariantOutOfStock ? 0 : quantity}
                         </span>
                         <button
                           type="button"
-                          onClick={() => setQuantity((q) => q + 1)}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-2xs hover:bg-gray-100 text-gray-700 cursor-pointer"
+                          onClick={() => {
+                            if (currentVariantStock > 0 && quantity >= currentVariantStock) {
+                              showToast(`⚠️ Only ${currentVariantStock} items available for this size`);
+                              return;
+                            }
+                            setQuantity((q) => q + 1);
+                          }}
+                          disabled={isCurrentVariantOutOfStock || (currentVariantStock > 0 && quantity >= currentVariantStock)}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-2xs hover:bg-gray-100 text-gray-700 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Increase quantity"
                         >
                           <Plus size={14} />
@@ -1289,7 +1464,7 @@ export default function ProductDetailPage({ onNavigate }) {
                     <div className="text-right">
                       <span className="text-[11px] text-gray-500 block">Total Price:</span>
                       <span className="font-display font-extrabold text-xl text-brand-teal">
-                        ₹{currentPrice * quantity}
+                        ₹{effectiveProductPrice * (isCurrentVariantOutOfStock ? 0 : quantity)}
                       </span>
                     </div>
                   </div>
@@ -1302,10 +1477,14 @@ export default function ProductDetailPage({ onNavigate }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                       <button
                         type="button"
-                        disabled={allDisabled || isAddingToCart}
+                        disabled={allDisabled || isAddingToCart || isCurrentVariantOutOfStock}
                         onClick={() => {
                           if (allDisabled) {
                             showToast('⚠️ Payment disabled by seller for this product');
+                            return;
+                          }
+                          if (isCurrentVariantOutOfStock) {
+                            showToast('⚠️ This variant is out of stock');
                             return;
                           }
                           handleAddToCartWithLoader();
@@ -1317,6 +1496,8 @@ export default function ProductDetailPage({ onNavigate }) {
                             <Loader2 size={16} className="animate-spin text-brand-teal-dark" />
                             <span>Adding to Cart...</span>
                           </>
+                        ) : isCurrentVariantOutOfStock ? (
+                          <span>Out of Stock</span>
                         ) : (
                           <>
                             <ShoppingCart size={16} />
@@ -1330,10 +1511,14 @@ export default function ProductDetailPage({ onNavigate }) {
 
                       <button
                         type="button"
-                        disabled={allDisabled || isBuyingNow}
+                        disabled={allDisabled || isBuyingNow || isCurrentVariantOutOfStock}
                         onClick={() => {
                           if (allDisabled) {
                             showToast('⚠️ Payment disabled by seller for this product');
+                            return;
+                          }
+                          if (isCurrentVariantOutOfStock) {
+                            showToast('⚠️ This variant is out of stock');
                             return;
                           }
                           handleBuyNowWithLoader();
@@ -1345,6 +1530,8 @@ export default function ProductDetailPage({ onNavigate }) {
                             <Loader2 size={16} className="animate-spin text-white" />
                             <span>Processing...</span>
                           </>
+                        ) : isCurrentVariantOutOfStock ? (
+                          <span>Sold Out</span>
                         ) : (
                           <>
                             <Zap size={16} />
@@ -2143,18 +2330,18 @@ export default function ProductDetailPage({ onNavigate }) {
       </div>
 
       {/* Apparel Size Chart Modal */}
-      {showSizeChartModal && (
+      {showSizeChartModal && showSizeChartButton && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 max-w-2xl w-full p-6 relative max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-4">
               <div>
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${
-                    selectedProduct.sizeChart?.rows && selectedProduct.sizeChart.rows.length > 0
+                    hasCustomSizeChart
                       ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                       : 'bg-teal-50 text-brand-teal border-teal-200'
                   }`}>
-                    {selectedProduct.sizeChart?.rows && selectedProduct.sizeChart.rows.length > 0
+                    {hasCustomSizeChart
                       ? '✨ Seller Custom Size Guide'
                       : '📏 Standard Default Measurement Guide'}
                   </span>
@@ -2190,7 +2377,7 @@ export default function ProductDetailPage({ onNavigate }) {
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white text-gray-700">
                   {(
-                    selectedProduct.sizeChart?.rows && selectedProduct.sizeChart.rows.length > 0
+                    hasCustomSizeChart
                       ? selectedProduct.sizeChart.rows
                       : [
                           { size: '24 (Age 3-4)', chest: '26"', length: '16"', sleeve: '12"', waist: '22"', shoulder: '11"' },

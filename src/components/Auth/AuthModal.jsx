@@ -293,9 +293,11 @@ export default function AuthModal() {
       const verifiedUser = verificationResponse?.user;
       const success = await login({
         phone,
+        otp: loginOtp.trim(),
         name: verifiedUser?.name || '',
         email: verifiedUser?.email || '',
-        verifiedUser
+        verifiedUser,
+        token: verificationResponse?.token
       });
 
       if (success) {

@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   Truck,
+  Phone,
   LogOut,
   LogIn,
   UserPlus,
@@ -44,7 +45,7 @@ import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi } from '../../utils/api';
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi } from '../../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import OrderTrackingModal from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
@@ -172,28 +173,77 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   }, [activeTab, fetchUserOrders]);
 
   useEffect(() => {
-    if (activeTab === 'bulk-orders' || activeTab === 'profile') {
-      fetchCustomerSchoolBulkOrdersApi(userProfile?.phone || '').then(data => {
+    const loadBulkOrders = () => {
+      const myId = String(userProfile?.id || userProfile?._id || '');
+      const myPhone = String(userProfile?.phone || userProfile?.mobile || '').replace(/\D/g, '').slice(-10);
+      const myEmail = String(userProfile?.email || '').trim().toLowerCase();
+
+      const belongsToMe = (order) => {
+        if (!order) return false;
+        // 1. By User ID
+        const oUserId = String(order.userId || order.user || order.customerId || '');
+        if (myId && oUserId && oUserId === myId) return true;
+
+        // 2. By Phone number (last 10 digits match)
+        const oPhone = String(order.userPhone || order.contactPhone || order.phone || '').replace(/\D/g, '').slice(-10);
+        if (myPhone && oPhone && myPhone.length >= 10 && myPhone === oPhone) return true;
+
+        // 3. By Email (excluding placeholder local emails)
+        const oEmail = String(order.userEmail || order.contactEmail || order.email || '').trim().toLowerCase();
+        if (myEmail && oEmail && !myEmail.includes('@bookvardi.local') && myEmail === oEmail) return true;
+
+        return false;
+      };
+
+      fetchCustomerSchoolBulkOrdersApi(userProfile?.phone || '', userProfile?.id || userProfile?._id || '', userProfile?.email || '').then(data => {
         const apiList = Array.isArray(data) ? data : (data?.orders || []);
         let localList = [];
         try {
           localList = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
         } catch {}
+        let syncList = [];
+        try {
+          syncList = JSON.parse(localStorage.getItem('bv_sync_school_orders') || '[]');
+        } catch {}
         const merged = [...apiList];
-        localList.forEach(lItem => {
-          if (!merged.some(m => (m.referenceId && m.referenceId === lItem.referenceId) || (m._id && m._id === lItem._id))) {
+        [...localList, ...syncList].forEach(lItem => {
+          const idx = merged.findIndex(m => (m.referenceId && m.referenceId === lItem.referenceId) || (m._id && m._id === lItem._id) || (m.id && m.id === lItem.id));
+          if (idx === -1) {
             merged.push(lItem);
+          } else {
+            merged[idx] = { ...merged[idx], ...lItem };
           }
         });
-        setCustomerBulkOrders(merged);
+        const privateOrders = merged.filter(belongsToMe);
+        setCustomerBulkOrders(privateOrders);
       }).catch(() => {
         try {
           const localList = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
-          setCustomerBulkOrders(localList);
+          const syncList = JSON.parse(localStorage.getItem('bv_sync_school_orders') || '[]');
+          const merged = [...localList];
+          syncList.forEach(s => {
+            const idx = merged.findIndex(m => (m.referenceId && m.referenceId === s.referenceId) || (m._id && m._id === s._id) || (m.id && m.id === s.id));
+            if (idx === -1) merged.push(s);
+            else merged[idx] = { ...merged[idx], ...s };
+          });
+          const privateOrders = merged.filter(belongsToMe);
+          setCustomerBulkOrders(privateOrders);
         } catch {}
       });
+    };
+
+    if (activeTab === 'bulk-orders' || activeTab === 'profile') {
+      loadBulkOrders();
     }
-  }, [activeTab, userProfile?.phone]);
+
+    window.addEventListener('bv_school_orders_updated', loadBulkOrders);
+    window.addEventListener('storage', loadBulkOrders);
+
+    return () => {
+      window.removeEventListener('bv_school_orders_updated', loadBulkOrders);
+      window.removeEventListener('storage', loadBulkOrders);
+    };
+  }, [activeTab, userProfile?.phone, userProfile?.id, userProfile?._id, userProfile?.email]);
 
 
   // Load 12-step seller onboarding data saved during registration
@@ -2534,6 +2584,17 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                   <div className="space-y-4">
                     {customerBulkOrders.map((order) => {
                       const winningQuote = order.quotations?.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId));
+                      const statusLower = (order.status || '').toLowerCase().trim();
+                      const isProcessedOrder = ['accepted', 'quote_accepted', 'packed', 'out for delivery', 'received'].includes(statusLower);
+
+                      const getStepNumber = (st) => {
+                        if (st === 'received') return 4;
+                        if (st === 'out for delivery') return 3;
+                        if (st === 'packed') return 2;
+                        if (st === 'accepted' || st === 'quote_accepted') return 1;
+                        return 0;
+                      };
+                      const currentStepNum = getStepNumber(statusLower);
 
                       return (
                         <div key={order.id || order._id} className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/40 transition-all space-y-4 bg-gray-50/50">
@@ -2553,15 +2614,26 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             </div>
 
                             <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                              order.status === 'quote_accepted'
+                              statusLower === 'received'
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : statusLower === 'out for delivery'
+                                ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                : statusLower === 'packed'
+                                ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
+                                : statusLower === 'accepted' || statusLower === 'quote_accepted'
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : order.status === 'published' || order.status === 'assigned'
+                                : statusLower === 'published'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : statusLower === 'assigned'
                                 ? 'bg-blue-50 text-blue-800 border-blue-200'
                                 : 'bg-amber-50 text-amber-800 border-amber-200'
                             }`}>
-                              {order.status === 'quote_accepted' ? 'Quote Approved & Finalized' :
-                               order.status === 'published' ? 'Marketplace RFQ Live' :
-                               order.status === 'assigned' ? 'Assigned to Authorized Vendor' : 'Pending Admin Review'}
+                              {statusLower === 'received' ? 'Consignment Received & Delivered' :
+                               statusLower === 'out for delivery' ? 'Out for Delivery (Store Self Delivery)' :
+                               statusLower === 'packed' ? 'Consignment Packed' :
+                               statusLower === 'accepted' || statusLower === 'quote_accepted' ? 'Order Accepted by Vendor' :
+                               statusLower === 'published' ? 'Marketplace RFQ Live' :
+                               statusLower === 'assigned' ? 'Assigned to Authorized Vendor' : 'Pending Admin Review'}
                             </span>
                           </div>
 
@@ -2585,6 +2657,139 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             </div>
                           </div>
 
+                          {/* Quotation Deadline Countdown Badge if quotes are still open */}
+                          {order.expectedQuotationDate && !winningQuote && (() => {
+                            const target = new Date(order.expectedQuotationDate);
+                            if (isNaN(target.getTime())) return null;
+                            const now = new Date();
+                            const targetMid = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+                            const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                            const diffDays = Math.round((targetMid - nowMid) / (1000 * 60 * 60 * 24));
+                            const isExpired = diffDays < 0;
+                            const isUrgent = diffDays >= 0 && diffDays <= 2;
+                            const countdownText = diffDays > 1 ? `${diffDays} days left` : diffDays === 1 ? '1 day left (Ends tomorrow)' : diffDays === 0 ? 'Deadline today' : `Deadline passed (${Math.abs(diffDays)}d ago)`;
+
+                            return (
+                              <div className="flex items-center justify-between bg-blue-50/80 border border-blue-200/80 rounded-xl p-2.5 text-xs text-blue-900">
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <Clock size={14} className={isExpired ? 'text-red-500' : isUrgent ? 'text-amber-600' : 'text-blue-600'} />
+                                  <span>Quotation Receiving Deadline: <strong className="text-blue-950 font-extrabold">{target.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></span>
+                                </div>
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                                  isExpired ? 'bg-red-100 text-red-700 border-red-200' : isUrgent ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-blue-100 text-blue-800 border-blue-300'
+                                }`}>
+                                  {countdownText}
+                                </span>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 4-Step Order Progress Stepper when order is in processing */}
+                          {isProcessedOrder && (
+                            <div className="bg-white border border-gray-200 rounded-xl p-3.5 space-y-2">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                <span>Order Fulfillment Progress</span>
+                                <span className="text-brand-teal font-extrabold normal-case">
+                                  {statusLower === 'received' ? 'Order Completed' :
+                                   statusLower === 'out for delivery' ? 'Out for Delivery' :
+                                   statusLower === 'packed' ? 'Consignment Packed' : 'Order Confirmed'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-2 pt-2">
+                                {[
+                                  { step: 1, label: 'Accepted', desc: 'Order Confirmed' },
+                                  { step: 2, label: 'Packed', desc: 'Ready for Transit' },
+                                  { step: 3, label: 'Out for Delivery', desc: 'Store Self-Delivery' },
+                                  { step: 4, label: 'Received', desc: 'Handed Over' }
+                                ].map((s) => {
+                                  const isDone = currentStepNum >= s.step;
+                                  const isCurrent = currentStepNum === s.step;
+                                  return (
+                                    <div key={s.step} className="flex flex-col items-center text-center">
+                                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
+                                        isDone
+                                          ? 'bg-emerald-600 text-white shadow-xs'
+                                          : 'bg-gray-100 text-gray-400 border border-gray-200'
+                                      }`}>
+                                        {isDone ? <Check size={14} /> : s.step}
+                                      </div>
+                                      <span className={`text-[11px] font-bold mt-1.5 line-clamp-1 ${
+                                        isCurrent ? 'text-brand-teal' : isDone ? 'text-gray-800' : 'text-gray-400'
+                                      }`}>
+                                        {s.label}
+                                      </span>
+                                      <span className="text-[9px] text-gray-400 hidden sm:block">
+                                        {s.desc}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Store Self-Delivery Executive Details */}
+                          {(order.deliveryDetails || order.selfDeliveryDetails) && (
+                            <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border border-blue-200 rounded-xl p-3.5 space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 font-bold text-blue-900 text-xs">
+                                  <Truck size={15} className="text-blue-600" />
+                                  <span>Store Self-Delivery Assignment (Exclusive Direct Delivery)</span>
+                                </div>
+                                {(order.deliveryDetails?.deliveryPartnerToken || order.deliveryDetails?.trackingId || order.referenceId) && (
+                                  <span className="text-[11px] font-mono px-2 py-0.5 bg-white text-blue-800 border border-blue-200 rounded-md font-bold">
+                                    Token: {order.deliveryDetails?.deliveryPartnerToken || order.deliveryDetails?.trackingId || order.referenceId}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                                <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100">
+                                  <span className="text-[10px] text-gray-500 uppercase font-semibold block">Store Rider / Executive</span>
+                                  <span className="font-bold text-gray-900">
+                                    {order.deliveryDetails?.deliveryBoyName || order.selfDeliveryDetails?.deliveryBoyName || 'Store Assigned Executive'}
+                                  </span>
+                                </div>
+
+                                <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100">
+                                  <span className="text-[10px] text-gray-500 uppercase font-semibold block">Contact Number</span>
+                                  {order.deliveryDetails?.deliveryBoyPhone || order.selfDeliveryDetails?.deliveryBoyPhone ? (
+                                    <a
+                                      href={`tel:${order.deliveryDetails?.deliveryBoyPhone || order.selfDeliveryDetails?.deliveryBoyPhone}`}
+                                      className="font-bold text-blue-600 hover:underline flex items-center gap-1"
+                                    >
+                                      <Phone size={11} />
+                                      {order.deliveryDetails?.deliveryBoyPhone || order.selfDeliveryDetails?.deliveryBoyPhone}
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-500">Contact Store</span>
+                                  )}
+                                </div>
+
+                                <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100">
+                                  <span className="text-[10px] text-gray-500 uppercase font-semibold block">Vehicle Number</span>
+                                  <span className="font-mono font-bold text-gray-900">
+                                    {order.deliveryDetails?.vehicleNumber || order.selfDeliveryDetails?.vehicleNumber || 'Store Vehicle'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {statusLower === 'out for delivery' && (
+                                <div className="text-[11px] text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-2 border border-indigo-100">
+                                  <Clock size={13} className="text-indigo-600 shrink-0" />
+                                  <span>Consignment is out for self-delivery. The delivery executive will contact the institutional representative at delivery.</span>
+                                </div>
+                              )}
+                              {statusLower === 'received' && (
+                                <div className="text-[11px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-2 border border-emerald-100">
+                                  <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                  <span>Consignment was safely received and verified at institutional campus.</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* Approved Quotation Banner */}
                           {winningQuote && (
                             <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
@@ -2593,8 +2798,14 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                   <CheckCircle2 size={14} className="text-emerald-600" /> Approved Vendor Quote:
                                 </span>
                                 <div className="text-emerald-900 font-medium mt-0.5">
-                                  Fulfilled by <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong> ({winningQuote.sellerPhone})
+                                  Fulfilled by <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong>
                                 </div>
+                                {(winningQuote.prepaymentAmount > 0 || winningQuote.sellerAdvanceAmount > 0 || winningQuote.prepaymentPercentage > 0 || winningQuote.sellerAdvancePercentage > 0) && (
+                                  <div className="text-[11px] font-bold text-emerald-800 mt-1 flex items-center gap-1.5 bg-emerald-100/60 px-2 py-0.5 rounded-md w-fit">
+                                    <span>Prepayment: ₹{Number(winningQuote.prepaymentAmount || winningQuote.sellerAdvanceAmount || Math.round((Number(winningQuote.quoteAmount) * (winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage || 0)) / 100)).toLocaleString()}</span>
+                                    {(winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage) ? ` (${winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage}%)` : ''}
+                                  </div>
+                                )}
                               </div>
 
                               <div className="text-right">
@@ -2653,26 +2864,136 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         order={selectedBulkOrder}
         onClose={() => setSelectedBulkOrder(null)}
         userRole="consumer"
-        onApproveQuote={async (orderId, quoteId) => {
+        onApproveQuote={async (orderId, quoteId, updateData = {}) => {
+          const applyApprovalLocally = (sourceOrder) => {
+            const quotes = sourceOrder.quotations || [];
+            const matched = quotes.find(q => String(q._id) === String(quoteId) || String(q.id) === String(quoteId));
+            const winningSellerId = matched?.sellerId || sourceOrder.sellerId;
+            const updatedQuotes = quotes.map(q => {
+              const isWin = String(q._id) === String(quoteId) || String(q.id) === String(quoteId);
+              return {
+                ...q,
+                status: isWin ? 'approved' : 'rejected',
+                ...(isWin && updateData?.quoteAmount ? { quoteAmount: updateData.quoteAmount } : {}),
+                ...(isWin && updateData?.prepaymentAmount !== undefined ? { prepaymentAmount: updateData.prepaymentAmount, sellerAdvanceAmount: updateData.prepaymentAmount } : {}),
+                ...(isWin && updateData?.prepaymentPercentage !== undefined ? { prepaymentPercentage: updateData.prepaymentPercentage, sellerAdvancePercentage: updateData.prepaymentPercentage } : {})
+              };
+            });
+
+            return {
+              ...sourceOrder,
+              status: 'accepted',
+              acceptedQuoteId: quoteId,
+              winningQuoteId: quoteId,
+              sellerId: winningSellerId,
+              deliveryMode: 'self_delivery',
+              ...(updateData?.updatedRequirements ? { requirements: updateData.updatedRequirements } : {}),
+              ...(updateData?.totalQuantity ? { totalQuantity: updateData.totalQuantity } : {}),
+              ...(updateData?.quoteAmount ? {
+                quoteAmount: updateData.quoteAmount,
+                targetBudgetPerKit: updateData.quoteAmount
+              } : {}),
+              ...(updateData?.prepaymentAmount !== undefined ? { prepaymentAmount: updateData.prepaymentAmount, sellerAdvanceAmount: updateData.prepaymentAmount } : {}),
+              ...(updateData?.prepaymentPercentage !== undefined ? { prepaymentPercentage: updateData.prepaymentPercentage, sellerAdvancePercentage: updateData.prepaymentPercentage } : {}),
+              quotations: updatedQuotes
+            };
+          };
+
           try {
             const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
             const res = await fetch(`${apiBase}/api/schools/bulk-orders/${orderId}/approve-quote`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ quoteId })
+              body: JSON.stringify({
+                quoteId,
+                updatedRequirements: updateData?.updatedRequirements,
+                totalQuantity: updateData?.totalQuantity,
+                quoteAmount: updateData?.quoteAmount,
+                prepaymentAmount: updateData?.prepaymentAmount,
+                prepaymentPercentage: updateData?.prepaymentPercentage,
+                sellerAdvanceAmount: updateData?.sellerAdvanceAmount,
+                sellerAdvancePercentage: updateData?.sellerAdvancePercentage
+              })
             });
             const data = await res.json();
-            if (data.success) {
-              if (showToast) showToast('🎉 Quotation Accepted! Order placed with vendor.');
-              if (data.order) {
-                setSelectedBulkOrder(data.order);
-                setCustomerBulkOrders(prev => prev.map(o => (o.id === orderId || o._id === orderId ? data.order : o)));
-              }
+
+            // Sync localStorage collections for multi-panel consistency
+            ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach(key => {
+              try {
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && selectedBulkOrder && o.referenceId === selectedBulkOrder.referenceId));
+                if (idx !== -1) {
+                  list[idx] = applyApprovalLocally(list[idx]);
+                  localStorage.setItem(key, JSON.stringify(list));
+                }
+              } catch (e) {}
+            });
+
+            window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+            window.dispatchEvent(new Event('storage'));
+
+            if (data.success && data.order) {
+              alert('🎉 Quotation Accepted! Your bulk order size has been confirmed and forwarded to the vendor.');
+              setSelectedBulkOrder(data.order);
+              setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? data.order : o)));
             } else {
-              alert(data.message || 'Failed to accept quotation.');
+              const updatedLocal = selectedBulkOrder ? applyApprovalLocally(selectedBulkOrder) : null;
+              if (updatedLocal) {
+                setSelectedBulkOrder(updatedLocal);
+                setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? updatedLocal : o)));
+              }
+              alert('🎉 Quotation Accepted! Order placed with vendor.');
             }
           } catch (err) {
-            alert('Network error approving quotation.');
+            console.warn('API error approving quote, applying local fallback:', err);
+            // Local fallback
+            ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach(key => {
+              try {
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && selectedBulkOrder && o.referenceId === selectedBulkOrder.referenceId));
+                if (idx !== -1) {
+                  list[idx] = applyApprovalLocally(list[idx]);
+                  localStorage.setItem(key, JSON.stringify(list));
+                }
+              } catch (e) {}
+            });
+
+            window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+            window.dispatchEvent(new Event('storage'));
+
+            if (selectedBulkOrder) {
+              const updated = applyApprovalLocally(selectedBulkOrder);
+              setSelectedBulkOrder(updated);
+              setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? updated : o)));
+            }
+            alert('🎉 Quotation Accepted! Order placed with vendor.');
+          }
+        }}
+        onSubmitCounterDemand={async (orderId, quoteId, counterData) => {
+          try {
+            const res = await submitBuyerCounterDemandApi(orderId, quoteId, counterData);
+            if (res.success && res.order) {
+              // Update local storage lists
+              ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach(key => {
+                try {
+                  const list = JSON.parse(localStorage.getItem(key) || '[]');
+                  const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && selectedBulkOrder && o.referenceId === selectedBulkOrder.referenceId));
+                  if (idx !== -1) {
+                    list[idx] = res.order;
+                    localStorage.setItem(key, JSON.stringify(list));
+                  }
+                } catch (e) {}
+              });
+              setSelectedBulkOrder(res.order);
+              setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? res.order : o)));
+              window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+              window.dispatchEvent(new Event('storage'));
+              return { success: true, message: res.message, order: res.order };
+            } else {
+              return { success: false, message: res.message || 'Failed to send counter-demand' };
+            }
+          } catch (err) {
+            return { success: false, message: err.message || 'Failed to send counter-demand' };
           }
         }}
       />

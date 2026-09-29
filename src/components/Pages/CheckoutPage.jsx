@@ -147,10 +147,17 @@ export default function CheckoutPage({ onNavigate }) {
 
   // Automatically switch active payment option if current selection is disabled by seller
   React.useEffect(() => {
-    if (areAllPaymentsDisabled) return;
+    if (areAllPaymentsDisabled) {
+      setPaymentMethod('');
+      return;
+    }
     if (isCodDisabled && paymentMethod === 'cod') {
       setPaymentMethod('upi');
     } else if (isOnlineDisabled && (paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking')) {
+      setPaymentMethod('cod');
+    } else if (!paymentMethod && !isOnlineDisabled) {
+      setPaymentMethod('upi');
+    } else if (!paymentMethod && !isCodDisabled) {
       setPaymentMethod('cod');
     }
   }, [isCodDisabled, isOnlineDisabled, areAllPaymentsDisabled, paymentMethod]);
@@ -351,31 +358,80 @@ export default function CheckoutPage({ onNavigate }) {
         setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 800);
         return;
       }
+      // Sanitize inputs for Razorpay Standard Checkout
+      const rawPhone = String(activeShippingAddress.phone || userProfile?.phone || '').trim();
+      const digitsOnly = rawPhone.replace(/\D/g, '');
+      const cleanContact = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : (digitsOnly.length > 0 ? digitsOnly : '9876543210');
+
+      const rawEmail = String(activeShippingAddress.email || userProfile?.email || '').trim();
+      const cleanEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : 'customer@bookvardi.in';
+
+      const rawName = String(activeShippingAddress.name || userProfile?.name || 'Customer').trim();
+      const cleanName = rawName.replace(/[^\w\s.-]/g, '').trim() || 'Customer';
+
+      // Detect localhost / loopback to prevent CORS Private Network Access error when Razorpay attempts to fetch image from loopback
+      const isLocalhost = typeof window !== 'undefined' && (
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname.endsWith('.local')
+      );
+
+      const fullLogoUrl = (!isLocalhost && typeof window !== 'undefined' && window.location?.origin)
+        ? `${window.location.origin}/logo.png`
+        : undefined;
+
       createRazorpayOrderInBackend(
         {
           amount: grandTotal,
           customer: {
-            name: activeShippingAddress.name || userProfile?.name || 'Customer',
-            phone: activeShippingAddress.phone || userProfile?.phone || '',
-            email: activeShippingAddress.email || userProfile?.email || ''
+            name: cleanName,
+            phone: cleanContact,
+            email: cleanEmail
           },
           notes: {
-            deliverySpeed,
-            itemsCount: cartItems.length
+            deliverySpeed: String(deliverySpeed || 'standard'),
+            itemsCount: String(cartItems.length)
           }
         },
-        activeShippingAddress.phone || userProfile?.phone || ''
+        cleanContact
       )
         .then((rzpRes) => {
-          if (rzpRes?.razorpayOrderId) {
+          if (rzpRes?.razorpayOrderId && !rzpRes?.isSimulated) {
+            const isTestKey = String(rzpRes.key || '').startsWith('rzp_test');
+
             const options = {
               key: rzpRes.key || 'rzp_test_6kz5nGEzi8uXRw',
               amount: rzpRes.amount || Math.round(grandTotal * 100),
               currency: rzpRes.currency || 'INR',
               name: 'Book Vardi',
               description: 'Campus Stationery & Study Uniform Order',
-              image: '/logo.png',
+              ...(fullLogoUrl ? { image: fullLogoUrl } : {}),
               order_id: rzpRes.razorpayOrderId,
+              // In test mode, hide unsupported instruments (wallets, paylater, emi) to prevent 400 Bad Request
+              ...(isTestKey
+                ? {
+                    method: {
+                      netbanking: true,
+                      card: true,
+                      upi: true,
+                      wallet: false,
+                      paylater: false,
+                      emi: false
+                    },
+                    config: {
+                      display: {
+                        hide: [
+                          { method: 'wallet' },
+                          { method: 'paylater' },
+                          { method: 'emi' }
+                        ],
+                        preferences: {
+                          show_default_blocks: true
+                        }
+                      }
+                    }
+                  }
+                : {}),
               handler: async function (response) {
                 try {
                   await verifyRazorpayPaymentInBackend(
@@ -384,7 +440,7 @@ export default function CheckoutPage({ onNavigate }) {
                       razorpay_payment_id: response.razorpay_payment_id,
                       razorpay_signature: response.razorpay_signature
                     },
-                    activeShippingAddress.phone || userProfile?.phone || ''
+                    cleanContact
                   );
                 } catch (vErr) {
                   console.warn('Razorpay signature verification info:', vErr);
@@ -397,9 +453,9 @@ export default function CheckoutPage({ onNavigate }) {
                 );
               },
               prefill: {
-                name: activeShippingAddress.name || userProfile?.name || '',
-                email: activeShippingAddress.email || userProfile?.email || '',
-                contact: activeShippingAddress.phone || userProfile?.phone || ''
+                name: cleanName,
+                email: cleanEmail,
+                contact: cleanContact
               },
               theme: {
                 color: '#233835'
@@ -407,7 +463,7 @@ export default function CheckoutPage({ onNavigate }) {
               modal: {
                 ondismiss: function () {
                   setIsSubmitting(false);
-                  showToast('Payment window closed. You can retry checkout anytime.');
+                  showToast('Payment window closed. You can retry with UPI, Card, or Cash on Delivery anytime.');
                 }
               }
             };
@@ -415,7 +471,13 @@ export default function CheckoutPage({ onNavigate }) {
             const rzp = new window.Razorpay(options);
             rzp.on('payment.failed', function (response) {
               setIsSubmitting(false);
-              showToast(`Payment failed: ${response.error?.description || 'Transaction cancelled'}`);
+              const desc = response.error?.description || response.error?.reason || 'Transaction cancelled or not supported';
+              const isTest = String(rzpRes.key || '').startsWith('rzp_test');
+              if (isTest && (desc.toLowerCase().includes('wallet') || desc.toLowerCase().includes('paylater') || desc.toLowerCase().includes('bad request') || response.error?.source === 'gateway')) {
+                showToast(`Test Mode: Please use Cards (4111...) or UPI (success@razorpay). Wallets & PayLater are not enabled in test mode.`);
+              } else {
+                showToast(`Payment notice: ${desc}`);
+              }
             });
             rzp.open();
           } else {
@@ -786,100 +848,55 @@ export default function CheckoutPage({ onNavigate }) {
 
                 {/* Payment Type Selection Tabs (UPI & COD) */}
                 <div className="grid grid-cols-2 gap-3.5">
-                {/* Payment Type Selection Tabs (UPI & COD) */}
-                <div className="grid grid-cols-2 gap-3.5">
                   <button
                     type="button"
+                    disabled={isOnlineDisabled || areAllPaymentsDisabled}
                     onClick={() => {
-                      if (areAllPaymentsDisabled) {
-                        const itemName = noPaymentMethodItem?.name || 'this product';
-                        const msg = `Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'. The seller has disabled all payment options for this product.`;
-                        showToast(`⚠️ Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'`);
-                        setDisallowedPaymentModal({
-                          isOpen: true,
-                          title: 'Payment Mode Not Applicable',
-                          message: msg,
-                          mode: 'UPI / Online Pay',
-                          item: noPaymentMethodItem
-                        });
-                      } else if (isOnlineDisabled) {
-                        const itemName = disabledOnlineReasonItem?.name || 'this product';
-                        const msg = `Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'. The seller accepts Cash on Delivery (COD) only.`;
-                        showToast(`⚠️ Payment mode 'UPI / Online Pay' is not applicable for '${itemName}'`);
-                        setDisallowedPaymentModal({
-                          isOpen: true,
-                          title: 'Payment Mode Not Applicable',
-                          message: msg,
-                          mode: 'UPI / Online Pay',
-                          item: disabledOnlineReasonItem
-                        });
-                      } else {
+                      if (!isOnlineDisabled && !areAllPaymentsDisabled) {
                         setPaymentMethod('upi');
                       }
                     }}
-                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all ${
                       isOnlineDisabled || areAllPaymentsDisabled
-                        ? 'bg-rose-50/70 text-rose-800 border-rose-300 hover:bg-rose-100/80 shadow-2xs'
+                        ? 'bg-gray-100/90 text-gray-400 border-gray-200 cursor-not-allowed opacity-60 shadow-none'
                         : paymentMethod === 'upi'
-                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs cursor-pointer'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 cursor-pointer'
                     }`}
                   >
                     <Smartphone size={20} />
                     <span className="text-xs font-extrabold">UPI / Online Pay</span>
-                    {(isOnlineDisabled || areAllPaymentsDisabled) && (
-                      <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 shadow-2xs">
-                        🚫 Disallowed (Click for info)
+                    {(isOnlineDisabled || areAllPaymentsDisabled) ? (
+                      <span className="text-[10px] font-bold text-gray-600 bg-gray-200/90 px-2 py-0.5 rounded-md border border-gray-300 shadow-2xs">
+                        Not Available
                       </span>
-                    )}
+                    ) : null}
                   </button>
 
                   <button
                     type="button"
+                    disabled={isCodDisabled || areAllPaymentsDisabled}
                     onClick={() => {
-                      if (areAllPaymentsDisabled) {
-                        const itemName = noPaymentMethodItem?.name || 'this product';
-                        const msg = `Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'. The seller has disabled all payment options for this product.`;
-                        showToast(`⚠️ Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'`);
-                        setDisallowedPaymentModal({
-                          isOpen: true,
-                          title: 'Payment Mode Not Applicable',
-                          message: msg,
-                          mode: 'Cash on Delivery (COD)',
-                          item: noPaymentMethodItem
-                        });
-                      } else if (isCodDisabled) {
-                        const itemName = disabledCodReasonItem?.name || 'this product';
-                        const msg = `Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'. The seller requires Online / Prepaid payment for this product.`;
-                        showToast(`⚠️ Payment mode 'Cash on Delivery (COD)' is not applicable for '${itemName}'`);
-                        setDisallowedPaymentModal({
-                          isOpen: true,
-                          title: 'Payment Mode Not Applicable',
-                          message: msg,
-                          mode: 'Cash on Delivery (COD)',
-                          item: disabledCodReasonItem
-                        });
-                      } else {
+                      if (!isCodDisabled && !areAllPaymentsDisabled) {
                         setPaymentMethod('cod');
                       }
                     }}
-                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl border-2 text-center flex flex-col items-center gap-1.5 transition-all ${
                       isCodDisabled || areAllPaymentsDisabled
-                        ? 'bg-amber-50/70 text-amber-900 border-amber-300 hover:bg-amber-100/80 shadow-2xs'
+                        ? 'bg-gray-100/90 text-gray-400 border-gray-200 cursor-not-allowed opacity-60 shadow-none'
                         : paymentMethod === 'cod'
-                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        ? 'border-brand-teal bg-brand-teal/5 font-extrabold text-brand-teal ring-2 ring-brand-teal/10 shadow-xs cursor-pointer'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 cursor-pointer'
                     }`}
                   >
                     <Banknote size={20} />
                     <span className="text-xs font-extrabold">Cash on Delivery (COD)</span>
-                    {(isCodDisabled || areAllPaymentsDisabled) && (
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 shadow-2xs">
-                        🚫 Disallowed (Click for info)
+                    {(isCodDisabled || areAllPaymentsDisabled) ? (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200 shadow-2xs" title={disabledCodReasonItem ? `Prepaid item in cart: ${disabledCodReasonItem.name}` : 'Not available for items in cart'}>
+                        {isCodDisabled ? 'Unavailable (Prepaid Only Item)' : 'Not Available'}
                       </span>
-                    )}
+                    ) : null}
                   </button>
-                </div>
                 </div>
               </div>
 
@@ -1170,7 +1187,8 @@ export default function CheckoutPage({ onNavigate }) {
                   selectedCartItems.length === 0 ||
                   areAllPaymentsDisabled ||
                   (paymentMethod === 'cod' && isCodDisabled) ||
-                  ((paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking') && isOnlineDisabled)
+                  ((paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking') && isOnlineDisabled) ||
+                  !paymentMethod
                 }
                 onClick={handlePlaceOrder}
                 className="w-full py-3.5 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold text-sm uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1188,12 +1206,12 @@ export default function CheckoutPage({ onNavigate }) {
                 ) : areAllPaymentsDisabled ? (
                   <>
                     <AlertTriangle size={16} className="text-amber-900" />
-                    <span>ALL PAYMENT METHODS DISABLED</span>
+                    <span>PAYMENT NOT AVAILABLE</span>
                   </>
-                ) : (paymentMethod === 'cod' && isCodDisabled) || ((paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking') && isOnlineDisabled) ? (
+                ) : (paymentMethod === 'cod' && isCodDisabled) || ((paymentMethod === 'upi' || paymentMethod === 'card' || paymentMethod === 'netbanking') && isOnlineDisabled) || !paymentMethod ? (
                   <>
                     <AlertTriangle size={16} className="text-amber-900" />
-                    <span>PAYMENT METHOD NOT APPLICABLE</span>
+                    <span>NOT AVAILABLE</span>
                   </>
                 ) : (
                   <>
