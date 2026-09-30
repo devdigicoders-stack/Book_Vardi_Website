@@ -21,21 +21,60 @@ import {
   Camera,
   Check,
   Store,
-  AlertCircle
+  AlertCircle,
+  Truck,
+  ExternalLink,
+  Lock,
+  Printer,
+  SlidersHorizontal
 } from 'lucide-react';
+import TaxInvoiceModal from '../Common/TaxInvoiceModal';
+import NegotiationTimelineDiv from './NegotiationTimelineDiv';
+import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
+import { fetchSingleBulkOrderApi } from '../../utils/api';
 
 export default function BulkOrderPreviewModal({
-  order,
+  order: propOrder,
   onClose,
   userRole = 'seller', // 'consumer' | 'admin' | 'seller'
   initialTab = 'specs',
   sellers = [], // List of verified sellers for admin distribution
   onDistribute, // (orderId, { assignmentMode, sellerId, invitedSellerIds }) => void
   onApproveQuote, // (orderId, quoteId) => void
+  onSubmitCounterDemand, // (orderId, quoteId, counterData) => Promise<{ success, message }>
   onSubmitQuote, // (orderId, { quoteAmount, unitPrice, itemPrices, volumeDiscountNote, estimatedDeliveryDays, notes }) => void
   onAcceptDirect, // (orderId) => void
   sellerUser = null // Current seller info when userRole === 'seller'
 }) {
+  const [internalOrder, setInternalOrder] = useState(propOrder);
+
+  useEffect(() => {
+    setInternalOrder(propOrder);
+  }, [propOrder]);
+
+  // Live fetch authoritative order with all quotations directly from backend
+  useEffect(() => {
+    const targetId = propOrder?.referenceId || propOrder?._id || propOrder?.id;
+    if (targetId && (userRole === 'consumer' || userRole === 'admin')) {
+      fetchSingleBulkOrderApi(targetId).then(res => {
+        if (res?.success && res.order) {
+          setInternalOrder(res.order);
+          ['bv_customer_bulk_orders', 'bv_sync_school_orders'].forEach(key => {
+            try {
+              const list = JSON.parse(localStorage.getItem(key) || '[]');
+              const idx = list.findIndex(o => String(o.id || o._id) === String(targetId) || o.referenceId === targetId);
+              if (idx !== -1) {
+                list[idx] = res.order;
+                localStorage.setItem(key, JSON.stringify(list));
+              }
+            } catch (e) {}
+          });
+        }
+      }).catch(() => {});
+    }
+  }, [propOrder?._id, propOrder?.referenceId, userRole]);
+
+  const order = internalOrder || propOrder;
   if (!order) return null;
 
   // Active Lightbox / Image Preview
@@ -47,6 +86,12 @@ export default function BulkOrderPreviewModal({
 
   // Active Tab inside modal
   const [modalSubTab, setModalSubTab] = useState(initialTab || 'specs'); // 'specs', 'distribution', 'quotes', 'submit_quote'
+
+  useEffect(() => {
+    if (initialTab) {
+      setModalSubTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Admin Distribution State
   const [distributeMode, setDistributeMode] = useState(order.assignmentMode || 'direct');
@@ -83,8 +128,195 @@ export default function BulkOrderPreviewModal({
     existingSellerQuote ? String(existingSellerQuote.estimatedDeliveryDays || 7) : '7'
   );
   const [quoteNotes, setQuoteNotes] = useState(existingSellerQuote ? (existingSellerQuote.notes || '') : '');
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+
+  // Buyer Quotation Acceptance & Order Size Adjustment Modal State
+  const [acceptQuoteModalData, setAcceptQuoteModalData] = useState(null);
+
+  const handleOpenAcceptQuoteModal = (quote) => {
+    const rawItems = Array.isArray(order.requirements) && order.requirements.length > 0
+      ? order.requirements
+      : [{ itemName: order.requirementSummary || 'Bulk Demanded Uniform/Stationery', quantity: totalQtyNum, category: 'Bulk Procurement' }];
+
+    const items = rawItems.map((reqItem, idx) => {
+      const quotedItem = quote.itemPrices?.find(
+        ip => String(ip.itemId) === String(reqItem._id || reqItem.id || idx) || String(ip.itemName) === String(reqItem.itemName)
+      );
+      const unitRate = Number(quotedItem?.pricePerUnit || reqItem.sellerPricePerUnit || quote.unitPrice || 0);
+      const qty = Number(reqItem.quantity || 1);
+      return {
+        itemId: String(reqItem._id || reqItem.id || idx),
+        itemName: reqItem.itemName,
+        category: reqItem.category || 'Bulk Procurement',
+        pricePerUnit: unitRate,
+        quantity: qty,
+        totalPrice: qty * unitRate
+      };
+    });
+
+    setAcceptQuoteModalData({
+      quote,
+      items
+    });
+  };
 
   // Keep state updated when order changes
+  // Buyer Counter-Demand State
+  const [counterDrawerQuote, setCounterDrawerQuote] = useState(null);
+  const [counterTargetBudget, setCounterTargetBudget] = useState('');
+  const [counterDeliveryDays, setCounterDeliveryDays] = useState('7');
+  const [counterAdvancePct, setCounterAdvancePct] = useState('10');
+  const [counterNotes, setCounterNotes] = useState('');
+  const [counterItemDemands, setCounterItemDemands] = useState([]);
+  const [isSubmittingCounter, setIsSubmittingCounter] = useState(false);
+  const [expandedHistoryQuotes, setExpandedHistoryQuotes] = useState({});
+
+  const toggleHistory = (quoteId) => {
+    setExpandedHistoryQuotes(prev => ({
+      ...prev,
+      [quoteId]: !prev[quoteId]
+    }));
+  };
+
+  // Extended Interactive Timeline Div State
+  const [expandedTimelineQuoteId, setExpandedTimelineQuoteId] = useState(null);
+  const [selectedTimelineVersion, setSelectedTimelineVersion] = useState(null);
+
+  const toggleTimelineForQuote = (qId, ver = null) => {
+    if (expandedTimelineQuoteId === qId && (ver === null || ver === selectedTimelineVersion)) {
+      setExpandedTimelineQuoteId(null);
+      setSelectedTimelineVersion(null);
+    } else {
+      setExpandedTimelineQuoteId(qId);
+      setSelectedTimelineVersion(ver);
+    }
+  };
+
+  // Version Comparison Modal State
+  const [comparingQuote, setComparingQuote] = useState(null);
+  const [isComparisonOpen, setIsComparisonOpen] = useState(false);
+
+  const handleOpenVersionComparison = (q) => {
+    setComparingQuote(q);
+    setIsComparisonOpen(true);
+  };
+
+  const handleOpenCounterDrawer = (quote) => {
+    setCounterDrawerQuote(quote);
+    setCounterTargetBudget(quote.latestBuyerCounter?.targetBudget || quote.quoteAmount || '');
+    setCounterDeliveryDays(quote.latestBuyerCounter?.requestedDeliveryDays || quote.estimatedDeliveryDays || 7);
+    setCounterAdvancePct(quote.latestBuyerCounter?.proposedAdvancePercentage || 10);
+    setCounterNotes(quote.latestBuyerCounter?.notes || '');
+    if (Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0) {
+      setCounterItemDemands(quote.itemPrices.map(ip => {
+        const matchingCounter = quote.latestBuyerCounter?.itemDemands?.find(
+          cd => String(cd.itemId) === String(ip.itemId) || cd.itemName === ip.itemName
+        );
+        const qty = Number(matchingCounter?.quantity || ip.quantity) || 1;
+        const targetRate = Number(matchingCounter?.targetUnitPrice ?? ip.customerBudget ?? ip.pricePerUnit) || 0;
+        return {
+          itemId: ip.itemId,
+          itemName: ip.itemName,
+          quantity: qty,
+          currentSellerPrice: ip.pricePerUnit || 0,
+          targetUnitPrice: targetRate,
+          targetTotalPrice: qty * targetRate,
+          notes: matchingCounter?.notes || ''
+        };
+      }));
+    } else if (Array.isArray(order?.requirements) && order.requirements.length > 0) {
+      setCounterItemDemands(order.requirements.map((r, idx) => ({
+        itemId: r._id || r.id || idx,
+        itemName: r.itemName,
+        quantity: Number(r.quantity) || 1,
+        currentSellerPrice: Number(r.sellerPricePerUnit || quote.unitPrice) || 0,
+        targetUnitPrice: Number(r.budgetPerUnit || quote.unitPrice) || 0,
+        targetTotalPrice: (Number(r.quantity) || 1) * (Number(r.budgetPerUnit || quote.unitPrice) || 0),
+        notes: ''
+      })));
+    } else {
+      setCounterItemDemands([]);
+    }
+  };
+
+  const handleCounterItemQuantityChange = (index, val) => {
+    setCounterItemDemands(prev => {
+      const updated = [...prev];
+      const numQty = val === '' ? '' : Math.max(1, parseInt(val, 10) || 1);
+      const effectiveQty = Number(numQty) || 0;
+      const targetRate = Number(updated[index].targetUnitPrice) || 0;
+      updated[index] = {
+        ...updated[index],
+        quantity: numQty,
+        targetTotalPrice: effectiveQty * targetRate
+      };
+      const sum = updated.reduce((s, it) => s + (Number(it.targetTotalPrice) || 0), 0);
+      if (sum > 0) setCounterTargetBudget(sum);
+      return updated;
+    });
+  };
+
+  const handleCounterItemPriceChange = (index, val) => {
+    setCounterItemDemands(prev => {
+      const updated = [...prev];
+      const targetRate = val === '' ? '' : Math.max(0, Number(val) || 0);
+      const effectiveRate = Number(targetRate) || 0;
+      const qty = Number(updated[index].quantity) || 1;
+      updated[index] = {
+        ...updated[index],
+        targetUnitPrice: targetRate,
+        targetTotalPrice: effectiveRate * qty
+      };
+      const sum = updated.reduce((s, it) => s + (Number(it.targetTotalPrice) || 0), 0);
+      if (sum > 0) setCounterTargetBudget(sum);
+      return updated;
+    });
+  };
+
+  const handleSubmitCounterDemand = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!counterDrawerQuote || !onSubmitCounterDemand) return;
+    setIsSubmittingCounter(true);
+    try {
+      const qId = counterDrawerQuote._id || counterDrawerQuote.id;
+      const oId = order._id || order.id || order.referenceId;
+      const cleanItemDemands = counterItemDemands.map(it => {
+        const qty = Math.max(1, Number(it.quantity) || 1);
+        const rate = Math.max(0, Number(it.targetUnitPrice) || 0);
+        return {
+          itemId: it.itemId,
+          itemName: it.itemName,
+          quantity: qty,
+          currentSellerPrice: Number(it.currentSellerPrice) || 0,
+          targetUnitPrice: rate,
+          targetTotalPrice: qty * rate,
+          notes: it.notes || ''
+        };
+      });
+      const totalUnits = cleanItemDemands.reduce((s, it) => s + it.quantity, 0);
+      const computedBudget = Number(counterTargetBudget) || cleanItemDemands.reduce((s, it) => s + it.targetTotalPrice, 0);
+
+      const payload = {
+        targetBudget: computedBudget,
+        unitPrice: totalUnits > 0 ? Math.round(computedBudget / totalUnits) : 0,
+        totalQuantity: totalUnits,
+        requestedDeliveryDays: Number(counterDeliveryDays) || 7,
+        proposedAdvancePercentage: Number(counterAdvancePct) || 0,
+        proposedAdvanceAmount: computedBudget ? Math.round((computedBudget * (Number(counterAdvancePct) || 0)) / 100) : 0,
+        itemDemands: cleanItemDemands,
+        notes: counterNotes
+      };
+      const res = await onSubmitCounterDemand(oId, qId, payload);
+      if (res && res.success !== false) {
+        setCounterDrawerQuote(null);
+      }
+    } catch (err) {
+      console.error('Error submitting counter demand:', err);
+    } finally {
+      setIsSubmittingCounter(false);
+    }
+  };
+
   useEffect(() => {
     if (order) {
       if (initialTab) {
@@ -202,6 +434,79 @@ export default function BulkOrderPreviewModal({
   const winningQuote = Array.isArray(order.quotations)
     ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId))
     : null;
+
+  // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
+  const normStatus = String(order.deliveryStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
+  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
+  const isSelf = String(order.deliveryMode || '').toLowerCase().includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPersonName);
+  const isThirdParty = String(order.deliveryMode || '').toLowerCase().includes('third') || Boolean(order.courierName && order.courierName !== 'N/A');
+  const hasPartner = isSelf || isThirdParty || Boolean((order.courierName && order.courierName !== 'N/A') || order.selfDeliveryDetails?.deliveryPersonName);
+  const canViewTracking = isOut && hasPartner && Boolean(order.trackingNumber || order.selfDeliveryDetails?.deliveryPartnerToken);
+
+  const deliveryPartnerDisplay = isSelf 
+    ? (order.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
+    : (order.courierName || 'N/A');
+
+  const trackingNumberDisplay = order.trackingNumber || (isSelf ? order.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
+  const trackingLinkDisplay = order.trackingUrl || order.selfDeliveryDetails?.trackingUrl || '';
+
+  // Transform bulk order into TaxInvoice-compatible object
+  const taxInvoiceOrder = useMemo(() => {
+    if (!order) return null;
+    const totalQty = Number(order.totalQuantity || order.quantity || (Array.isArray(order.requirements) ? order.requirements.reduce((s, r) => s + Number(r.quantity || 0), 0) : 100));
+    const quoteVal = Number(winningQuote?.quoteAmount || order.targetBudgetPerKit || order.estimatedBudget || order.overallBudget || 0);
+    const avgPrice = totalQty > 0 ? Math.round(quoteVal / totalQty) : 0;
+
+    const reqItems = Array.isArray(order.requirements) && order.requirements.length > 0
+      ? order.requirements.map((r, idx) => ({
+          id: r._id || idx + 1,
+          name: r.itemName || 'School Supply Item',
+          category: r.category || 'School Uniform',
+          quantity: Number(r.quantity || 1),
+          price: Number(r.sellerPricePerUnit || (winningQuote?.itemPrices?.find(ip => String(ip.itemId || ip.itemName) === String(r._id || r.itemName))?.pricePerUnit) || avgPrice || 100),
+          sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
+          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller'
+        }))
+      : [{
+          id: 1,
+          name: order.requirementSummary || 'Institutional Bulk Supply Order',
+          category: 'School Uniform',
+          quantity: totalQty,
+          price: avgPrice,
+          sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
+          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller'
+        }];
+
+    return {
+      id: order.referenceId || order.id || order._id || 'BULK-PO',
+      orderId: order.referenceId || order.id || order._id || 'BULK-PO',
+      date: new Date(order.createdAt || Date.now()).toLocaleDateString('en-GB'),
+      customerName: order.institutionName || order.contactName || 'School Administrator',
+      customerPhone: order.contactPhone || 'N/A',
+      address: `${order.address || ''}, ${order.city || ''}, ${order.state || ''} ${order.pincode ? '- ' + order.pincode : ''}`.trim() || 'Campus Delivery Address',
+      shippingAddress: {
+        street: order.address || 'Campus Delivery Address',
+        city: order.city || 'Lucknow',
+        state: order.state || 'Uttar Pradesh',
+        pincode: order.pincode || '226001'
+      },
+      school: order.institutionName || 'Institutional Order',
+      paymentMethod: 'School PO / Bank Transfer',
+      paymentStatus: 'paid',
+      status: order.deliveryStatus || order.status || 'confirmed',
+      overallStatus: order.deliveryStatus || order.status || 'confirmed',
+      deliveryMode: order.deliveryMode || '',
+      courierName: order.courierName || '',
+      trackingNumber: order.trackingNumber || '',
+      trackingUrl: order.trackingUrl || '',
+      selfDeliveryDetails: order.selfDeliveryDetails || null,
+      sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'BookVardi Verified Seller',
+      sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'BookVardi Verified Seller',
+      sellerPhone: winningQuote?.sellerPhone || 'Helpline',
+      items: reqItems,
+      total: quoteVal
+    };
+  }, [order, winningQuote]);
 
   // Filtered sellers for Admin Distribution
   const verifiedSellers = useMemo(() => {
@@ -471,10 +776,12 @@ export default function BulkOrderPreviewModal({
                           <span className="text-gray-400">Fulfilled By:</span>
                           <div className="font-bold text-gray-900">{winningQuote.sellerStoreName || winningQuote.sellerName}</div>
                         </div>
-                        <div>
-                          <span className="text-gray-400">Vendor Phone:</span>
-                          <div className="font-bold text-gray-900">{winningQuote.sellerPhone || 'N/A'}</div>
-                        </div>
+                        {userRole === 'admin' && winningQuote.sellerPhone && (
+                          <div>
+                            <span className="text-gray-400">Vendor Phone:</span>
+                            <div className="font-bold text-gray-900">{winningQuote.sellerPhone}</div>
+                          </div>
+                        )}
                         <div>
                           <span className="text-gray-400">Delivery Lead Time:</span>
                           <div className="font-bold text-gray-900">{winningQuote.estimatedDeliveryDays || 7} Days</div>
@@ -482,6 +789,43 @@ export default function BulkOrderPreviewModal({
                         {winningQuote.notes && (
                           <div className="col-span-2 sm:col-span-3 text-gray-700 italic border-t border-gray-100 pt-1 mt-1">
                             "{winningQuote.notes}"
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Row: View Tax Invoice Button & Tracking Status */}
+                      <div className="pt-2 border-t border-emerald-200/80 flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsInvoiceOpen(true)}
+                          className="px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <FileText size={14} />
+                          <span>View Official Tax Invoice & PO Certificate</span>
+                        </button>
+
+                        {canViewTracking ? (
+                          <div className="flex items-center gap-2 bg-emerald-100/90 text-emerald-950 px-3 py-1.5 rounded-xl border border-emerald-300 text-xs">
+                            <Truck size={14} className="text-emerald-700" />
+                            <span>{isSelf ? '🛵 Self-Delivery' : `🚚 ${order.courierName || 'Courier'}`}:</span>
+                            <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-200">{trackingNumberDisplay}</span>
+                            {trackingLinkDisplay && (
+                              <a
+                                href={trackingLinkDisplay}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-emerald-700 hover:text-emerald-900 font-bold underline flex items-center gap-0.5 ml-1"
+                              >
+                                Track <ExternalLink size={11} />
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-gray-500 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200 flex items-center gap-1.5">
+                            <Lock size={12} className="text-gray-400" />
+                            <span>
+                              {isOut ? 'Out for Delivery (Delivery partner pending)' : 'Tracking available once Out for Delivery & partner decided'}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -613,7 +957,7 @@ export default function BulkOrderPreviewModal({
               </div>
 
               {/* Customization & Budget Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
                 <div>
                   <span className="text-gray-400 font-semibold text-[11px] uppercase block">Logo Embroidery / Monogram</span>
                   <div className="font-bold text-gray-900 mt-0.5">
@@ -629,6 +973,32 @@ export default function BulkOrderPreviewModal({
                 </div>
 
                 <div>
+                  <span className="text-gray-400 font-semibold text-[11px] uppercase block">Quotations Expected By</span>
+                  <div className="font-bold text-gray-900 mt-0.5 flex flex-col gap-0.5">
+                    <span>{order.expectedQuotationDate ? new Date(order.expectedQuotationDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Flexible'}</span>
+                    {order.expectedQuotationDate && (() => {
+                      const target = new Date(order.expectedQuotationDate);
+                      if (isNaN(target.getTime())) return null;
+                      const now = new Date();
+                      const targetMid = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+                      const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                      const diffDays = Math.round((targetMid - nowMid) / (1000 * 60 * 60 * 24));
+                      const isExpired = diffDays < 0;
+                      const isUrgent = diffDays >= 0 && diffDays <= 2;
+                      const text = diffDays > 1 ? `${diffDays} days left` : diffDays === 1 ? '1 day left' : diffDays === 0 ? 'Ends today' : `Ended (${Math.abs(diffDays)}d ago)`;
+
+                      return (
+                        <span className={`w-fit text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                          isExpired ? 'bg-red-100 text-red-700 border-red-200' : isUrgent ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        }`}>
+                          {text}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div>
                   <span className="text-gray-400 font-semibold text-[11px] uppercase block">Overall Calculated Budget</span>
                   <div className="font-extrabold text-emerald-800 text-sm mt-0.5 font-mono">
                     {order.overallBudget > 0 ? `₹${Number(order.overallBudget).toLocaleString()}` : (targetBudgetNum > 0 ? `₹${targetBudgetNum.toLocaleString()}` : 'Not Specified')}
@@ -636,7 +1006,7 @@ export default function BulkOrderPreviewModal({
                 </div>
 
                 {order.additionalNotes && (
-                  <div className="sm:col-span-3 pt-2 border-t border-gray-200">
+                  <div className="sm:col-span-2 lg:col-span-4 pt-2 border-t border-gray-200">
                     <span className="text-gray-400 font-semibold text-[11px] uppercase block mb-1">Additional Tender Notes</span>
                     <p className="text-gray-800 bg-white p-3 rounded-xl border border-gray-200 leading-relaxed">{order.additionalNotes}</p>
                   </div>
@@ -871,9 +1241,47 @@ export default function BulkOrderPreviewModal({
                               )}
                             </div>
                             <div className="text-xs text-gray-500 flex flex-wrap items-center gap-3 mt-0.5">
-                              {quote.sellerPhone && <span>Phone: <strong className="text-gray-700">{quote.sellerPhone}</strong></span>}
-                              {quote.sellerCity && <span>City: <strong className="text-gray-700">{quote.sellerCity}</strong></span>}
+                              {userRole === 'admin' && quote.sellerPhone && <span>Phone: <strong className="text-gray-700">{quote.sellerPhone}</strong></span>}
+                              {userRole === 'admin' && quote.sellerCity && <span>City: <strong className="text-gray-700">{quote.sellerCity}</strong></span>}
                               <span>Lead Time: <strong className="text-gray-700">{quote.estimatedDeliveryDays || 7} Days</strong></span>
+                            </div>
+
+                            {/* Negotiation Version & Stage Pill */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
+                                className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 shadow-2xs ${
+                                  expandedTimelineQuoteId === qId
+                                    ? 'bg-teal-700 text-white ring-2 ring-teal-500'
+                                    : 'bg-slate-100 hover:bg-teal-50 text-slate-800 hover:text-teal-900 border border-slate-300'
+                                }`}
+                                title="Click to view full negotiation timeline and version history"
+                              >
+                                <Clock size={11} className={expandedTimelineQuoteId === qId ? 'text-white' : 'text-teal-700'} />
+                                <span>Version {quote.currentVersion || 1}</span>
+                                <span className="text-[9px] opacity-80">{expandedTimelineQuoteId === qId ? '▲ Hide' : '▼ Timeline'}</span>
+                              </button>
+                              {quote.negotiationStage === 'buyer_countered' && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 2)}
+                                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer transition-all"
+                                  title="Click to view buyer counter-demand timeline"
+                                >
+                                  <Clock size={10} /> 2nd Version Counter-Demand Sent
+                                </button>
+                              )}
+                              {quote.negotiationStage === 'seller_accepted_counter' && (
+                                <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <CheckCircle2 size={10} /> Vendor Accepted Your Counter-Demand
+                                </span>
+                              )}
+                              {quote.negotiationStage === 'revised_by_seller' && (
+                                <span className="bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <Sparkles size={10} /> Vendor Revised Terms
+                                </span>
+                              )}
                             </div>
                           </div>
 
@@ -887,6 +1295,96 @@ export default function BulkOrderPreviewModal({
                             </div>
                           </div>
                         </div>
+
+                        {/* Active Buyer Counter-Demand Info Card */}
+                        {quote.latestBuyerCounter && (Number(quote.latestBuyerCounter.targetBudget) > 0 || quote.latestBuyerCounter.notes) && (
+                          <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3 text-xs space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-extrabold text-purple-900">
+                              <span className="flex items-center gap-1.5">
+                                <Sparkles size={13} className="text-purple-600" /> Your Active Counter-Demand (2nd Version)
+                              </span>
+                              {quote.latestBuyerCounter.counteredAt && (
+                                <span className="text-[10px] text-purple-600 font-medium">
+                                  Sent on {new Date(quote.latestBuyerCounter.counteredAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+                              {Number(quote.latestBuyerCounter.targetBudget) > 0 && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Target Budget:</span>
+                                  <strong className="text-purple-900 font-extrabold">₹{Number(quote.latestBuyerCounter.targetBudget).toLocaleString()}</strong>
+                                </div>
+                              )}
+                              {(Number(quote.latestBuyerCounter.totalQuantity) > 0 || totalQtyNum > 0) && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Demanded Quantity:</span>
+                                  <strong className="text-purple-900 font-extrabold">{Number(quote.latestBuyerCounter.totalQuantity || totalQtyNum)} Units</strong>
+                                </div>
+                              )}
+                              {(Number(quote.latestBuyerCounter.unitPrice) > 0 || (Number(quote.latestBuyerCounter.targetBudget) > 0 && totalQtyNum > 0)) && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Demanded Unit Rate:</span>
+                                  <strong className="text-purple-900 font-extrabold">
+                                    ₹{Number(quote.latestBuyerCounter.unitPrice || Math.round(Number(quote.latestBuyerCounter.targetBudget) / (Number(quote.latestBuyerCounter.totalQuantity) || totalQtyNum || 1))).toLocaleString()} / unit
+                                  </strong>
+                                </div>
+                              )}
+                              {Number(quote.latestBuyerCounter.requestedDeliveryDays) > 0 && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Requested Lead Time:</span>
+                                  <strong className="text-purple-900 font-extrabold">{quote.latestBuyerCounter.requestedDeliveryDays} Days</strong>
+                                </div>
+                              )}
+                              {Number(quote.latestBuyerCounter.proposedAdvancePercentage) > 0 && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Proposed Prepayment:</span>
+                                  <strong className="text-purple-900 font-extrabold">{quote.latestBuyerCounter.proposedAdvancePercentage}% Advance</strong>
+                                </div>
+                              )}
+                            </div>
+                            {Array.isArray(quote.latestBuyerCounter.itemDemands) && quote.latestBuyerCounter.itemDemands.length > 0 && (
+                              <div className="pt-1.5 border-t border-purple-100">
+                                <span className="text-[10px] text-gray-500 font-semibold block mb-1">Demanded Line Items & Quantities:</span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {quote.latestBuyerCounter.itemDemands.map((dm, dmIdx) => (
+                                    <span key={dm.itemId || dmIdx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-purple-200 text-[10px] text-purple-900 font-bold">
+                                      <span>{dm.itemName}:</span>
+                                      <span className="text-purple-700">{dm.quantity} units</span>
+                                      {dm.targetUnitPrice > 0 && <span className="text-gray-400">@ ₹{dm.targetUnitPrice}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {quote.latestBuyerCounter.notes && (
+                              <p className="text-[11px] text-purple-950 italic pt-1 border-t border-purple-100">
+                                "{quote.latestBuyerCounter.notes}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Raised Prepayment & Extended Lead Time Warning Chips */}
+                        {(() => {
+                          const latestRound = Array.isArray(quote.negotiationHistory) && quote.negotiationHistory.length > 0 ? quote.negotiationHistory[quote.negotiationHistory.length - 1] : null;
+                          if (!latestRound || (!latestRound.prepaymentRaised && !latestRound.deliveryDaysRaised)) return null;
+
+                          return (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {latestRound.prepaymentRaised && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-300 text-[11px] font-bold">
+                                  ⚠️ Prepayment Raised by Vendor in Version {quote.currentVersion || 1}
+                                </span>
+                              )}
+                              {latestRound.deliveryDaysRaised && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 border border-blue-300 text-[11px] font-bold">
+                                  ⏳ Delivery Lead Time Extended by Vendor ({quote.estimatedDeliveryDays} Days)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Descriptive Item Breakdown Table */}
                         {hasItemPrices ? (
@@ -983,26 +1481,134 @@ export default function BulkOrderPreviewModal({
                           )}
                         </div>
 
-                        {/* Footer Status & Acceptance Button */}
-                        <div className="flex items-center justify-between pt-1">
-                          {isApproved ? (
-                            <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-200">
-                              <CheckCircle2 size={14} /> Approved & Winning Seller Quote
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-gray-400">Status: {quote.status}</span>
-                          )}
+                        {/* Prepayment / Upfront Advance Demanded by Seller */}
+                        {(() => {
+                          const advPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
+                          const advAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (advPct > 0 ? Math.round((Number(quote.quoteAmount) * advPct) / 100) : 0);
+                          const advTerms = quote.prepaymentTerms || quote.sellerAdvanceTerms || '';
+                          const remainingBal = Math.max(0, Number(quote.quoteAmount) - advAmt);
 
-                          {(userRole === 'admin' || userRole === 'consumer') && !isApproved && onApproveQuote && (
+                          if (advPct <= 0 && advAmt <= 0 && !advTerms) return null;
+
+                          return (
+                            <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+                                  <DollarSign size={13} className="text-emerald-700" /> Prepayment Required by Seller
+                                </span>
+                                <div className="text-emerald-950 font-bold">
+                                  Upfront Prepayment: <strong className="font-extrabold text-emerald-900 font-mono text-sm">₹{advAmt.toLocaleString()}</strong>
+                                  {advPct > 0 ? ` (${advPct}% prepayment)` : ''}
+                                </div>
+                                {advTerms && (
+                                  <p className="text-[11px] text-emerald-800 italic">
+                                    Terms: "{advTerms}"
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="sm:text-right bg-white px-3 py-1.5 rounded-lg border border-emerald-100 shadow-2xs">
+                                <span className="text-[10px] text-gray-500 uppercase font-semibold block">Balance on Delivery</span>
+                                <span className="font-mono font-bold text-gray-800">₹{remainingBal.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Interactive Extended Negotiation Timeline Div */}
+                        {expandedTimelineQuoteId === qId ? (
+                          <div className="pt-2 animate-in fade-in duration-200">
+                            <NegotiationTimelineDiv
+                              quotation={quote}
+                              order={order}
+                              userRole={userRole}
+                              initialSelectedVersion={selectedTimelineVersion || quote.currentVersion || 1}
+                              onClose={() => toggleTimelineForQuote(qId)}
+                              onOpenCounterDemand={onSubmitCounterDemand ? () => handleOpenCounterDrawer(quote) : null}
+                              onApproveQuote={onApproveQuote ? () => handleOpenAcceptQuoteModal(quote) : null}
+                              onOpenComparisonModal={() => handleOpenVersionComparison(quote)}
+                            />
+                          </div>
+                        ) : (
+                          <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/50">
                             <button
                               type="button"
-                              onClick={() => onApproveQuote(order.id || order._id, qId)}
-                              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 font-display"
+                              onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
+                              className="w-full px-3.5 py-2 flex items-center justify-between text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
                             >
-                              <CheckCircle2 size={15} />
-                              <span>Accept Quotation & Place Order</span>
+                              <span className="flex items-center gap-1.5">
+                                <Clock size={13} className="text-teal-700" />
+                                <span>Negotiation Timeline & Version History</span>
+                                {(quote.currentVersion > 1 || (quote.negotiationHistory && quote.negotiationHistory.length > 0)) && (
+                                  <span className="text-[10px] bg-teal-100 text-teal-800 font-extrabold px-2 py-0.5 rounded-full">
+                                    v{quote.currentVersion || 1} ({quote.negotiationHistory?.length || 1} rounds)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[11px] text-teal-700 font-extrabold">
+                                View Interactive Timeline ▼
+                              </span>
                             </button>
-                          )}
+                          </div>
+                        )}
+
+                        {/* Footer Status & Acceptance Button */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-gray-100">
+                          <div>
+                            {isApproved ? (
+                              <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-200">
+                                <CheckCircle2 size={14} /> Approved & Winning Seller Quote
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-gray-500 font-semibold">
+                                Stage: <strong className="text-gray-800 capitalize">{(quote.negotiationStage || quote.status || 'Active').replace(/_/g, ' ')}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(quote.currentVersion > 1 || (quote.negotiationHistory && quote.negotiationHistory.length > 0)) && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenVersionComparison(quote)}
+                                className="px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                              >
+                                <SlidersHorizontal size={12} />
+                                <span>Compare Versions</span>
+                              </button>
+                            )}
+
+                            {userRole === 'admin' && !isApproved && (
+                              <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">
+                                Awaiting Buyer Decision / Review Only
+                              </span>
+                            )}
+
+                            {userRole === 'consumer' && !isApproved && (
+                              <>
+                                {onSubmitCounterDemand && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenCounterDrawer(quote)}
+                                    className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 font-extrabold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    <Sparkles size={14} className="text-purple-600" />
+                                    <span>Send 2nd Version / Counter-Demand</span>
+                                  </button>
+                                )}
+                                {onApproveQuote && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAcceptQuoteModal(quote)}
+                                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 font-display"
+                                  >
+                                    <CheckCircle2 size={15} />
+                                    <span>Accept Winning Quotation</span>
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1512,6 +2118,469 @@ export default function BulkOrderPreviewModal({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================== */}
+      {/* BUYER QUOTATION ACCEPTANCE & ORDER SIZE ADJUSTMENT MODAL */}
+      {/* ========================================== */}
+      {acceptQuoteModalData && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 text-xs space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800">
+                  <CheckCircle2 size={22} />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-gray-900 text-base">
+                    Accept Quotation & Finalize Order Size
+                  </h4>
+                  <p className="text-[11px] text-gray-500 mt-0.5">
+                    Vendor: <strong className="text-emerald-950 font-bold">{acceptQuoteModalData.quote.sellerStoreName || acceptQuoteModalData.quote.sellerName}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAcceptQuoteModalData(null)}
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-teal-50 border border-teal-200 rounded-2xl text-[11px] text-teal-950 flex items-start gap-2 shrink-0">
+              <Sparkles size={16} className="text-teal-700 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block text-teal-900 font-extrabold mb-0.5">
+                  Update Item Counts / Order Size to Existing Count
+                </strong>
+                <span>
+                  You can increase or decrease the quantities below to match your school/institutional headcount before accepting. Line totals and the final order budget will recalculate automatically based on vendor unit rates.
+                </span>
+              </div>
+            </div>
+
+            {/* Editable Item Quantities Table */}
+            <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs flex-1 overflow-y-auto min-h-48">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-600 border-b border-gray-200 sticky top-0">
+                    <th className="py-2.5 px-3">Item / Requirement</th>
+                    <th className="py-2.5 px-2 text-right">Quoted Rate</th>
+                    <th className="py-2.5 px-3 text-center">Order Count (Units)</th>
+                    <th className="py-2.5 px-3 text-right">Line Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {acceptQuoteModalData.items.map((item, itIdx) => {
+                    return (
+                      <tr key={itIdx} className="hover:bg-gray-50/50">
+                        <td className="py-2.5 px-3">
+                          <div className="font-bold text-gray-900">{item.itemName}</div>
+                          <div className="text-[10px] text-gray-400">{item.category}</div>
+                        </td>
+                        <td className="py-2.5 px-2 text-right font-mono font-bold text-emerald-900">
+                          ₹{item.pricePerUnit > 0 ? item.pricePerUnit.toLocaleString() : '0'}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <div className="inline-flex items-center border border-gray-300 rounded-xl overflow-hidden bg-white shadow-2xs">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newQty = Math.max(1, item.quantity - 5);
+                                setAcceptQuoteModalData(prev => {
+                                  const updatedItems = [...prev.items];
+                                  updatedItems[itIdx] = {
+                                    ...updatedItems[itIdx],
+                                    quantity: newQty,
+                                    totalPrice: newQty * updatedItems[itIdx].pricePerUnit
+                                  };
+                                  return { ...prev, items: updatedItems };
+                                });
+                              }}
+                              className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 font-bold cursor-pointer text-xs"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) => {
+                                const val = Math.max(1, Number(e.target.value) || 1);
+                                setAcceptQuoteModalData(prev => {
+                                  const updatedItems = [...prev.items];
+                                  updatedItems[itIdx] = {
+                                    ...updatedItems[itIdx],
+                                    quantity: val,
+                                    totalPrice: val * updatedItems[itIdx].pricePerUnit
+                                  };
+                                  return { ...prev, items: updatedItems };
+                                });
+                              }}
+                              className="w-16 text-center font-bold text-gray-900 py-1 focus:outline-none text-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newQty = item.quantity + 5;
+                                setAcceptQuoteModalData(prev => {
+                                  const updatedItems = [...prev.items];
+                                  updatedItems[itIdx] = {
+                                    ...updatedItems[itIdx],
+                                    quantity: newQty,
+                                    totalPrice: newQty * updatedItems[itIdx].pricePerUnit
+                                  };
+                                  return { ...prev, items: updatedItems };
+                                });
+                              }}
+                              className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 font-bold cursor-pointer text-xs"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-extrabold text-gray-900">
+                          ₹{item.totalPrice.toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Calculations & Live Summary Bar */}
+            {(() => {
+              const totalAdjustedQty = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+              const totalAdjustedAmount = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.totalPrice || 0), 0) || Number(acceptQuoteModalData.quote.quoteAmount);
+
+              const advPct = Number(acceptQuoteModalData.quote.prepaymentPercentage ?? acceptQuoteModalData.quote.sellerAdvancePercentage ?? 0);
+              const advAmt = advPct > 0 
+                ? Math.round((totalAdjustedAmount * advPct) / 100) 
+                : Number(acceptQuoteModalData.quote.prepaymentAmount ?? acceptQuoteModalData.quote.sellerAdvanceAmount ?? 0);
+              const remainingBal = Math.max(0, totalAdjustedAmount - advAmt);
+
+              return (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3 text-xs shrink-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[11px] text-emerald-800 font-bold uppercase tracking-wider block">
+                        Updated Headcount & Items
+                      </span>
+                      <div className="font-extrabold text-gray-900 text-sm mt-0.5">
+                        {totalAdjustedQty} Total Demanded Units ({acceptQuoteModalData.items.length} Products)
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[11px] text-gray-500 font-bold uppercase tracking-wider block">
+                        Final Accepted Order Total
+                      </span>
+                      <div className="font-mono font-black text-xl text-emerald-950">
+                        ₹{totalAdjustedAmount.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {(advPct > 0 || advAmt > 0) && (
+                    <div className="pt-2 border-t border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-emerald-900">
+                      <div>
+                        Seller Demanded Prepayment ({advPct > 0 ? `${advPct}%` : 'Fixed'}): <strong className="font-mono text-emerald-950 text-xs">₹{advAmt.toLocaleString()}</strong>
+                        {acceptQuoteModalData.quote.prepaymentTerms || acceptQuoteModalData.quote.sellerAdvanceTerms ? (
+                          <span className="italic block text-[10px] text-emerald-700">"{acceptQuoteModalData.quote.prepaymentTerms || acceptQuoteModalData.quote.sellerAdvanceTerms}"</span>
+                        ) : null}
+                      </div>
+                      <div className="sm:text-right">
+                        Balance upon Delivery: <strong className="font-mono text-gray-900 text-xs">₹{remainingBal.toLocaleString()}</strong>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Modal Actions */}
+            <div className="flex items-center gap-3 pt-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setAcceptQuoteModalData(null)}
+                className="flex-1 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const totalAdjustedQty = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+                  const totalAdjustedAmount = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.totalPrice || 0), 0) || Number(acceptQuoteModalData.quote.quoteAmount);
+
+                  const advPct = Number(acceptQuoteModalData.quote.prepaymentPercentage ?? acceptQuoteModalData.quote.sellerAdvancePercentage ?? 0);
+                  const advAmt = advPct > 0 
+                    ? Math.round((totalAdjustedAmount * advPct) / 100) 
+                    : Number(acceptQuoteModalData.quote.prepaymentAmount ?? acceptQuoteModalData.quote.sellerAdvanceAmount ?? 0);
+
+                  onApproveQuote(order.id || order._id, acceptQuoteModalData.quote._id, {
+                    updatedRequirements: acceptQuoteModalData.items.map(it => ({
+                      itemId: it.itemId,
+                      itemName: it.itemName,
+                      quantity: it.quantity,
+                      sellerPricePerUnit: it.pricePerUnit
+                    })),
+                    totalQuantity: totalAdjustedQty,
+                    quoteAmount: totalAdjustedAmount,
+                    prepaymentPercentage: advPct,
+                    prepaymentAmount: advAmt,
+                    sellerAdvancePercentage: advPct,
+                    sellerAdvanceAmount: advAmt
+                  });
+
+                  setAcceptQuoteModalData(null);
+                }}
+                className="flex-1 py-2.5 font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 font-display"
+              >
+                <CheckCircle2 size={16} />
+                <span>Confirm & Accept Quotation</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2nd Version / Counter-Demand Modal for Buyer */}
+      {counterDrawerQuote && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-purple-200 flex flex-col max-h-[92vh] space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-gray-900">
+                    Send 2nd Version Counter-Demand
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Negotiate terms with <strong className="text-gray-700">{counterDrawerQuote.sellerStoreName || counterDrawerQuote.sellerName}</strong> (Version {(counterDrawerQuote.currentVersion || 1) + 1})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCounterDrawerQuote(null)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 flex items-center justify-center cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl text-[11px] text-purple-950 flex items-start gap-2 shrink-0">
+              <Sparkles size={15} className="text-purple-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block text-purple-900 font-extrabold">
+                  Iterative Negotiation Rounds
+                </strong>
+                <span>
+                  Propose your updated target budget, preferred delivery lead time, and advance prepayment. The vendor can accept your demand directly or counter with revised terms (and may raise advance % or delivery days). You can negotiate across all vendors before choosing the winner!
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmitCounterDemand} className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* Target Total Budget & Lead Days */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Target Budget (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={counterTargetBudget}
+                    onChange={(e) => setCounterTargetBudget(e.target.value)}
+                    placeholder="e.g. 130000"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 focus:border-purple-600 rounded-xl text-sm font-mono font-bold text-gray-900 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">Vendor pitch: ₹{Number(counterDrawerQuote.quoteAmount).toLocaleString()}</span>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Requested Lead Time (Days) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    required
+                    value={counterDeliveryDays}
+                    onChange={(e) => setCounterDeliveryDays(e.target.value)}
+                    placeholder="e.g. 5"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 focus:border-purple-600 rounded-xl text-sm font-mono font-bold text-gray-900 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">Vendor lead time: {counterDrawerQuote.estimatedDeliveryDays || 7} days</span>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Proposed Advance Prepayment (%)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={counterAdvancePct}
+                    onChange={(e) => setCounterAdvancePct(e.target.value)}
+                    placeholder="e.g. 10"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 focus:border-purple-600 rounded-xl text-sm font-mono font-bold text-gray-900 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">
+                    ~₹{counterTargetBudget ? Math.round((Number(counterTargetBudget) * (Number(counterAdvancePct) || 0)) / 100).toLocaleString() : '0'} advance
+                  </span>
+                </div>
+              </div>
+
+              {/* Item-by-item target prices & quantity adjustment */}
+              {counterItemDemands.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                      <Package size={14} className="text-purple-600" />
+                      <span>Adjust Item Quantities & Target Rates (2nd Version)</span>
+                    </label>
+                    <span className="text-[11px] font-extrabold text-purple-800 bg-purple-100/80 px-2.5 py-0.5 rounded-full border border-purple-200">
+                      Total Order: {counterItemDemands.reduce((s, it) => s + (Number(it.quantity) || 0), 0)} Units
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    You can edit the <strong>Quantity</strong> to increase or scale your order size, and customize your target unit rate. The total budget recalculates automatically.
+                  </p>
+                  <div className="border border-purple-200/80 rounded-xl overflow-hidden max-h-56 overflow-y-auto shadow-2xs">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-purple-50/80 text-[10px] uppercase font-bold text-purple-900 border-b border-purple-200">
+                          <th className="py-2.5 px-3">Item Demand</th>
+                          <th className="py-2.5 px-2 text-center">Quantity (Units)</th>
+                          <th className="py-2.5 px-2 text-right">Vendor Quoted</th>
+                          <th className="py-2.5 px-2 text-right">Target Rate / Unit</th>
+                          <th className="py-2.5 px-3 text-right">Line Target Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-purple-100 bg-white">
+                        {counterItemDemands.map((it, idx) => (
+                          <tr key={it.itemId || idx} className="hover:bg-purple-50/30 transition-colors">
+                            <td className="py-2.5 px-3">
+                              <span className="font-semibold text-gray-900 block">{it.itemName}</span>
+                              <span className="text-[10px] text-gray-400">Item #{idx + 1}</span>
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
+                              <input
+                                type="number"
+                                min="1"
+                                value={it.quantity}
+                                onChange={(e) => handleCounterItemQuantityChange(idx, e.target.value)}
+                                className="w-20 px-2 py-1 text-center bg-purple-50/50 border border-purple-300 rounded-lg text-xs font-mono font-bold text-purple-950 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-600 transition-all"
+                                title="Edit item quantity to increase or adjust order size"
+                                placeholder="Qty"
+                              />
+                            </td>
+                            <td className="py-2.5 px-2 text-right font-mono text-gray-500 font-medium">
+                              ₹{it.currentSellerPrice}
+                            </td>
+                            <td className="py-2.5 px-2 text-right">
+                              <div className="inline-flex items-center justify-end">
+                                <span className="text-gray-400 text-xs mr-0.5">₹</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={it.targetUnitPrice}
+                                  onChange={(e) => handleCounterItemPriceChange(idx, e.target.value)}
+                                  className="w-20 px-2 py-1 text-right bg-white border border-gray-300 rounded-lg text-xs font-mono font-bold text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-600"
+                                  placeholder="Rate"
+                                />
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-extrabold text-purple-950">
+                              ₹{(Number(it.targetTotalPrice) || 0).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-purple-100/60 font-bold border-t border-purple-200 text-xs">
+                          <td className="py-2 px-3 text-purple-900">Total Demanded:</td>
+                          <td className="py-2 px-2 text-center font-mono font-black text-purple-950">
+                            {counterItemDemands.reduce((s, it) => s + (Number(it.quantity) || 0), 0)} Units
+                          </td>
+                          <td colSpan="2" className="py-2 px-2 text-right text-[11px] text-purple-800 font-bold">
+                            Calculated Target Budget:
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-black text-purple-950">
+                            ₹{counterItemDemands.reduce((s, it) => s + (Number(it.targetTotalPrice) || 0), 0).toLocaleString()}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Buyer Negotiation Note / Message */}
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">
+                  Negotiation Note / Message for Vendor
+                </label>
+                <textarea
+                  rows="3"
+                  value={counterNotes}
+                  onChange={(e) => setCounterNotes(e.target.value)}
+                  placeholder="e.g. Our school management has capped the budget at ₹1,30,000 for this batch. If agreed, we will confirm immediately."
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 focus:border-purple-600 rounded-xl text-xs text-gray-900 focus:outline-none resize-none"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCounterDrawerQuote(null)}
+                  className="flex-1 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCounter}
+                  className="flex-1 py-2.5 font-bold text-white bg-purple-700 hover:bg-purple-800 disabled:opacity-50 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 text-xs font-display"
+                >
+                  <Sparkles size={15} />
+                  <span>{isSubmittingCounter ? 'Sending Counter...' : 'Submit 2nd Version Counter-Demand'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tax Invoice & Certificate Modal */}
+      {isInvoiceOpen && taxInvoiceOrder && (
+        <TaxInvoiceModal
+          isOpen={isInvoiceOpen}
+          onClose={() => setIsInvoiceOpen(false)}
+          order={taxInvoiceOrder}
+        />
+      )}
+
+      {/* Quotation Version Comparison Modal */}
+      {isComparisonOpen && comparingQuote && (
+        <QuotationVersionComparisonModal
+          isOpen={isComparisonOpen}
+          onClose={() => setIsComparisonOpen(false)}
+          quotation={comparingQuote}
+          order={order}
+        />
       )}
 
     </div>

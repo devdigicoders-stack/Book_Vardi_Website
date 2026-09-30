@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   Truck,
+  Phone,
   LogOut,
   LogIn,
   UserPlus,
@@ -34,7 +35,8 @@ import {
   Boxes,
   XCircle,
   ArrowRightLeft,
-  CreditCard
+  CreditCard,
+  ArrowRight
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
@@ -44,7 +46,7 @@ import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi } from '../../utils/api';
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi } from '../../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import OrderTrackingModal from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
@@ -88,6 +90,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const [activeTab, setActiveTab] = useState(initialTab); // 'profile' | 'wishlist' | 'orders' | 'cart' | 'addresses' | 'seller-data' | 'bulk-orders'
   const [customerBulkOrders, setCustomerBulkOrders] = useState([]);
   const [selectedBulkOrder, setSelectedBulkOrder] = useState(null);
+  const [selectedBulkOrderTab, setSelectedBulkOrderTab] = useState('specs');
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
   const [trackingModalOrder, setTrackingModalOrder] = useState(null);
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
@@ -172,28 +175,137 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   }, [activeTab, fetchUserOrders]);
 
   useEffect(() => {
-    if (activeTab === 'bulk-orders' || activeTab === 'profile') {
-      fetchCustomerSchoolBulkOrdersApi(userProfile?.phone || '').then(data => {
-        const apiList = Array.isArray(data) ? data : (data?.orders || []);
+    const loadBulkOrders = () => {
+      const myId = String(userProfile?.id || userProfile?._id || '');
+      const myPhone = String(userProfile?.phone || userProfile?.mobile || '').replace(/\D/g, '').slice(-10);
+      const myEmail = String(userProfile?.email || '').trim().toLowerCase();
+
+      // Collect all local reference IDs stored in the browser
+      const localRefIdSet = new Set();
+      try {
+        const l1 = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
+        const l2 = JSON.parse(localStorage.getItem('bv_sync_school_orders') || '[]');
+        [...l1, ...l2].forEach(o => {
+          if (o.referenceId) localRefIdSet.add(String(o.referenceId));
+          if (o.id) localRefIdSet.add(String(o.id));
+          if (o._id) localRefIdSet.add(String(o._id));
+        });
+      } catch (e) {}
+
+      const belongsToMe = (order) => {
+        if (!order) return false;
+        // 1. By Local Reference ID (order was created or viewed locally in this browser)
+        const ref = String(order.referenceId || order.id || order._id || '');
+        if (ref && localRefIdSet.has(ref)) return true;
+
+        // 2. Verified by authenticated backend response
+        if (order._isFromApi) return true;
+
+        // 3. By User ID
+        const oUserId = String(order.userId || order.user || order.customerId || '');
+        if (myId && oUserId && oUserId === myId) return true;
+
+        // 4. By Phone number (last 10 digits match)
+        const oPhone = String(order.userPhone || order.contactPhone || order.phone || '').replace(/\D/g, '').slice(-10);
+        if (myPhone && oPhone && myPhone.length >= 10 && myPhone === oPhone) return true;
+
+        // 5. By Email (excluding placeholder local emails)
+        const oEmail = String(order.userEmail || order.contactEmail || order.email || '').trim().toLowerCase();
+        if (myEmail && oEmail && !myEmail.includes('@bookvardi.local') && myEmail === oEmail) return true;
+
+        return false;
+      };
+
+      fetchCustomerSchoolBulkOrdersApi(userProfile?.phone || '', userProfile?.id || userProfile?._id || '', userProfile?.email || '').then(data => {
+        const rawApiList = Array.isArray(data) ? data : (data?.orders || []);
+        const apiList = rawApiList.map(o => ({ ...o, _isFromApi: true }));
+
         let localList = [];
         try {
           localList = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
         } catch {}
+        let syncList = [];
+        try {
+          syncList = JSON.parse(localStorage.getItem('bv_sync_school_orders') || '[]');
+        } catch {}
+
         const merged = [...apiList];
-        localList.forEach(lItem => {
-          if (!merged.some(m => (m.referenceId && m.referenceId === lItem.referenceId) || (m._id && m._id === lItem._id))) {
+        [...localList, ...syncList].forEach(lItem => {
+          const idx = merged.findIndex(m => (m.referenceId && m.referenceId === lItem.referenceId) || (m._id && m._id === lItem._id) || (m.id && m.id === lItem.id));
+          if (idx === -1) {
             merged.push(lItem);
+          } else {
+            // Fresh backend API data is authoritative; merge quotations by ID/sellerId without losing vendor pitches
+            const apiOrder = merged[idx];
+            const apiQuotes = Array.isArray(apiOrder.quotations) ? apiOrder.quotations : [];
+            const localQuotes = Array.isArray(lItem.quotations) ? lItem.quotations : [];
+
+            const quoteMap = new Map();
+            localQuotes.forEach(q => {
+              const key = String(q._id || q.id || q.sellerId?._id || q.sellerId || '');
+              if (key) quoteMap.set(key, q);
+            });
+            // Authoritative server quotes take precedence and overwrite matching keys
+            apiQuotes.forEach(q => {
+              const key = String(q._id || q.id || q.sellerId?._id || q.sellerId || '');
+              if (key) quoteMap.set(key, q);
+            });
+
+            merged[idx] = {
+              ...lItem,
+              ...apiOrder,
+              quotations: Array.from(quoteMap.values())
+            };
           }
         });
-        setCustomerBulkOrders(merged);
+
+        const privateOrders = merged.filter(belongsToMe);
+        setCustomerBulkOrders(privateOrders);
+        try {
+          localStorage.setItem('bv_customer_bulk_orders', JSON.stringify(privateOrders));
+        } catch {}
       }).catch(() => {
         try {
           const localList = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
-          setCustomerBulkOrders(localList);
+          const syncList = JSON.parse(localStorage.getItem('bv_sync_school_orders') || '[]');
+          const merged = [...localList];
+          syncList.forEach(s => {
+            const idx = merged.findIndex(m => (m.referenceId && m.referenceId === s.referenceId) || (m._id && m._id === s._id) || (m.id && m.id === s.id));
+            if (idx === -1) {
+              merged.push(s);
+            } else {
+              const mQuotes = Array.isArray(merged[idx].quotations) ? merged[idx].quotations : [];
+              const sQuotes = Array.isArray(s.quotations) ? s.quotations : [];
+              const quoteMap = new Map();
+              mQuotes.forEach(q => {
+                const key = String(q._id || q.id || q.sellerId?._id || q.sellerId || '');
+                if (key) quoteMap.set(key, q);
+              });
+              sQuotes.forEach(q => {
+                const key = String(q._id || q.id || q.sellerId?._id || q.sellerId || '');
+                if (key) quoteMap.set(key, q);
+              });
+              merged[idx] = { ...merged[idx], ...s, quotations: Array.from(quoteMap.values()) };
+            }
+          });
+          const privateOrders = merged.filter(belongsToMe);
+          setCustomerBulkOrders(privateOrders);
         } catch {}
       });
+    };
+
+    if (activeTab === 'bulk-orders' || activeTab === 'profile') {
+      loadBulkOrders();
     }
-  }, [activeTab, userProfile?.phone]);
+
+    window.addEventListener('bv_school_orders_updated', loadBulkOrders);
+    window.addEventListener('storage', loadBulkOrders);
+
+    return () => {
+      window.removeEventListener('bv_school_orders_updated', loadBulkOrders);
+      window.removeEventListener('storage', loadBulkOrders);
+    };
+  }, [activeTab, userProfile?.phone, userProfile?.id, userProfile?._id, userProfile?.email]);
 
 
   // Load 12-step seller onboarding data saved during registration
@@ -1527,8 +1639,8 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                 {wishlistProducts.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-6">
-                    {wishlistProducts.map((product) => (
-                      <ProductCard key={product.id} product={product} />
+                    {wishlistProducts.map((product, idx) => (
+                      <ProductCard key={product.id || product._id || product.name || `wishlist-${idx}`} product={product} />
                     ))}
                   </div>
                 ) : (
@@ -1684,7 +1796,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 {/* Orders List */}
                 {filteredOrders.length > 0 ? (
                   <div className="space-y-4">
-                    {filteredOrders.map((order) => {
+                    {filteredOrders.map((order, idx) => {
                       const currentStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
                       const statusMeta = getOrderStatusMeta(currentStatus);
                       const StatusIcon = statusMeta.icon;
@@ -1712,7 +1824,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                       return (
                         <div
-                          key={order.id}
+                          key={order.id || order._id || order.orderNumber || `order-${idx}`}
                           onClick={handleViewOrder}
                           className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/40 hover:shadow-md transition-all cursor-pointer bg-white group"
                         >
@@ -1937,9 +2049,9 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                     {/* Cart Items List */}
                     <div className="divide-y divide-gray-100 border border-gray-200 rounded-2xl overflow-hidden">
-                      {cartItems.map((item) => (
+                      {cartItems.map((item, idx) => (
                         <div
-                          key={item.id}
+                          key={item.id || item._id || `${item.name}-${idx}`}
                           className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50/50 transition-colors"
                         >
                           <div className="flex items-center gap-3.5">
@@ -2437,7 +2549,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                     return (
                       <div
-                        key={addr.id}
+                        key={addr.id || addr._id || `addr-${addr.type || 'item'}`}
                         className="border border-gray-200 rounded-2xl p-5 relative hover:border-brand-teal/30 hover:shadow-xs transition-all flex flex-col justify-between bg-white"
                       >
                         <div>
@@ -2532,11 +2644,22 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {customerBulkOrders.map((order) => {
+                    {customerBulkOrders.map((order, idx) => {
                       const winningQuote = order.quotations?.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId));
+                      const statusLower = (order.status || '').toLowerCase().trim();
+                      const isProcessedOrder = ['accepted', 'quote_accepted', 'packed', 'out for delivery', 'received'].includes(statusLower);
+
+                      const getStepNumber = (st) => {
+                        if (st === 'received') return 4;
+                        if (st === 'out for delivery') return 3;
+                        if (st === 'packed') return 2;
+                        if (st === 'accepted' || st === 'quote_accepted') return 1;
+                        return 0;
+                      };
+                      const currentStepNum = getStepNumber(statusLower);
 
                       return (
-                        <div key={order.id || order._id} className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/40 transition-all space-y-4 bg-gray-50/50">
+                        <div key={order.id || order._id || order.referenceId || `bulk-order-${idx}`} className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/40 transition-all space-y-4 bg-gray-50/50">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-gray-200/70">
                             <div>
                               <div className="flex items-center gap-2">
@@ -2553,15 +2676,26 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             </div>
 
                             <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                              order.status === 'quote_accepted'
+                              statusLower === 'received'
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : statusLower === 'out for delivery'
+                                ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                                : statusLower === 'packed'
+                                ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
+                                : statusLower === 'accepted' || statusLower === 'quote_accepted'
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : order.status === 'published' || order.status === 'assigned'
+                                : statusLower === 'published'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : statusLower === 'assigned'
                                 ? 'bg-blue-50 text-blue-800 border-blue-200'
                                 : 'bg-amber-50 text-amber-800 border-amber-200'
                             }`}>
-                              {order.status === 'quote_accepted' ? 'Quote Approved & Finalized' :
-                               order.status === 'published' ? 'Marketplace RFQ Live' :
-                               order.status === 'assigned' ? 'Assigned to Authorized Vendor' : 'Pending Admin Review'}
+                              {statusLower === 'received' ? 'Consignment Received & Delivered' :
+                               statusLower === 'out for delivery' ? 'Out for Delivery (Store Self Delivery)' :
+                               statusLower === 'packed' ? 'Consignment Packed' :
+                               statusLower === 'accepted' || statusLower === 'quote_accepted' ? 'Order Accepted by Vendor' :
+                               statusLower === 'published' ? 'Marketplace RFQ Live' :
+                               statusLower === 'assigned' ? 'Assigned to Authorized Vendor' : 'Pending Admin Review'}
                             </span>
                           </div>
 
@@ -2585,6 +2719,139 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             </div>
                           </div>
 
+                          {/* Quotation Deadline Countdown Badge if quotes are still open */}
+                          {order.expectedQuotationDate && !winningQuote && (() => {
+                            const target = new Date(order.expectedQuotationDate);
+                            if (isNaN(target.getTime())) return null;
+                            const now = new Date();
+                            const targetMid = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+                            const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                            const diffDays = Math.round((targetMid - nowMid) / (1000 * 60 * 60 * 24));
+                            const isExpired = diffDays < 0;
+                            const isUrgent = diffDays >= 0 && diffDays <= 2;
+                            const countdownText = diffDays > 1 ? `${diffDays} days left` : diffDays === 1 ? '1 day left (Ends tomorrow)' : diffDays === 0 ? 'Deadline today' : `Deadline passed (${Math.abs(diffDays)}d ago)`;
+
+                            return (
+                              <div className="flex items-center justify-between bg-blue-50/80 border border-blue-200/80 rounded-xl p-2.5 text-xs text-blue-900">
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <Clock size={14} className={isExpired ? 'text-red-500' : isUrgent ? 'text-amber-600' : 'text-blue-600'} />
+                                  <span>Quotation Receiving Deadline: <strong className="text-blue-950 font-extrabold">{target.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></span>
+                                </div>
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                                  isExpired ? 'bg-red-100 text-red-700 border-red-200' : isUrgent ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-blue-100 text-blue-800 border-blue-300'
+                                }`}>
+                                  {countdownText}
+                                </span>
+                              </div>
+                            );
+                          })()}
+
+                          {/* 4-Step Order Progress Stepper when order is in processing */}
+                          {isProcessedOrder && (
+                            <div className="bg-white border border-gray-200 rounded-xl p-3.5 space-y-2">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                <span>Order Fulfillment Progress</span>
+                                <span className="text-brand-teal font-extrabold normal-case">
+                                  {statusLower === 'received' ? 'Order Completed' :
+                                   statusLower === 'out for delivery' ? 'Out for Delivery' :
+                                   statusLower === 'packed' ? 'Consignment Packed' : 'Order Confirmed'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-2 pt-2">
+                                {[
+                                  { step: 1, label: 'Accepted', desc: 'Order Confirmed' },
+                                  { step: 2, label: 'Packed', desc: 'Ready for Transit' },
+                                  { step: 3, label: 'Out for Delivery', desc: 'Store Self-Delivery' },
+                                  { step: 4, label: 'Received', desc: 'Handed Over' }
+                                ].map((s) => {
+                                  const isDone = currentStepNum >= s.step;
+                                  const isCurrent = currentStepNum === s.step;
+                                  return (
+                                    <div key={s.step} className="flex flex-col items-center text-center">
+                                      <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
+                                        isDone
+                                          ? 'bg-emerald-600 text-white shadow-xs'
+                                          : 'bg-gray-100 text-gray-400 border border-gray-200'
+                                      }`}>
+                                        {isDone ? <Check size={14} /> : s.step}
+                                      </div>
+                                      <span className={`text-[11px] font-bold mt-1.5 line-clamp-1 ${
+                                        isCurrent ? 'text-brand-teal' : isDone ? 'text-gray-800' : 'text-gray-400'
+                                      }`}>
+                                        {s.label}
+                                      </span>
+                                      <span className="text-[9px] text-gray-400 hidden sm:block">
+                                        {s.desc}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Store Self-Delivery Executive Details */}
+                          {(order.deliveryDetails || order.selfDeliveryDetails) && (
+                            <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border border-blue-200 rounded-xl p-3.5 space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 font-bold text-blue-900 text-xs">
+                                  <Truck size={15} className="text-blue-600" />
+                                  <span>Store Self-Delivery Assignment (Exclusive Direct Delivery)</span>
+                                </div>
+                                {(order.deliveryDetails?.deliveryPartnerToken || order.deliveryDetails?.trackingId || order.referenceId) && (
+                                  <span className="text-[11px] font-mono px-2 py-0.5 bg-white text-blue-800 border border-blue-200 rounded-md font-bold">
+                                    Token: {order.deliveryDetails?.deliveryPartnerToken || order.deliveryDetails?.trackingId || order.referenceId}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                                <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100">
+                                  <span className="text-[10px] text-gray-500 uppercase font-semibold block">Store Rider / Executive</span>
+                                  <span className="font-bold text-gray-900">
+                                    {order.deliveryDetails?.deliveryBoyName || order.selfDeliveryDetails?.deliveryBoyName || 'Store Assigned Executive'}
+                                  </span>
+                                </div>
+
+                                <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100">
+                                  <span className="text-[10px] text-gray-500 uppercase font-semibold block">Contact Number</span>
+                                  {order.deliveryDetails?.deliveryBoyPhone || order.selfDeliveryDetails?.deliveryBoyPhone ? (
+                                    <a
+                                      href={`tel:${order.deliveryDetails?.deliveryBoyPhone || order.selfDeliveryDetails?.deliveryBoyPhone}`}
+                                      className="font-bold text-blue-600 hover:underline flex items-center gap-1"
+                                    >
+                                      <Phone size={11} />
+                                      {order.deliveryDetails?.deliveryBoyPhone || order.selfDeliveryDetails?.deliveryBoyPhone}
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-500">Contact Store</span>
+                                  )}
+                                </div>
+
+                                <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100">
+                                  <span className="text-[10px] text-gray-500 uppercase font-semibold block">Vehicle Number</span>
+                                  <span className="font-mono font-bold text-gray-900">
+                                    {order.deliveryDetails?.vehicleNumber || order.selfDeliveryDetails?.vehicleNumber || 'Store Vehicle'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {statusLower === 'out for delivery' && (
+                                <div className="text-[11px] text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-2 border border-indigo-100">
+                                  <Clock size={13} className="text-indigo-600 shrink-0" />
+                                  <span>Consignment is out for self-delivery. The delivery executive will contact the institutional representative at delivery.</span>
+                                </div>
+                              )}
+                              {statusLower === 'received' && (
+                                <div className="text-[11px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-2 border border-emerald-100">
+                                  <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                  <span>Consignment was safely received and verified at institutional campus.</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* Approved Quotation Banner */}
                           {winningQuote && (
                             <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
@@ -2593,8 +2860,14 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                   <CheckCircle2 size={14} className="text-emerald-600" /> Approved Vendor Quote:
                                 </span>
                                 <div className="text-emerald-900 font-medium mt-0.5">
-                                  Fulfilled by <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong> ({winningQuote.sellerPhone})
+                                  Fulfilled by <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong>
                                 </div>
+                                {(winningQuote.prepaymentAmount > 0 || winningQuote.sellerAdvanceAmount > 0 || winningQuote.prepaymentPercentage > 0 || winningQuote.sellerAdvancePercentage > 0) && (
+                                  <div className="text-[11px] font-bold text-emerald-800 mt-1 flex items-center gap-1.5 bg-emerald-100/60 px-2 py-0.5 rounded-md w-fit">
+                                    <span>Prepayment: ₹{Number(winningQuote.prepaymentAmount || winningQuote.sellerAdvanceAmount || Math.round((Number(winningQuote.quoteAmount) * (winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage || 0)) / 100)).toLocaleString()}</span>
+                                    {(winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage) ? ` (${winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage}%)` : ''}
+                                  </div>
+                                )}
                               </div>
 
                               <div className="text-right">
@@ -2608,12 +2881,56 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             </div>
                           )}
 
-                          <div className="pt-3 border-t border-gray-200/50 flex justify-end">
+                          {/* Received Vendor Quotations Banner */}
+                          {!winningQuote && Array.isArray(order.quotations) && order.quotations.length > 0 && (
+                            <div className="bg-gradient-to-r from-purple-50 via-teal-50 to-purple-50 border-2 border-purple-300 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-purple-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                  <Sparkles size={16} />
+                                </div>
+                                <div>
+                                  <div className="font-extrabold text-xs text-purple-950 flex items-center gap-1.5">
+                                    <span>🔔 {order.quotations.length} Vendor Quotation{order.quotations.length > 1 ? 's' : ''} Received!</span>
+                                    <span className="bg-purple-200 text-purple-900 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">Review & Compare</span>
+                                  </div>
+                                  <p className="text-[11px] text-purple-800 mt-0.5">
+                                    {order.quotations.length > 1
+                                      ? `Multiple sellers have submitted competitive bids from ₹${Math.min(...order.quotations.map(q => Number(q.quoteAmount) || Infinity)).toLocaleString()} to ₹${Math.max(...order.quotations.map(q => Number(q.quoteAmount) || 0)).toLocaleString()}. Click to review or send counter-demands.`
+                                      : `A verified vendor pitched ₹${Number(order.quotations[0].quoteAmount).toLocaleString()}. Review proposals or propose a 2nd version counter-demand.`}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedBulkOrder(order);
+                                    setSelectedBulkOrderTab('quotes');
+                                  }}
+                                  className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <span>Review {order.quotations.length} Quote{order.quotations.length > 1 ? 's' : ''}</span>
+                                  <ArrowRight size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="pt-3 border-t border-gray-200/50 flex items-center justify-between">
+                            {Array.isArray(order.quotations) && order.quotations.length > 0 && !winningQuote && (
+                              <span className="text-xs font-bold text-purple-800 bg-purple-100/70 px-2.5 py-1 rounded-lg">
+                                {order.quotations.length} Vendor Proposal{order.quotations.length > 1 ? 's' : ''} available
+                              </span>
+                            )}
                             <button
-                              onClick={() => setSelectedBulkOrder(order)}
-                              className="text-brand-teal text-xs font-bold hover:underline"
+                              onClick={() => {
+                                setSelectedBulkOrder(order);
+                                setSelectedBulkOrderTab('specs');
+                              }}
+                              className="text-brand-teal text-xs font-bold hover:underline ml-auto flex items-center gap-1"
                             >
-                              View Details & Requirement
+                              <span>View Details & Timeline</span>
+                              <ArrowRight size={12} />
                             </button>
                           </div>
                         </div>
@@ -2653,26 +2970,204 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         order={selectedBulkOrder}
         onClose={() => setSelectedBulkOrder(null)}
         userRole="consumer"
-        onApproveQuote={async (orderId, quoteId) => {
+        initialTab={selectedBulkOrderTab}
+        onApproveQuote={async (orderId, quoteId, updateData = {}) => {
+          const applyApprovalLocally = (sourceOrder) => {
+            const quotes = sourceOrder.quotations || [];
+            const matched = quotes.find(q => String(q._id) === String(quoteId) || String(q.id) === String(quoteId));
+            const winningSellerId = matched?.sellerId || sourceOrder.sellerId;
+            const updatedQuotes = quotes.map(q => {
+              const isWin = String(q._id) === String(quoteId) || String(q.id) === String(quoteId);
+              return {
+                ...q,
+                status: isWin ? 'approved' : 'rejected',
+                ...(isWin && updateData?.quoteAmount ? { quoteAmount: updateData.quoteAmount } : {}),
+                ...(isWin && updateData?.prepaymentAmount !== undefined ? { prepaymentAmount: updateData.prepaymentAmount, sellerAdvanceAmount: updateData.prepaymentAmount } : {}),
+                ...(isWin && updateData?.prepaymentPercentage !== undefined ? { prepaymentPercentage: updateData.prepaymentPercentage, sellerAdvancePercentage: updateData.prepaymentPercentage } : {})
+              };
+            });
+
+            return {
+              ...sourceOrder,
+              status: 'accepted',
+              acceptedQuoteId: quoteId,
+              winningQuoteId: quoteId,
+              sellerId: winningSellerId,
+              deliveryMode: 'self_delivery',
+              ...(updateData?.updatedRequirements ? { requirements: updateData.updatedRequirements } : {}),
+              ...(updateData?.totalQuantity ? { totalQuantity: updateData.totalQuantity } : {}),
+              ...(updateData?.quoteAmount ? {
+                quoteAmount: updateData.quoteAmount,
+                targetBudgetPerKit: updateData.quoteAmount
+              } : {}),
+              ...(updateData?.prepaymentAmount !== undefined ? { prepaymentAmount: updateData.prepaymentAmount, sellerAdvanceAmount: updateData.prepaymentAmount } : {}),
+              ...(updateData?.prepaymentPercentage !== undefined ? { prepaymentPercentage: updateData.prepaymentPercentage, sellerAdvancePercentage: updateData.prepaymentPercentage } : {}),
+              quotations: updatedQuotes
+            };
+          };
+
           try {
             const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
             const res = await fetch(`${apiBase}/api/schools/bulk-orders/${orderId}/approve-quote`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ quoteId })
+              body: JSON.stringify({
+                quoteId,
+                updatedRequirements: updateData?.updatedRequirements,
+                totalQuantity: updateData?.totalQuantity,
+                quoteAmount: updateData?.quoteAmount,
+                prepaymentAmount: updateData?.prepaymentAmount,
+                prepaymentPercentage: updateData?.prepaymentPercentage,
+                sellerAdvanceAmount: updateData?.sellerAdvanceAmount,
+                sellerAdvancePercentage: updateData?.sellerAdvancePercentage
+              })
             });
             const data = await res.json();
-            if (data.success) {
-              if (showToast) showToast('🎉 Quotation Accepted! Order placed with vendor.');
-              if (data.order) {
-                setSelectedBulkOrder(data.order);
-                setCustomerBulkOrders(prev => prev.map(o => (o.id === orderId || o._id === orderId ? data.order : o)));
-              }
+
+            // Sync localStorage collections for multi-panel consistency
+            ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach(key => {
+              try {
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && selectedBulkOrder && o.referenceId === selectedBulkOrder.referenceId));
+                if (idx !== -1) {
+                  list[idx] = applyApprovalLocally(list[idx]);
+                  localStorage.setItem(key, JSON.stringify(list));
+                }
+              } catch (e) {}
+            });
+
+            window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+            window.dispatchEvent(new Event('storage'));
+
+            if (data.success && data.order) {
+              alert('🎉 Quotation Accepted! Your bulk order size has been confirmed and forwarded to the vendor.');
+              setSelectedBulkOrder(data.order);
+              setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? data.order : o)));
             } else {
-              alert(data.message || 'Failed to accept quotation.');
+              const updatedLocal = selectedBulkOrder ? applyApprovalLocally(selectedBulkOrder) : null;
+              if (updatedLocal) {
+                setSelectedBulkOrder(updatedLocal);
+                setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? updatedLocal : o)));
+              }
+              alert('🎉 Quotation Accepted! Order placed with vendor.');
             }
           } catch (err) {
-            alert('Network error approving quotation.');
+            console.warn('API error approving quote, applying local fallback:', err);
+            // Local fallback
+            ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach(key => {
+              try {
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && selectedBulkOrder && o.referenceId === selectedBulkOrder.referenceId));
+                if (idx !== -1) {
+                  list[idx] = applyApprovalLocally(list[idx]);
+                  localStorage.setItem(key, JSON.stringify(list));
+                }
+              } catch (e) {}
+            });
+
+            window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+            window.dispatchEvent(new Event('storage'));
+
+            if (selectedBulkOrder) {
+              const updated = applyApprovalLocally(selectedBulkOrder);
+              setSelectedBulkOrder(updated);
+              setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? updated : o)));
+            }
+            alert('🎉 Quotation Accepted! Order placed with vendor.');
+          }
+        }}
+        onSubmitCounterDemand={async (orderId, quoteId, counterData) => {
+          try {
+            const res = await submitBuyerCounterDemandApi(orderId, quoteId, counterData);
+            if (res.success && res.order) {
+              // Update local storage lists
+              ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach(key => {
+                try {
+                  const list = JSON.parse(localStorage.getItem(key) || '[]');
+                  const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && selectedBulkOrder && o.referenceId === selectedBulkOrder.referenceId));
+                  if (idx !== -1) {
+                    list[idx] = res.order;
+                    localStorage.setItem(key, JSON.stringify(list));
+                  }
+                } catch (e) {}
+              });
+              setSelectedBulkOrder(res.order);
+              setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? res.order : o)));
+              window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+              window.dispatchEvent(new Event('storage'));
+              alert(res.message || '🎉 2nd version counter-demand submitted successfully!');
+              return { success: true, message: res.message, order: res.order };
+            } else {
+              alert(res.message || 'Failed to send counter-demand');
+              return { success: false, message: res.message || 'Failed to send counter-demand' };
+            }
+          } catch (err) {
+            console.warn('API error sending counter-demand, applying local fallback:', err);
+            // Local fallback logic
+            const applyCounterLocally = (targetOrder) => {
+              if (!targetOrder) return targetOrder;
+              const clone = JSON.parse(JSON.stringify(targetOrder));
+              const quotes = clone.quotations || [];
+              const q = quotes.find(item => String(item._id || item.id) === String(quoteId));
+              if (q) {
+                const newVer = (q.currentVersion || 1) + 1;
+                q.currentVersion = newVer;
+                q.negotiationStage = 'buyer_countered';
+                q.latestBuyerCounter = {
+                  targetBudget: Number(counterData.targetBudget) || 0,
+                  requestedDeliveryDays: Number(counterData.requestedDeliveryDays) || 0,
+                  proposedAdvancePercentage: Number(counterData.proposedAdvancePercentage) || 0,
+                  proposedAdvanceAmount: Number(counterData.proposedAdvanceAmount) || 0,
+                  notes: counterData.notes || '',
+                  itemDemands: counterData.itemDemands || [],
+                  counteredAt: new Date().toISOString()
+                };
+                if (!Array.isArray(q.negotiationHistory)) q.negotiationHistory = [];
+                q.negotiationHistory.push({
+                  round: q.negotiationHistory.length + 1,
+                  version: newVer,
+                  senderRole: 'buyer',
+                  senderName: clone.institutionName || 'Buyer',
+                  quoteAmount: Number(counterData.targetBudget) || 0,
+                  unitPrice: Number(counterData.unitPrice) || 0,
+                  notes: counterData.notes || `Buyer submitted 2nd version counter-demand (v${newVer})`,
+                  createdAt: new Date().toISOString()
+                });
+              }
+              if (Array.isArray(counterData.itemDemands) && counterData.itemDemands.length > 0 && Array.isArray(clone.requirements)) {
+                counterData.itemDemands.forEach(idm => {
+                  const match = clone.requirements.find(
+                    (r, idx) => String(r._id || idx) === String(idm.itemId) || String(r.itemName) === String(idm.itemName)
+                  );
+                  if (match && idm.quantity && Number(idm.quantity) > 0) {
+                    match.quantity = Number(idm.quantity);
+                  }
+                });
+                clone.totalQuantity = clone.requirements.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+              }
+              return clone;
+            };
+
+            ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach(key => {
+              try {
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                const idx = list.findIndex(o => String(o.id || o._id) === String(orderId) || (o.referenceId && selectedBulkOrder && o.referenceId === selectedBulkOrder.referenceId));
+                if (idx !== -1) {
+                  list[idx] = applyCounterLocally(list[idx]);
+                  localStorage.setItem(key, JSON.stringify(list));
+                }
+              } catch (e) {}
+            });
+
+            if (selectedBulkOrder) {
+              const updated = applyCounterLocally(selectedBulkOrder);
+              setSelectedBulkOrder(updated);
+              setCustomerBulkOrders(prev => prev.map(o => (String(o.id || o._id) === String(orderId) ? updated : o)));
+            }
+            window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+            window.dispatchEvent(new Event('storage'));
+            alert('🎉 2nd version counter-demand recorded locally!');
+            return { success: true, message: 'Counter-demand saved locally' };
           }
         }}
       />

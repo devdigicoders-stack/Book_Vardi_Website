@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Building2,
   UserCheck,
@@ -21,10 +21,14 @@ import {
   Eye,
   Edit3,
   Navigation,
-  ShieldAlert
+  ShieldAlert,
+  DollarSign,
+  Percent,
+  Printer,
+  Download
 } from 'lucide-react';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { backendEnabled, submitSchoolBulkOrderInBackend } from '../../utils/api';
+import { backendEnabled, submitSchoolBulkOrderInBackend, API_BASE_URL } from '../../utils/api';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 
@@ -47,10 +51,13 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
   const [state, setState] = useState('');
   const [pincode, setPincode] = useState('');
 
+  // Helper to generate unique requirement item ID
+  const generateReqId = () => `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
   // Requirement Demands List (dynamic array)
   const [requirements, setRequirements] = useState([
     {
-      id: Date.now(),
+      id: generateReqId(),
       category: 'Custom School Uniforms',
       itemName: '',
       quantity: 100,
@@ -64,12 +71,19 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
 
   const [logoEmbroideryRequired, setLogoEmbroideryRequired] = useState(true);
   const [targetDeliveryDate, setTargetDeliveryDate] = useState('');
-  const [targetBudgetPerKit, setTargetBudgetPerKit] = useState('');
   const [additionalNotes, setAdditionalNotes] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedReferenceId, setSubmittedReferenceId] = useState(null);
+  const [submittedOrderData, setSubmittedOrderData] = useState(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+
+  // Expected Quotation Receiving Date State
+  const [expectedQuotationDate, setExpectedQuotationDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split('T')[0];
+  });
 
   // Auto-fill administrator contact info if user is authenticated
   useEffect(() => {
@@ -115,7 +129,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     setRequirements((prev) => [
       ...prev,
       {
-        id: Date.now(),
+        id: generateReqId(),
         category: 'Custom School Uniforms',
         itemName: '',
         quantity: 100,
@@ -199,6 +213,22 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     return sum + (qty * rate);
   }, 0);
 
+  // Helper to calculate quotation countdown in days
+  const getQuotationCountdown = (dateStr) => {
+    if (!dateStr) return null;
+    const target = new Date(dateStr);
+    if (isNaN(target.getTime())) return null;
+    const now = new Date();
+    const targetMid = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+    const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const diffDays = Math.round((targetMid - nowMid) / (1000 * 60 * 60 * 24));
+
+    if (diffDays > 1) return { days: diffDays, text: `${diffDays} days left`, isExpired: false, isUrgent: diffDays <= 2 };
+    if (diffDays === 1) return { days: 1, text: '1 day left (Ends tomorrow)', isExpired: false, isUrgent: true };
+    if (diffDays === 0) return { days: 0, text: 'Deadline today', isExpired: false, isUrgent: true };
+    return { days: diffDays, text: `Deadline passed (${Math.abs(diffDays)}d ago)`, isExpired: true, isUrgent: false };
+  };
+
   // Validate form fields before opening preview or submitting
   const validateForm = () => {
     if (!isAuthenticated) {
@@ -242,9 +272,24 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
 
     const refId = `BULK-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const totalQty = requirements.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+    const userProfileStr = localStorage.getItem('book_vardi_user_profile');
+    let currentUserId = userProfile?.id || userProfile?._id || '';
+    let currentUserPhone = userProfile?.phone || contactPhone.trim();
+    let currentUserEmail = userProfile?.email || contactEmail.trim();
+    if (!currentUserId && userProfileStr) {
+      try {
+        const u = JSON.parse(userProfileStr);
+        currentUserId = u.id || u._id || '';
+        if (!currentUserPhone) currentUserPhone = u.phone || '';
+        if (!currentUserEmail) currentUserEmail = u.email || '';
+      } catch (e) {}
+    }
 
     const payload = {
       referenceId: refId,
+      userId: currentUserId,
+      userPhone: currentUserPhone,
+      userEmail: currentUserEmail,
       institutionName: institutionName.trim(),
       schoolId: schoolId.trim(),
       institutionType,
@@ -260,9 +305,14 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
       totalQuantity: totalQty,
       overallBudget: calculatedOverallBudget,
       targetDeliveryDate,
+      expectedQuotationDate: expectedQuotationDate || '',
       logoEmbroideryRequired,
-      targetBudgetPerKit: String(calculatedOverallBudget || targetBudgetPerKit || ''),
+      targetBudgetPerKit: String(calculatedOverallBudget || ''),
       additionalNotes: additionalNotes.trim(),
+      buyerAdvanceType: 'percentage',
+      buyerAdvancePercentage: 0,
+      buyerAdvanceAmount: 0,
+      buyerAdvanceNote: '',
       assignmentMode: 'unassigned',
       status: 'pending'
     };
@@ -273,8 +323,8 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     if (backendEnabled) {
       try {
         const res = await submitSchoolBulkOrderInBackend(payload);
-        if (res?.referenceId || res?.data?.referenceId || res?.order?.referenceId) {
-          finalRefId = res?.referenceId || res?.data?.referenceId || res?.order?.referenceId;
+        if (res?.referenceId || res?.data?.referenceId || res?.order?.referenceId || res?.bulkOrder?.referenceId) {
+          finalRefId = res?.referenceId || res?.data?.referenceId || res?.order?.referenceId || res?.bulkOrder?.referenceId;
         }
         savedSuccessfully = true;
       } catch (err) {
@@ -285,7 +335,13 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     // Always store to local storage backup so inquiry is immediately visible in customer profile
     try {
       const localOrders = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
-      const savedPayload = { ...payload, referenceId: finalRefId, createdAt: new Date().toISOString() };
+      const savedPayload = {
+        ...payload,
+        id: finalRefId,
+        _id: finalRefId,
+        referenceId: finalRefId,
+        createdAt: new Date().toISOString()
+      };
       localOrders.unshift(savedPayload);
       localStorage.setItem('bv_customer_bulk_orders', JSON.stringify(localOrders));
       savedSuccessfully = true;
@@ -298,6 +354,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
 
     if (savedSuccessfully) {
       setSubmittedReferenceId(finalRefId);
+      setSubmittedOrderData({ ...payload, referenceId: finalRefId });
       showToast(`🎉 Bulk Order Inquiry ${finalRefId} submitted successfully!`);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
@@ -342,6 +399,40 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
               </div>
             </div>
 
+            {/* Expected Quotation Timeline & Days Countdown */}
+            {expectedQuotationDate && (() => {
+              const cd = getQuotationCountdown(expectedQuotationDate);
+              return (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-5 text-left max-w-md mx-auto space-y-3">
+                  <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+                    <span className="text-xs font-extrabold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock size={15} className="text-blue-600" /> Quotation Receiving Timeline
+                    </span>
+                    {cd && (
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                        cd.isExpired
+                          ? 'bg-red-100 text-red-700 border-red-300'
+                          : cd.isUrgent
+                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      }`}>
+                        {cd.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600 font-medium">Quotations Expected By:</span>
+                    <span className="font-extrabold text-gray-900">
+                      {new Date(expectedQuotationDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-blue-800 leading-relaxed">
+                    Sellers will submit competitive price bids before this deadline. You can compare proposals and select the best quotation.
+                  </p>
+                </div>
+              );
+            })()}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left pt-2">
               <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200/80 flex items-start gap-2.5 text-xs">
                 <Clock size={18} className="text-brand-teal shrink-0 mt-0.5" />
@@ -373,13 +464,17 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                 type="button"
                 onClick={() => {
                   setSubmittedReferenceId(null);
+                  setSubmittedOrderData(null);
                   setRequirements([
                     {
-                      id: Date.now(),
+                      id: generateReqId(),
                       category: 'Custom School Uniforms',
                       itemName: '',
                       quantity: 100,
+                      budgetPerUnit: 500,
                       sampleImage: '',
+                      sampleImages: [],
+                      customizations: '',
                       notes: ''
                     }
                   ]);
@@ -537,7 +632,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                     onChange={(e) => setInstitutionType(e.target.value)}
                     className="w-full bg-gray-50/70 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs focus:ring-2 focus:ring-brand-teal focus:bg-white transition-all"
                   >
-                    <option value="K-12 School">K-12 School (CBSE / ICSE / State Board)</option>
+                    <option value="K-12 School">School (CBSE / ICSE / State Board)</option>
                     <option value="College / University">College / University</option>
                     <option value="Preschool / Play School">Preschool / Play School</option>
                     <option value="Coaching Institute">Coaching Institute / Academy</option>
@@ -732,7 +827,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
               <div className="space-y-4">
                 {requirements.map((reqItem, index) => (
                   <div
-                    key={reqItem.id}
+                    key={reqItem.id || `req-item-${index}`}
                     className="p-5 rounded-2xl border border-gray-200 bg-gradient-to-r from-gray-50/80 via-white to-gray-50/50 space-y-4 relative group"
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
@@ -829,7 +924,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
 
                         <div className="flex flex-wrap gap-2 items-center">
                           {Array.isArray(reqItem.sampleImages) && reqItem.sampleImages.map((imgSrc, imgIdx) => (
-                            <div key={imgIdx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-brand-teal/40 shadow-2xs group/img">
+                            <div key={`${reqItem.id || index}-sample-${imgIdx}`} className="relative w-16 h-16 rounded-xl overflow-hidden border border-brand-teal/40 shadow-2xs group/img">
                               <img src={imgSrc} alt={`Sample ${imgIdx + 1}`} className="w-full h-full object-cover" />
                               <button
                                 type="button"
@@ -907,7 +1002,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
               </div>
             </div>
 
-            {/* SECTION 5: CUSTOMIZATION, TARGET DATE & PREVIEW */}
+            {/* SECTION 5: CUSTOMIZATION, TARGET DELIVERY & ORDER PREVIEW */}
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/80 shadow-xs space-y-5">
               <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold border border-blue-200">
@@ -949,16 +1044,33 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Target Price per Student / Unit (Optional ₹)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-gray-700">
+                      Expected Quotation Receiving Date
+                    </label>
+                    {expectedQuotationDate && (() => {
+                      const cd = getQuotationCountdown(expectedQuotationDate);
+                      return cd ? (
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                          cd.isExpired
+                            ? 'bg-red-100 text-red-700'
+                            : cd.isUrgent
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {cd.text}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
                   <input
-                    type="text"
-                    value={targetBudgetPerKit}
-                    onChange={(e) => setTargetBudgetPerKit(e.target.value)}
-                    placeholder="e.g. ₹1,200 per student kit"
+                    type="date"
+                    min={new Date().toISOString().split('T')[0]}
+                    value={expectedQuotationDate}
+                    onChange={(e) => setExpectedQuotationDate(e.target.value)}
                     className="w-full bg-gray-50/70 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs focus:ring-2 focus:ring-brand-teal focus:bg-white"
                   />
+                  <p className="text-[10px] text-gray-400 mt-1">Deadline for sellers to pitch competitive quotations</p>
                 </div>
               </div>
 
@@ -970,7 +1082,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                   rows={3}
                   value={additionalNotes}
                   onChange={(e) => setAdditionalNotes(e.target.value)}
-                  placeholder="Mention any special tender terms, payment milestones, or sample dispatch instructions..."
+                  placeholder="Mention any special tender terms, sample dispatch instructions, or quotation requirements..."
                   className="w-full bg-gray-50/70 border border-gray-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-brand-teal focus:bg-white"
                 />
               </div>
@@ -1075,7 +1187,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                     </thead>
                     <tbody className="divide-y divide-gray-200 text-xs">
                       {requirements.map((r, idx) => (
-                        <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                        <tr key={r.id || `preview-item-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                           <td className="py-2.5 px-3 font-bold text-gray-500">{idx + 1}</td>
                           <td className="py-2.5 px-3">
                             <p className="font-bold text-gray-900">{r.itemName}</p>
@@ -1098,11 +1210,29 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
               </div>
 
               {/* Terms & Target Summary */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200 space-y-1 text-xs">
                   <p className="text-gray-600">Logo Embroidery: <strong className="text-gray-900">{logoEmbroideryRequired ? 'Yes (Custom Crest)' : 'No (Plain)'}</strong></p>
                   <p className="text-gray-600">Target Delivery Date: <strong className="text-gray-900">{targetDeliveryDate || 'Flexible / Urgent'}</strong></p>
-                  <p className="text-gray-600">Target Budget: <strong className="text-gray-900">{targetBudgetPerKit && Number(targetBudgetPerKit) > 0 ? `₹${Number(targetBudgetPerKit).toLocaleString()}` : 'Not Specified (Open to Quotes)'}</strong></p>
+                </div>
+
+                <div className="bg-blue-50/70 p-4 rounded-2xl border border-blue-200 space-y-1 text-xs flex flex-col justify-center">
+                  <span className="text-[10px] uppercase font-bold text-blue-900 tracking-wider flex items-center gap-1">
+                    <Clock size={12} className="text-blue-600" /> Quotations Expected By
+                  </span>
+                  <div className="font-extrabold text-blue-950 text-sm">
+                    {expectedQuotationDate ? new Date(expectedQuotationDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Flexible'}
+                  </div>
+                  {expectedQuotationDate && (() => {
+                    const cd = getQuotationCountdown(expectedQuotationDate);
+                    return cd ? (
+                      <span className={`inline-block w-fit text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        cd.isExpired ? 'bg-red-100 text-red-700' : cd.isUrgent ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {cd.text}
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
 
                 <div className="bg-brand-teal/5 p-4 rounded-2xl border border-brand-teal/20 space-y-1 text-xs text-right flex flex-col justify-center">

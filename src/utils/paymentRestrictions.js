@@ -105,6 +105,12 @@ export const getProductPaymentRestrictions = (product) => {
     }
   }
 
+  // Priority Override Rule: Online/Prepaid payment is universally accepted across all catalog items
+  // even if an item is marked COD-Only. Only set acceptsOnline to false if all payments are explicitly blocked.
+  if (acceptsCod || acceptsOnline) {
+    acceptsOnline = true;
+  }
+
   return {
     acceptsCod,
     acceptsOnline,

@@ -6,6 +6,13 @@ import { resolveImageUrl, getProductMainImage } from '../../utils/api';
 import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
 
 function ProductCard({ product }) {
+  if (!product) return null;
+  const isKit = product?.category === 'kits' || product?.bundleType === 'kit' || (Array.isArray(product?.kitItems) && product.kitItems.length > 0);
+  const appStat = String(product?.approvalStatus || product?.approval_status || '').trim().toLowerCase();
+  if (isKit && (appStat !== 'approved' || product.isDeleted || product.status === 'deleted' || product.status === 'inactive')) {
+    return null;
+  }
+
   const { wishlist, toggleWishlist, addToCart, openProductDetails, cartItems, showToast } = useCart();
   
   const [imgLoading, setImgLoading] = useState(true);
@@ -31,6 +38,11 @@ function ProductCard({ product }) {
   const availableSizes = sizeVariants.length > 0
     ? ['Base Product', ...sizeVariants.map(v => v.size)]
     : (Array.isArray(product?.sizes) ? product.sizes : []);
+
+  const totalStock = sizeVariants.length > 0
+    ? sizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 0))), 0)
+    : Number(product?.stock !== undefined ? product.stock : (product?.stockQuantity !== undefined ? product.stockQuantity : 50));
+  const isOutOfStock = totalStock <= 0;
 
   const price = minPrice;
   const originalPrice = product?.originalPrice || product?.mrp || (price > 0 && product?.discountPercentage ? Math.round(price / (1 - product.discountPercentage / 100)) : null);
@@ -195,16 +207,22 @@ function ProductCard({ product }) {
 
           {/* Add to Cart / Select Size Button with Live Item Count */}
           <button
-            disabled={paymentRestrictions.allDisabled}
+            disabled={paymentRestrictions.allDisabled || isOutOfStock}
             className={`w-full mt-1.5 sm:mt-2 py-1.5 sm:py-2 px-2 sm:px-3 font-bold rounded-lg text-[11px] sm:text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
               countInCart > 0
                 ? 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark border border-brand-yellow-hover ring-2 ring-brand-yellow/30 font-extrabold'
+                : isOutOfStock
+                ? 'bg-gray-100 text-gray-400 border border-gray-200'
                 : 'bg-brand-yellow/25 hover:bg-brand-yellow text-brand-teal border border-brand-yellow/60'
             }`}
             onClick={(e) => {
               e.stopPropagation();
               if (paymentRestrictions.allDisabled) {
                 if (showToast) showToast('⚠️ Payment disabled by seller for this item');
+                return;
+              }
+              if (isOutOfStock) {
+                if (showToast) showToast('⚠️ This product is out of stock');
                 return;
               }
               if (sizeVariants.length > 0) {
@@ -219,6 +237,8 @@ function ProductCard({ product }) {
             <span className="truncate">
               {paymentRestrictions.allDisabled
                 ? 'Payment Disabled'
+                : isOutOfStock
+                ? 'Out of Stock'
                 : sizeVariants.length > 0 
                   ? (countInCart > 0 ? `Select Size (${countInCart})` : 'Select Size')
                   : (countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart')}

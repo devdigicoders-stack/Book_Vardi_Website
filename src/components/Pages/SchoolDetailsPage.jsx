@@ -1,14 +1,34 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, Package, Sparkles } from 'lucide-react';
 import ProductCard from '../Products/ProductCard';
 import KitCard from '../Products/KitCard';
+import { fetchKitsFromBackend } from '../../utils/api';
 
 export default function SchoolDetailsPage({ schoolName, onNavigate, kits = [] }) {
-  
-  // Get all kits for this school
-  const schoolKits = useMemo(() => {
-    return Array.isArray(kits) ? kits.filter(kit => kit.school === schoolName) : [];
+  const [loadedKits, setLoadedKits] = useState([]);
+
+  useEffect(() => {
+    if (!kits || kits.length === 0) {
+      fetchKitsFromBackend({ schoolName })
+        .then(res => {
+          setLoadedKits(res?.kits || []);
+        })
+        .catch(() => setLoadedKits([]));
+    }
   }, [kits, schoolName]);
+
+  // Get all approved kits for this school
+  const schoolKits = useMemo(() => {
+    const list = Array.isArray(kits) && kits.length > 0 ? kits : loadedKits;
+    return list.filter(kit => {
+      if (!kit) return false;
+      const appStat = String(kit.approvalStatus || kit.approval_status || '').trim().toLowerCase();
+      const isApproved = appStat === 'approved';
+      const isAvailable = kit.status !== 'deleted' && kit.status !== 'inactive' && !kit.isDeleted;
+      const matchSchool = (kit.school || kit.schoolName || '').trim().toLowerCase() === String(schoolName || '').trim().toLowerCase();
+      return isApproved && isAvailable && matchSchool;
+    });
+  }, [kits, loadedKits, schoolName]);
 
   // Extract all unique individual assets (kit items) from those kits
   const schoolAssets = useMemo(() => {

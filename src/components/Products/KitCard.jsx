@@ -5,16 +5,32 @@ import { resolveImageUrl } from '../../utils/api';
 import KitDetailsModal from './KitDetailsModal'; 
 
 export default function KitCard({ kit }) {
+  if (!kit) return null;
+  const appStat = String(kit.approvalStatus || kit.approval_status || '').trim().toLowerCase();
+  if (appStat !== 'approved' || kit.isDeleted || kit.status === 'deleted' || kit.status === 'inactive') {
+    return null;
+  }
+
   const { addToCart } = useCart();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [imgLoading, setImgLoading] = useState(true);
 
+  const kitName = kit.name || kit.title || 'School Combo Kit';
+  const kitSchool = kit.school || kit.schoolName || '';
+  const kitClass = kit.className || kit.classGrade || '';
+  const kitPrice = Number(kit.bundlePrice !== undefined ? kit.bundlePrice : (kit.price || 0));
+  const kitOriginalPrice = Number(kit.totalMrp !== undefined ? kit.totalMrp : (kit.mrp !== undefined ? kit.mrp : (kit.originalPrice || 0)));
+  const rawItems = kit.items || kit.kitItems || [];
+  const rawImages = Array.isArray(kit.images) && kit.images.length > 0 ? kit.images : (kit.image ? [kit.image] : []);
+
   // Collect all images from the kit itself and its items
-  const allImages = [kit.image, ...(kit.kitItems ? kit.kitItems.map(item => item.image) : [])]
+  const allImages = [...rawImages, ...rawItems.map(item => item.image)]
     .filter(Boolean)
     .map(img => resolveImageUrl(img));
+
+  const discountBadge = kit.discountBadge || (kitOriginalPrice > kitPrice ? `${Math.round(((kitOriginalPrice - kitPrice) / kitOriginalPrice) * 100)}% OFF` : null);
 
   useEffect(() => {
     let interval;
@@ -39,9 +55,9 @@ export default function KitCard({ kit }) {
         onClick={() => setIsModalOpen(true)}
       >
         <div className="relative w-full aspect-square bg-gray-50 overflow-hidden flex items-center justify-center">
-          {kit.discountBadge && (
+          {discountBadge && (
             <span className="absolute top-2 left-2 z-10 text-[9px] font-extrabold tracking-wider px-1.5 py-0.5 rounded uppercase shadow-xs bg-brand-pink text-white">
-              {kit.discountBadge}
+              {discountBadge}
             </span>
           )}
 
@@ -54,7 +70,7 @@ export default function KitCard({ kit }) {
           {currentImg && (
             <img
               src={currentImg}
-              alt={kit.name ? `${kit.name} - School Combo Kit` : 'School Combo Kit'}
+              alt={kitName ? `${kitName} - School Combo Kit` : 'School Combo Kit'}
               className={`absolute inset-0 w-full h-full object-cover text-xs font-semibold italic text-gray-400 leading-snug p-2 text-center transition-opacity duration-300 ${
                 imgLoading ? 'opacity-0' : 'opacity-100'
               }`}
@@ -82,14 +98,14 @@ export default function KitCard({ kit }) {
 
         <div className="p-3 flex flex-col flex-grow">
           <div className="flex items-center justify-between gap-1 mb-1">
-            <span className="text-[9px] font-extrabold text-brand-teal uppercase truncate">{kit.school}</span>
-            <span className="text-[9px] font-bold text-brand-pink whitespace-nowrap">{kit.className}</span>
+            <span className="text-[9px] font-extrabold text-brand-teal uppercase truncate">{kitSchool}</span>
+            <span className="text-[9px] font-bold text-brand-pink whitespace-nowrap">{kitClass}</span>
           </div>
-          <h3 className="text-sm font-bold text-gray-800 line-clamp-2 leading-tight mb-1" title={kit.name}>
-            {kit.name}
+          <h3 className="text-sm font-bold text-gray-800 line-clamp-2 leading-tight mb-1" title={kitName}>
+            {kitName}
           </h3>
           <p className="text-[10px] text-gray-500 line-clamp-2 mb-2 flex-grow">
-            {kit.subtitle}
+            {kit.subtitle || kit.description}
           </p>
 
           <div className="mt-auto pt-2">
@@ -102,9 +118,9 @@ export default function KitCard({ kit }) {
             >
               <span>Customize</span>
               <div className="flex items-center gap-1.5">
-                <span>₹{kit.price}</span>
-                {kit.originalPrice && (
-                  <span className="text-[10px] text-gray-600 line-through">₹{kit.originalPrice}</span>
+                <span>₹{kitPrice}</span>
+                {kitOriginalPrice > kitPrice && (
+                  <span className="text-[10px] text-gray-600 line-through">₹{kitOriginalPrice}</span>
                 )}
               </div>
             </button>

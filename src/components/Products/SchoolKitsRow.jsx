@@ -12,7 +12,12 @@ export default function SchoolKitsRow({ onNavigate }) {
     fetchKitsFromBackend()
       .then((res) => {
         const list = res?.kits || [];
-        setKits(Array.isArray(list) ? list : []);
+        const approvedOnly = (Array.isArray(list) ? list : []).filter(k => {
+          if (!k) return false;
+          const appStat = String(k.approvalStatus || k.approval_status || '').trim().toLowerCase();
+          return appStat === 'approved' && k.status !== 'deleted' && k.status !== 'inactive' && !k.isDeleted;
+        });
+        setKits(approvedOnly);
       })
       .catch(() => setKits([]));
   }, []);
@@ -43,7 +48,11 @@ export default function SchoolKitsRow({ onNavigate }) {
   }, []);
 
   const { filteredKits, hasFilter } = useMemo(() => {
-    const sourceKits = Array.isArray(kits) ? kits : [];
+    const sourceKits = (Array.isArray(kits) ? kits : []).filter(k => {
+      if (!k) return false;
+      const appStat = String(k.approvalStatus || k.approval_status || '').trim().toLowerCase();
+      return appStat === 'approved' && k.status !== 'deleted' && k.status !== 'inactive' && !k.isDeleted;
+    });
 
     const cleanSchool = (filterSchool || '').trim().toLowerCase();
     const isSchoolBlank = !cleanSchool || ['all', 'any school', 'select school', 'all schools'].includes(cleanSchool);
@@ -85,9 +94,9 @@ export default function SchoolKitsRow({ onNavigate }) {
       return matchSchool && matchClass;
     });
 
-    // If specific filter yielded zero results, fallback to showing general "Any School" kits or full list so row is never blank
+    // If specific filter yielded zero results, fallback to showing general "Any School" approved kits or full approved list so row is never blank
     if (matches.length === 0) {
-      const fallbackKits = sourceKits.filter(k => (k.school || '').toLowerCase().includes('any school')) || sourceKits;
+      const fallbackKits = sourceKits.filter(k => (k.school || '').toLowerCase().includes('any school'));
       return { filteredKits: fallbackKits.length > 0 ? fallbackKits : sourceKits, hasFilter: activeFilter };
     }
 
@@ -101,6 +110,10 @@ export default function SchoolKitsRow({ onNavigate }) {
     localStorage.removeItem('grabKitClass');
     window.dispatchEvent(new CustomEvent('kitSearchUpdate', { detail: { school: '', className: 'all' } }));
   };
+
+  if (!kits || kits.length === 0 || (filteredKits.length === 0 && !hasFilter)) {
+    return null;
+  }
 
   return (
     <div id="school-kits-row" className="bg-gray-50/70 pt-4 pb-4 border-b border-gray-100">

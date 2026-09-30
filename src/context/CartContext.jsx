@@ -198,7 +198,7 @@ export function CartProvider({ children }) {
         if (Array.isArray(parsed)) {
           return parsed.filter(p => {
             const appStat = String(p.approvalStatus || '').toLowerCase();
-            return appStat !== 'pending' && appStat !== 'rejected';
+            return appStat === 'approved';
           });
         }
       }
@@ -444,7 +444,7 @@ export function CartProvider({ children }) {
           if (Array.isArray(liveList)) {
             const approvedList = liveList.filter(p => {
               const appStat = String(p.approvalStatus || '').toLowerCase();
-              return appStat !== 'pending' && appStat !== 'rejected';
+              return appStat === 'approved';
             });
             setProducts(approvedList);
             try {
@@ -501,7 +501,7 @@ export function CartProvider({ children }) {
       if (Array.isArray(raw)) {
         const approvedOnly = raw.filter(p => {
           const appStat = String(p.approvalStatus || '').toLowerCase();
-          return appStat !== 'pending' && appStat !== 'rejected';
+          return appStat === 'approved';
         });
         setProducts(approvedOnly);
       }
@@ -704,6 +704,16 @@ export function CartProvider({ children }) {
   };
 
   const openProductDetails = (product) => {
+    if (product) {
+      const isKit = product?.category === 'kits' || product?.bundleType === 'kit' || (Array.isArray(product?.kitItems) && product.kitItems.length > 0);
+      if (isKit) {
+        const appStat = String(product?.approvalStatus || product?.approval_status || '').toLowerCase().trim();
+        if (appStat !== 'approved') {
+          showToast('⚠️ This kit bundle is currently awaiting approval.');
+          return;
+        }
+      }
+    }
     setSelectedProduct(product);
     if (product) {
       addRecentlyViewed(product);
@@ -720,11 +730,32 @@ export function CartProvider({ children }) {
       showToast('Please log in to add stationery to your cart! 🛍️');
       return false;
     }
+
+    const isKit = product?.category === 'kits' || product?.bundleType === 'kit' || (Array.isArray(product?.kitItems) && product.kitItems.length > 0);
+    if (isKit) {
+      const appStat = String(product?.approvalStatus || product?.approval_status || '').toLowerCase().trim();
+      if (appStat !== 'approved') {
+        showToast('⚠️ This kit bundle is awaiting approval and cannot be purchased yet.');
+        return false;
+      }
+    }
+
     const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
     const prodId = product?.id !== undefined ? product.id : product?._id;
     const computedKey = getCartItemKey(product);
     const cartItemId = product?.cartItemId || computedKey;
     const inWishlist = wishlist.some((item) => String(item) === String(prodId));
+
+    const itemStock = Number(
+      product?.stock !== undefined
+        ? product.stock
+        : (product?.stockQuantity !== undefined ? product.stockQuantity : Infinity)
+    );
+
+    if (itemStock <= 0) {
+      showToast(`⚠️ Sorry, "${product.name}${product.selectedSize ? ` (${product.selectedSize})` : ''}" is currently out of stock!`);
+      return false;
+    }
 
     const itemToAdd = {
       ...product,
@@ -735,16 +766,29 @@ export function CartProvider({ children }) {
       selectedColor: product?.selectedColor || undefined,
       selectedVariant: product?.selectedVariant || undefined,
       variantName: product?.variantName || product?.selectedVariant?.name || product?.selectedSize || undefined,
+      stock: itemStock,
+      stockQuantity: itemStock,
       quantity: qtyToAdd,
       selected: true
     };
 
+    let reachedMaxStock = false;
     setCartItems((prev) => {
       const existingIndex = prev.findIndex((item) => (item.cartItemId || getCartItemKey(item)) === cartItemId);
       if (existingIndex > -1) {
+        const existingQty = prev[existingIndex].quantity || 0;
+        const newTotalQty = existingQty + qtyToAdd;
+        if (itemStock !== Infinity && newTotalQty > itemStock) {
+          reachedMaxStock = true;
+          return prev.map((item, idx) =>
+            idx === existingIndex
+              ? { ...item, ...itemToAdd, quantity: Math.max(existingQty, itemStock), selected: true }
+              : item
+          );
+        }
         return prev.map((item, idx) =>
           idx === existingIndex
-            ? { ...item, ...itemToAdd, quantity: item.quantity + qtyToAdd, selected: true }
+            ? { ...item, ...itemToAdd, quantity: newTotalQty, selected: true }
             : item
         );
       }
@@ -754,7 +798,9 @@ export function CartProvider({ children }) {
     const variantLabel = itemToAdd.variantName || itemToAdd.selectedSize || itemToAdd.selectedColor || '';
     const nameWithVariant = `${product.name}${variantLabel ? ` (${variantLabel})` : ''}`;
 
-    if (inWishlist) {
+    if (reachedMaxStock) {
+      showToast(`⚠️ Limited stock: Reached maximum available units (${itemStock}) for "${nameWithVariant}".`);
+    } else if (inWishlist) {
       setWishlist((prev) => prev.filter((item) => String(item) !== String(prodId)));
       showToast(`Moved "${nameWithVariant}" from wishlist to your cart! 🛍️`);
     } else {
@@ -854,7 +900,12 @@ export function CartProvider({ children }) {
         .map((item) => {
           const itemKey = item.cartItemId || getCartItemKey(item);
           if (String(itemKey) === String(id) || String(item.id || item.productId || item._id) === String(id)) {
+            const itemStock = Number(item.stock !== undefined ? item.stock : (item.stockQuantity !== undefined ? item.stockQuantity : Infinity));
             const newQty = item.quantity + delta;
+            if (delta > 0 && itemStock !== Infinity && newQty > itemStock) {
+              showToast(`⚠️ Only ${itemStock} units in stock for ${item.selectedSize ? `size ${item.selectedSize}` : 'this item'}.`);
+              return item;
+            }
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
           return item;
@@ -1284,6 +1335,11 @@ export function CartProvider({ children }) {
       try {
         const response = otp ? await loginWithPhoneOtpBackend({ phone, otp }) : { user: verifiedUser };
         const apiUser = response?.user || verifiedUser || { ...userData, phone };
+        const token = response?.token || userData?.token;
+        if (token) {
+          localStorage.setItem('book_vardi_auth_token', token);
+          localStorage.setItem('token', token);
+        }
         const resolvedProfile = {
           ...EMPTY_USER_PROFILE,
           id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
@@ -1319,6 +1375,11 @@ export function CartProvider({ children }) {
       try {
         const response = await loginWithBackend({ email, password, phone });
         const apiUser = response?.user || { ...userData, email: email || '' };
+        const token = response?.token;
+        if (token) {
+          localStorage.setItem('book_vardi_auth_token', token);
+          localStorage.setItem('token', token);
+        }
         const resolvedProfile = {
           ...EMPTY_USER_PROFILE,
           id: apiUser.id || apiUser._id || `USR-${Date.now().toString().slice(-4)}`,
@@ -1763,6 +1824,7 @@ export function CartProvider({ children }) {
 
   const placeOrder = (orderData) => {
     const randomId = `SC-${Math.floor(1000 + Math.random() * 9000)}`;
+    const randomTracking = orderData.trackingNumber || `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`;
     const today = new Date();
     const formattedDate = today.toLocaleDateString('en-GB', {
       day: '2-digit',
@@ -1778,9 +1840,14 @@ export function CartProvider({ children }) {
       date: formattedDate,
       status: 'Processing',
       statusColor: 'blue',
-      trackingNumber: orderData.trackingNumber || '',
-      courierName: orderData.courierName || '',
-      deliveryMode: orderData.deliveryMode || '',
+      trackingNumber: randomTracking,
+      courierName: orderData.courierName || 'N/A',
+      deliveryMode: orderData.deliveryMode || 'pending_choice',
+      customer: {
+        name: userProfile?.name || orderData?.shippingAddress?.name || 'Student Customer',
+        email: userProfile?.email || orderData?.shippingAddress?.email || '',
+        phone: userProfile?.phone || orderData?.shippingAddress?.phone || ''
+      },
       sellerDetails: orderData.sellerDetails || null,
       selfDeliveryDetails: orderData.selfDeliveryDetails || null,
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
@@ -1823,6 +1890,7 @@ export function CartProvider({ children }) {
         ? `${orderData.shippingAddress.address || ''}, ${orderData.shippingAddress.city || ''} ${orderData.shippingAddress.pincode || ''}`
         : (orderData.shippingAddress || 'Customer Address'),
       trackingNumber: randomTracking,
+      courierName: orderData.courierName || 'N/A',
       items: itemsToBuy.map((item) => ({
         ...item,
         id: item.id || item._id || item.productId,
@@ -1844,27 +1912,55 @@ export function CartProvider({ children }) {
       }))
     };
 
+    try {
+      const existingAdminOrders = JSON.parse(localStorage.getItem('bv_admin_orders') || '[]');
+      localStorage.setItem('bv_admin_orders', JSON.stringify([platformOrder, ...existingAdminOrders]));
+    } catch (e) {}
+
+    try {
+      const existingSellerOrders = JSON.parse(localStorage.getItem('bv_seller_orders') || '[]');
+      localStorage.setItem('bv_seller_orders', JSON.stringify([platformOrder, ...existingSellerOrders]));
+    } catch (e) {}
+
     // Update product stock quantities locally and broadcast
     const updatedProducts = products.map((prod) => {
       const prodIdStr = String(prod.id || prod._id || '');
-      const cartMatch = itemsToBuy.find((c) => {
+      const cartMatches = itemsToBuy.filter((c) => {
         const cartIdStr = String(c.id || c._id || c.productId || '');
         return (cartIdStr && prodIdStr && cartIdStr === prodIdStr) || (c.name && prod.name && c.name.trim().toLowerCase() === prod.name.trim().toLowerCase());
       });
-      if (cartMatch) {
-        const orderedQty = Math.max(1, Number(cartMatch.quantity) || 1);
-        const currentStock = Number(prod.stock !== undefined ? prod.stock : (prod.stockQuantity || 50));
-        const remaining = Math.max(0, currentStock - orderedQty);
 
-        let updatedVariants = prod.sizeVariants;
-        const targetSize = String(cartMatch.selectedSize || cartMatch.size || '').trim();
-        if (targetSize && Array.isArray(prod.sizeVariants)) {
-          updatedVariants = prod.sizeVariants.map((v) => {
-            if (String(v.size || '').trim().toLowerCase() === targetSize.toLowerCase()) {
-              return { ...v, stock: Math.max(0, (Number(v.stock) || 0) - orderedQty) };
-            }
-            return v;
-          });
+      if (cartMatches.length > 0) {
+        let totalOrdered = 0;
+        let updatedVariants = Array.isArray(prod.sizeVariants)
+          ? prod.sizeVariants.map((v) => ({ ...v }))
+          : (Array.isArray(prod.variants) ? prod.variants.map((v) => ({ ...v })) : null);
+
+        cartMatches.forEach((cartMatch) => {
+          const orderedQty = Math.max(1, Number(cartMatch.quantity) || 1);
+          totalOrdered += orderedQty;
+          const targetSize = String(cartMatch.selectedSize || cartMatch.size || cartMatch.variantName || '').trim().toLowerCase();
+
+          if (targetSize && updatedVariants) {
+            updatedVariants = updatedVariants.map((v) => {
+              const vSize = String(v.size || v.measureValue || v.name || '').trim().toLowerCase();
+              if (vSize === targetSize) {
+                const currentVStock = Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : (prod.stock || 50)));
+                const remainingVStock = Math.max(0, currentVStock - orderedQty);
+                return { ...v, stock: remainingVStock, stockQuantity: remainingVStock };
+              }
+              return v;
+            });
+          }
+        });
+
+        // If product has variants, recalculate overall product stock from variants
+        let remaining;
+        if (updatedVariants && updatedVariants.length > 0) {
+          remaining = updatedVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity || 0))), 0);
+        } else {
+          const currentStock = Number(prod.stock !== undefined ? prod.stock : (prod.stockQuantity || 50));
+          remaining = Math.max(0, currentStock - totalOrdered);
         }
 
         return {
@@ -1873,13 +1969,26 @@ export function CartProvider({ children }) {
           stockQuantity: remaining,
           inStock: remaining > 0,
           status: remaining > 0 ? (prod.status || 'active') : 'out-of-stock',
-          sizeVariants: updatedVariants
+          sizeVariants: updatedVariants || prod.sizeVariants,
+          variants: updatedVariants || prod.variants
         };
       }
       return prod;
     });
 
     setProducts(updatedProducts);
+
+    // Keep selectedProduct in sync so the product details page updates immediately
+    setSelectedProduct((prev) => {
+      if (!prev) return null;
+      const prevId = String(prev.id || prev._id || '');
+      const match = updatedProducts.find((p) => String(p.id || p._id || '') === prevId);
+      return match ? { ...prev, ...match } : prev;
+    });
+
+    try {
+      localStorage.setItem('bv_sync_products', JSON.stringify(updatedProducts));
+    } catch (e) {}
 
     setLastPlacedOrder(newOrder);
     setCartItems(unselectedItems);

@@ -3,6 +3,7 @@ import axios from 'axios';
 const fallbackBaseUrl = 'http://localhost:5000/api';
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || fallbackBaseUrl;
 const apiBaseUrl = (configuredBaseUrl || fallbackBaseUrl).replace(/\/+$/, '');
+export const API_BASE_URL = apiBaseUrl;
 export const backendEnabled = import.meta.env.VITE_USE_BACKEND !== 'false';
 
 export const apiClient = axios.create({
@@ -177,7 +178,8 @@ export async function requestApi(endpoint, options = {}) {
     return response.data;
   } catch (error) {
     const responseData = error?.response?.data;
-    const message = responseData?.message || error?.message || 'API request failed';
+    const errorDetail = responseData?.error ? `: ${responseData.error}` : '';
+    const message = (responseData?.message || error?.message || 'API request failed') + errorDetail;
     if (options.fallback !== undefined) {
       return options.fallback;
     }
@@ -562,6 +564,18 @@ export async function fetchRecommendedProductsFromBackend(options = {}) {
 export function normalizeKit(rawKit) {
   if (!rawKit || typeof rawKit !== 'object') return null;
 
+  // Do not show kit to website until approved and approvalStatus is Approved
+  const rawApproval = String(rawKit.approvalStatus || rawKit.approval_status || '').trim().toLowerCase();
+  if (rawApproval !== 'approved') {
+    return null;
+  }
+
+  // Ensure kit is not deleted or inactive
+  const kitStatus = String(rawKit.status || '').trim().toLowerCase();
+  if (kitStatus === 'deleted' || kitStatus === 'inactive' || rawKit.isDeleted === true) {
+    return null;
+  }
+
   const id = rawKit.id || rawKit._id || `kit-${Math.random().toString(36).substring(2, 9)}`;
   const name = rawKit.name || rawKit.title || 'Official School Kit';
   const school = rawKit.school || rawKit.schoolName || 'Any School';
@@ -593,6 +607,8 @@ export function normalizeKit(rawKit) {
 
   return {
     ...rawKit,
+    approvalStatus: 'Approved',
+    isApproved: true,
     id,
     name,
     school,
@@ -614,13 +630,22 @@ export function normalizeKit(rawKit) {
 export async function fetchKitsFromBackend(params = {}) {
   const res = await requestApi('/kits', { method: 'GET', params, fallback: { kits: [], count: 0 } });
   const rawList = res?.kits || (Array.isArray(res) ? res : []);
-  const normalizedList = Array.isArray(rawList) ? rawList.map(normalizeKit).filter(Boolean) : [];
+  const normalizedList = Array.isArray(rawList)
+    ? rawList
+        .map(normalizeKit)
+        .filter(Boolean)
+        .filter(k => String(k.approvalStatus || k.approval_status || '').trim().toLowerCase() === 'approved')
+    : [];
   return { kits: normalizedList, count: normalizedList.length };
 }
 
 export async function fetchKitByIdFromBackend(id) {
   const kit = await requestApi(`/kits/${id}`, { method: 'GET', fallback: null });
-  return kit ? normalizeKit(kit) : null;
+  const normalized = kit ? normalizeKit(kit) : null;
+  if (!normalized || String(normalized.approvalStatus || normalized.approval_status || '').trim().toLowerCase() !== 'approved') {
+    return null;
+  }
+  return normalized;
 }
 
 // Location & School/Class Recommendations API
@@ -768,22 +793,146 @@ export async function registerSellerInBackend(formData) {
 }
 
 export async function submitSchoolBulkOrderInBackend(payload) {
-  const phone = payload?.contactPhone || payload?.phone || '';
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  const userProfileStr = localStorage.getItem('book_vardi_user_profile');
+  let userId = payload?.userId || '';
+  let phone = payload?.userPhone || payload?.contactPhone || payload?.phone || '';
+  let email = payload?.userEmail || payload?.contactEmail || payload?.email || '';
+
+  if (userProfileStr) {
+    try {
+      const u = JSON.parse(userProfileStr);
+      if (!userId) userId = u.id || u._id || '';
+      if (!phone) phone = u.phone || u.mobile || '';
+      if (!email) email = u.email || '';
+    } catch (e) {}
+  }
+
+  const finalPayload = {
+    ...payload,
+    ...(userId ? { userId } : {}),
+    ...(phone ? { userPhone: phone } : {}),
+    ...(email ? { userEmail: email } : {})
+  };
+
   return requestApi('/schools/bulk-order', {
     method: 'POST',
-    data: payload,
-    headers: phone ? { 'x-user-phone': phone } : {}
+    data: finalPayload,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(phone ? { 'x-user-phone': phone } : {}),
+      ...(userId ? { 'x-user-id': userId } : {}),
+      ...(email ? { 'x-user-email': email } : {})
+    }
   });
 }
 
-export async function fetchCustomerSchoolBulkOrdersApi(phone = '') {
-  return requestApi('/schools/bulk-orders/list', {
+export async function fetchCustomerSchoolBulkOrdersApi(phone = '', userId = '', email = '') {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  const userProfileStr = localStorage.getItem('book_vardi_user_profile');
+  let finalUserId = userId;
+  let finalPhone = phone;
+  let finalEmail = email;
+
+  if (userProfileStr) {
+    try {
+      const u = JSON.parse(userProfileStr);
+      if (!finalUserId) finalUserId = u.id || u._id || '';
+      if (!finalPhone) finalPhone = u.phone || u.mobile || '';
+      if (!finalEmail) finalEmail = u.email || '';
+    } catch (e) {}
+  }
+
+  // Also gather any local referenceIds stored in the browser
+  const localRefIds = [];
+  try {
+    const list1 = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
+    const list2 = JSON.parse(localStorage.getItem('bv_sync_school_orders') || '[]');
+    [...list1, ...list2].forEach(o => {
+      const r = o.referenceId || o.refId || (typeof o.id === 'string' && o.id.startsWith('BULK-') ? o.id : '');
+      if (r && !localRefIds.includes(r)) {
+        localRefIds.push(r);
+      }
+    });
+  } catch (e) {}
+
+  const queryParams = new URLSearchParams();
+  if (finalPhone) queryParams.append('phone', finalPhone);
+  if (finalUserId) queryParams.append('userId', finalUserId);
+  if (finalEmail) queryParams.append('email', finalEmail);
+  if (localRefIds.length > 0) queryParams.append('referenceIds', localRefIds.join(','));
+  const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+  return requestApi(`/schools/bulk-orders/my-orders${qs}`, {
     method: 'GET',
-    headers: phone ? { 'x-user-phone': phone } : {},
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(finalPhone ? { 'x-user-phone': finalPhone } : {}),
+      ...(finalUserId ? { 'x-user-id': finalUserId } : {}),
+      ...(finalEmail ? { 'x-user-email': finalEmail } : {}),
+      ...(localRefIds.length > 0 ? { 'x-reference-ids': localRefIds.join(',') } : {})
+    },
     fallback: { orders: [] }
   });
 }
 
+export async function fetchSingleBulkOrderApi(orderIdOrRef) {
+  if (!orderIdOrRef) return { success: false, message: 'No ID provided' };
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  const userProfileStr = localStorage.getItem('book_vardi_user_profile');
+  let finalUserId = '';
+  let finalPhone = '';
+  let finalEmail = '';
+
+  if (userProfileStr) {
+    try {
+      const u = JSON.parse(userProfileStr);
+      finalUserId = u.id || u._id || '';
+      finalPhone = u.phone || u.mobile || '';
+      finalEmail = u.email || '';
+    } catch (e) {}
+  }
+
+  return requestApi(`/schools/bulk-orders/${encodeURIComponent(orderIdOrRef)}`, {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(finalPhone ? { 'x-user-phone': finalPhone } : {}),
+      ...(finalUserId ? { 'x-user-id': finalUserId } : {}),
+      ...(finalEmail ? { 'x-user-email': finalEmail } : {})
+    },
+    fallback: { success: false, order: null }
+  });
+}
+
+export async function submitBuyerCounterDemandApi(orderId, quoteId, counterData) {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  return requestApi(`/schools/bulk-orders/${orderId}/quotations/${quoteId}/counter`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    data: {
+      ...counterData,
+      callerRole: 'consumer'
+    }
+  });
+}
+
+export async function approveSellerQuotationApi(orderId, quoteId, payload = {}) {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  return requestApi(`/schools/bulk-orders/${orderId}/approve-quote`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    data: {
+      quoteId,
+      ...payload,
+      callerRole: 'consumer'
+    }
+  });
+}
 
 export async function submitContactMessageApi(formData) {
   return requestApi('/contact', {
