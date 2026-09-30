@@ -1883,7 +1883,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                   <XCircle size={14} className="text-rose-600 shrink-0" />
                                   <span>Order Cancelled by Customer ({order.cancelledBy || 'User'})</span>
                                 </div>
-                                {(order.paymentStatus === 'paid' || order.paymentStatus === 'Paid' || (order.paymentMethod && String(order.paymentMethod).toUpperCase() !== 'COD')) && (
+                                {(String(order.paymentStatus || '').toLowerCase() === 'paid' || (!/cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || '')) && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid')) && (
                                   <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-md flex items-center gap-1">
                                     <CreditCard size={11} className="text-emerald-700" />
                                     <span>Refund Initiated (48 Working Hrs)</span>

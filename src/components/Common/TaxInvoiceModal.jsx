@@ -8,7 +8,8 @@ import {
   DollarSign,
   Truck,
   ExternalLink,
-  RotateCcw
+  RotateCcw,
+  Clock
 } from 'lucide-react';
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
@@ -62,6 +63,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
 
   const orderStatus = String(order.status || order.overallStatus || '').toLowerCase();
   const isCancelled = orderStatus === 'cancelled' || order.isCancelled || Boolean(order.cancelledAt);
+  const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
+  const isPaymentVerified = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
 
   const confirmed = isCancelled || orderStatus === 'confirmed' || orderStatus === 'shipped' || orderStatus === 'out for delivery' || orderStatus === 'out_for_delivery' || orderStatus === 'delivered' || orderStatus === 'processing' || order.paymentStatus === 'paid' || order.paymentStatus === 'Paid';
 
@@ -493,9 +496,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
                       <ShieldCheck size={13} /> Refund Processed
                     </span>
+                  ) : isCod && !isPaymentVerified ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">
+                      <Clock size={13} /> Unpaid (Pay on Delivery)
+                    </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      <ShieldCheck size={13} /> {order.paymentStatus === 'paid' || order.paymentStatus === 'Paid' || confirmed ? 'Payment Verified' : 'Payment Confirmed'}
+                      <ShieldCheck size={13} /> Payment Verified
                     </span>
                   )}
                   <span className="text-gray-600 text-[11px] font-medium">

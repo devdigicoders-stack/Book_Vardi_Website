@@ -343,6 +343,7 @@ export default function CheckoutPage({ onNavigate }) {
         total: grandTotal,
         shippingAddress: address,
         paymentMethod: label,
+        paymentStatus: paymentMethod === 'cod' ? 'Pending' : 'Paid',
         razorpayPaymentId: razorpayInfo.paymentId || null,
         razorpayOrderId: razorpayInfo.orderId || null,
         deliverySpeed: deliverySpeed === 'express' ? 'Express Campus Priority (1-2 Days)' : 'Standard Delivery (3-5 Days)',

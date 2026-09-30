@@ -509,7 +509,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                 <span className="text-[10px] text-gray-500 font-medium">Assigned Courier Partner</span>
                 <p className="font-extrabold text-sm text-gray-900">{courierPartnerName}</p>
                 <p className="text-[11px] text-gray-600 mt-0.5">
-                  AWB Code: {awbNumber ? <strong className="font-mono text-brand-teal">{awbNumber}</strong> : <span className="text-gray-400">Will be generated on pickup</span>}
+                  AWB Code: {awbNumber ? <strong className="font-mono text-brand-teal">{awbNumber}</strong> : <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Not Assigned</span>}
                 </p>
                 {sellerStoreName && (
                   <p className="text-[10px] text-gray-500 mt-1">Dispatched from: <strong>{sellerStoreName}</strong></p>
