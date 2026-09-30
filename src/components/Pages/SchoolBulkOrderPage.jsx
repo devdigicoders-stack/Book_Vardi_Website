@@ -51,10 +51,13 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
   const [state, setState] = useState('');
   const [pincode, setPincode] = useState('');
 
+  // Helper to generate unique requirement item ID
+  const generateReqId = () => `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
   // Requirement Demands List (dynamic array)
   const [requirements, setRequirements] = useState([
     {
-      id: Date.now(),
+      id: generateReqId(),
       category: 'Custom School Uniforms',
       itemName: '',
       quantity: 100,
@@ -72,6 +75,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedReferenceId, setSubmittedReferenceId] = useState(null);
+  const [submittedOrderData, setSubmittedOrderData] = useState(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   // Expected Quotation Receiving Date State
@@ -125,7 +129,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     setRequirements((prev) => [
       ...prev,
       {
-        id: Date.now(),
+        id: generateReqId(),
         category: 'Custom School Uniforms',
         itemName: '',
         quantity: 100,
@@ -319,8 +323,8 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     if (backendEnabled) {
       try {
         const res = await submitSchoolBulkOrderInBackend(payload);
-        if (res?.referenceId || res?.data?.referenceId || res?.order?.referenceId) {
-          finalRefId = res?.referenceId || res?.data?.referenceId || res?.order?.referenceId;
+        if (res?.referenceId || res?.data?.referenceId || res?.order?.referenceId || res?.bulkOrder?.referenceId) {
+          finalRefId = res?.referenceId || res?.data?.referenceId || res?.order?.referenceId || res?.bulkOrder?.referenceId;
         }
         savedSuccessfully = true;
       } catch (err) {
@@ -331,7 +335,13 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     // Always store to local storage backup so inquiry is immediately visible in customer profile
     try {
       const localOrders = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
-      const savedPayload = { ...payload, referenceId: finalRefId, createdAt: new Date().toISOString() };
+      const savedPayload = {
+        ...payload,
+        id: finalRefId,
+        _id: finalRefId,
+        referenceId: finalRefId,
+        createdAt: new Date().toISOString()
+      };
       localOrders.unshift(savedPayload);
       localStorage.setItem('bv_customer_bulk_orders', JSON.stringify(localOrders));
       savedSuccessfully = true;
@@ -454,13 +464,17 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                 type="button"
                 onClick={() => {
                   setSubmittedReferenceId(null);
+                  setSubmittedOrderData(null);
                   setRequirements([
                     {
-                      id: Date.now(),
+                      id: generateReqId(),
                       category: 'Custom School Uniforms',
                       itemName: '',
                       quantity: 100,
+                      budgetPerUnit: 500,
                       sampleImage: '',
+                      sampleImages: [],
+                      customizations: '',
                       notes: ''
                     }
                   ]);
@@ -618,7 +632,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                     onChange={(e) => setInstitutionType(e.target.value)}
                     className="w-full bg-gray-50/70 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs focus:ring-2 focus:ring-brand-teal focus:bg-white transition-all"
                   >
-                    <option value="K-12 School">K-12 School (CBSE / ICSE / State Board)</option>
+                    <option value="K-12 School">School (CBSE / ICSE / State Board)</option>
                     <option value="College / University">College / University</option>
                     <option value="Preschool / Play School">Preschool / Play School</option>
                     <option value="Coaching Institute">Coaching Institute / Academy</option>
@@ -813,7 +827,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
               <div className="space-y-4">
                 {requirements.map((reqItem, index) => (
                   <div
-                    key={reqItem.id}
+                    key={reqItem.id || `req-item-${index}`}
                     className="p-5 rounded-2xl border border-gray-200 bg-gradient-to-r from-gray-50/80 via-white to-gray-50/50 space-y-4 relative group"
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-gray-100">
@@ -910,7 +924,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
 
                         <div className="flex flex-wrap gap-2 items-center">
                           {Array.isArray(reqItem.sampleImages) && reqItem.sampleImages.map((imgSrc, imgIdx) => (
-                            <div key={imgIdx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-brand-teal/40 shadow-2xs group/img">
+                            <div key={`${reqItem.id || index}-sample-${imgIdx}`} className="relative w-16 h-16 rounded-xl overflow-hidden border border-brand-teal/40 shadow-2xs group/img">
                               <img src={imgSrc} alt={`Sample ${imgIdx + 1}`} className="w-full h-full object-cover" />
                               <button
                                 type="button"
@@ -1173,7 +1187,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                     </thead>
                     <tbody className="divide-y divide-gray-200 text-xs">
                       {requirements.map((r, idx) => (
-                        <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                        <tr key={r.id || `preview-item-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                           <td className="py-2.5 px-3 font-bold text-gray-500">{idx + 1}</td>
                           <td className="py-2.5 px-3">
                             <p className="font-bold text-gray-900">{r.itemName}</p>

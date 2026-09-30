@@ -25,12 +25,16 @@ import {
   Truck,
   ExternalLink,
   Lock,
-  Printer
+  Printer,
+  SlidersHorizontal
 } from 'lucide-react';
 import TaxInvoiceModal from '../Common/TaxInvoiceModal';
+import NegotiationTimelineDiv from './NegotiationTimelineDiv';
+import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
+import { fetchSingleBulkOrderApi } from '../../utils/api';
 
 export default function BulkOrderPreviewModal({
-  order,
+  order: propOrder,
   onClose,
   userRole = 'seller', // 'consumer' | 'admin' | 'seller'
   initialTab = 'specs',
@@ -42,6 +46,35 @@ export default function BulkOrderPreviewModal({
   onAcceptDirect, // (orderId) => void
   sellerUser = null // Current seller info when userRole === 'seller'
 }) {
+  const [internalOrder, setInternalOrder] = useState(propOrder);
+
+  useEffect(() => {
+    setInternalOrder(propOrder);
+  }, [propOrder]);
+
+  // Live fetch authoritative order with all quotations directly from backend
+  useEffect(() => {
+    const targetId = propOrder?.referenceId || propOrder?._id || propOrder?.id;
+    if (targetId && (userRole === 'consumer' || userRole === 'admin')) {
+      fetchSingleBulkOrderApi(targetId).then(res => {
+        if (res?.success && res.order) {
+          setInternalOrder(res.order);
+          ['bv_customer_bulk_orders', 'bv_sync_school_orders'].forEach(key => {
+            try {
+              const list = JSON.parse(localStorage.getItem(key) || '[]');
+              const idx = list.findIndex(o => String(o.id || o._id) === String(targetId) || o.referenceId === targetId);
+              if (idx !== -1) {
+                list[idx] = res.order;
+                localStorage.setItem(key, JSON.stringify(list));
+              }
+            } catch (e) {}
+          });
+        }
+      }).catch(() => {});
+    }
+  }, [propOrder?._id, propOrder?.referenceId, userRole]);
+
+  const order = internalOrder || propOrder;
   if (!order) return null;
 
   // Active Lightbox / Image Preview
@@ -53,6 +86,12 @@ export default function BulkOrderPreviewModal({
 
   // Active Tab inside modal
   const [modalSubTab, setModalSubTab] = useState(initialTab || 'specs'); // 'specs', 'distribution', 'quotes', 'submit_quote'
+
+  useEffect(() => {
+    if (initialTab) {
+      setModalSubTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Admin Distribution State
   const [distributeMode, setDistributeMode] = useState(order.assignmentMode || 'direct');
@@ -139,6 +178,29 @@ export default function BulkOrderPreviewModal({
     }));
   };
 
+  // Extended Interactive Timeline Div State
+  const [expandedTimelineQuoteId, setExpandedTimelineQuoteId] = useState(null);
+  const [selectedTimelineVersion, setSelectedTimelineVersion] = useState(null);
+
+  const toggleTimelineForQuote = (qId, ver = null) => {
+    if (expandedTimelineQuoteId === qId && (ver === null || ver === selectedTimelineVersion)) {
+      setExpandedTimelineQuoteId(null);
+      setSelectedTimelineVersion(null);
+    } else {
+      setExpandedTimelineQuoteId(qId);
+      setSelectedTimelineVersion(ver);
+    }
+  };
+
+  // Version Comparison Modal State
+  const [comparingQuote, setComparingQuote] = useState(null);
+  const [isComparisonOpen, setIsComparisonOpen] = useState(false);
+
+  const handleOpenVersionComparison = (q) => {
+    setComparingQuote(q);
+    setIsComparisonOpen(true);
+  };
+
   const handleOpenCounterDrawer = (quote) => {
     setCounterDrawerQuote(quote);
     setCounterTargetBudget(quote.latestBuyerCounter?.targetBudget || quote.quoteAmount || '');
@@ -146,13 +208,30 @@ export default function BulkOrderPreviewModal({
     setCounterAdvancePct(quote.latestBuyerCounter?.proposedAdvancePercentage || 10);
     setCounterNotes(quote.latestBuyerCounter?.notes || '');
     if (Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0) {
-      setCounterItemDemands(quote.itemPrices.map(ip => ({
-        itemId: ip.itemId,
-        itemName: ip.itemName,
-        quantity: ip.quantity || 1,
-        currentSellerPrice: ip.pricePerUnit || 0,
-        targetUnitPrice: ip.customerBudget || ip.pricePerUnit || 0,
-        targetTotalPrice: (ip.quantity || 1) * (ip.customerBudget || ip.pricePerUnit || 0),
+      setCounterItemDemands(quote.itemPrices.map(ip => {
+        const matchingCounter = quote.latestBuyerCounter?.itemDemands?.find(
+          cd => String(cd.itemId) === String(ip.itemId) || cd.itemName === ip.itemName
+        );
+        const qty = Number(matchingCounter?.quantity || ip.quantity) || 1;
+        const targetRate = Number(matchingCounter?.targetUnitPrice ?? ip.customerBudget ?? ip.pricePerUnit) || 0;
+        return {
+          itemId: ip.itemId,
+          itemName: ip.itemName,
+          quantity: qty,
+          currentSellerPrice: ip.pricePerUnit || 0,
+          targetUnitPrice: targetRate,
+          targetTotalPrice: qty * targetRate,
+          notes: matchingCounter?.notes || ''
+        };
+      }));
+    } else if (Array.isArray(order?.requirements) && order.requirements.length > 0) {
+      setCounterItemDemands(order.requirements.map((r, idx) => ({
+        itemId: r._id || r.id || idx,
+        itemName: r.itemName,
+        quantity: Number(r.quantity) || 1,
+        currentSellerPrice: Number(r.sellerPricePerUnit || quote.unitPrice) || 0,
+        targetUnitPrice: Number(r.budgetPerUnit || quote.unitPrice) || 0,
+        targetTotalPrice: (Number(r.quantity) || 1) * (Number(r.budgetPerUnit || quote.unitPrice) || 0),
         notes: ''
       })));
     } else {
@@ -160,17 +239,35 @@ export default function BulkOrderPreviewModal({
     }
   };
 
+  const handleCounterItemQuantityChange = (index, val) => {
+    setCounterItemDemands(prev => {
+      const updated = [...prev];
+      const numQty = val === '' ? '' : Math.max(1, parseInt(val, 10) || 1);
+      const effectiveQty = Number(numQty) || 0;
+      const targetRate = Number(updated[index].targetUnitPrice) || 0;
+      updated[index] = {
+        ...updated[index],
+        quantity: numQty,
+        targetTotalPrice: effectiveQty * targetRate
+      };
+      const sum = updated.reduce((s, it) => s + (Number(it.targetTotalPrice) || 0), 0);
+      if (sum > 0) setCounterTargetBudget(sum);
+      return updated;
+    });
+  };
+
   const handleCounterItemPriceChange = (index, val) => {
     setCounterItemDemands(prev => {
       const updated = [...prev];
-      const targetRate = Math.max(0, Number(val) || 0);
+      const targetRate = val === '' ? '' : Math.max(0, Number(val) || 0);
+      const effectiveRate = Number(targetRate) || 0;
       const qty = Number(updated[index].quantity) || 1;
       updated[index] = {
         ...updated[index],
         targetUnitPrice: targetRate,
-        targetTotalPrice: targetRate * qty
+        targetTotalPrice: effectiveRate * qty
       };
-      const sum = updated.reduce((s, it) => s + (it.targetTotalPrice || 0), 0);
+      const sum = updated.reduce((s, it) => s + (Number(it.targetTotalPrice) || 0), 0);
       if (sum > 0) setCounterTargetBudget(sum);
       return updated;
     });
@@ -182,19 +279,39 @@ export default function BulkOrderPreviewModal({
     setIsSubmittingCounter(true);
     try {
       const qId = counterDrawerQuote._id || counterDrawerQuote.id;
-      const oId = order._id || order.id;
+      const oId = order._id || order.id || order.referenceId;
+      const cleanItemDemands = counterItemDemands.map(it => {
+        const qty = Math.max(1, Number(it.quantity) || 1);
+        const rate = Math.max(0, Number(it.targetUnitPrice) || 0);
+        return {
+          itemId: it.itemId,
+          itemName: it.itemName,
+          quantity: qty,
+          currentSellerPrice: Number(it.currentSellerPrice) || 0,
+          targetUnitPrice: rate,
+          targetTotalPrice: qty * rate,
+          notes: it.notes || ''
+        };
+      });
+      const totalUnits = cleanItemDemands.reduce((s, it) => s + it.quantity, 0);
+      const computedBudget = Number(counterTargetBudget) || cleanItemDemands.reduce((s, it) => s + it.targetTotalPrice, 0);
+
       const payload = {
-        targetBudget: Number(counterTargetBudget) || 0,
+        targetBudget: computedBudget,
+        unitPrice: totalUnits > 0 ? Math.round(computedBudget / totalUnits) : 0,
+        totalQuantity: totalUnits,
         requestedDeliveryDays: Number(counterDeliveryDays) || 7,
         proposedAdvancePercentage: Number(counterAdvancePct) || 0,
-        proposedAdvanceAmount: counterTargetBudget ? Math.round((Number(counterTargetBudget) * (Number(counterAdvancePct) || 0)) / 100) : 0,
-        itemDemands: counterItemDemands,
+        proposedAdvanceAmount: computedBudget ? Math.round((computedBudget * (Number(counterAdvancePct) || 0)) / 100) : 0,
+        itemDemands: cleanItemDemands,
         notes: counterNotes
       };
       const res = await onSubmitCounterDemand(oId, qId, payload);
       if (res && res.success !== false) {
         setCounterDrawerQuote(null);
       }
+    } catch (err) {
+      console.error('Error submitting counter demand:', err);
     } finally {
       setIsSubmittingCounter(false);
     }
@@ -1131,13 +1248,29 @@ export default function BulkOrderPreviewModal({
 
                             {/* Negotiation Version & Stage Pill */}
                             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                              <span className="bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full">
-                                Version {quote.currentVersion || 1}
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
+                                className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 shadow-2xs ${
+                                  expandedTimelineQuoteId === qId
+                                    ? 'bg-teal-700 text-white ring-2 ring-teal-500'
+                                    : 'bg-slate-100 hover:bg-teal-50 text-slate-800 hover:text-teal-900 border border-slate-300'
+                                }`}
+                                title="Click to view full negotiation timeline and version history"
+                              >
+                                <Clock size={11} className={expandedTimelineQuoteId === qId ? 'text-white' : 'text-teal-700'} />
+                                <span>Version {quote.currentVersion || 1}</span>
+                                <span className="text-[9px] opacity-80">{expandedTimelineQuoteId === qId ? '▲ Hide' : '▼ Timeline'}</span>
+                              </button>
                               {quote.negotiationStage === 'buyer_countered' && (
-                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 2)}
+                                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer transition-all"
+                                  title="Click to view buyer counter-demand timeline"
+                                >
                                   <Clock size={10} /> 2nd Version Counter-Demand Sent
-                                </span>
+                                </button>
                               )}
                               {quote.negotiationStage === 'seller_accepted_counter' && (
                                 <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -1176,26 +1309,54 @@ export default function BulkOrderPreviewModal({
                                 </span>
                               )}
                             </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 font-mono text-[11px]">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
                               {Number(quote.latestBuyerCounter.targetBudget) > 0 && (
                                 <div>
-                                  <span className="text-gray-400 block text-[10px]">Target Budget:</span>
-                                  <strong className="text-purple-900">₹{Number(quote.latestBuyerCounter.targetBudget).toLocaleString()}</strong>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Target Budget:</span>
+                                  <strong className="text-purple-900 font-extrabold">₹{Number(quote.latestBuyerCounter.targetBudget).toLocaleString()}</strong>
+                                </div>
+                              )}
+                              {(Number(quote.latestBuyerCounter.totalQuantity) > 0 || totalQtyNum > 0) && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Demanded Quantity:</span>
+                                  <strong className="text-purple-900 font-extrabold">{Number(quote.latestBuyerCounter.totalQuantity || totalQtyNum)} Units</strong>
+                                </div>
+                              )}
+                              {(Number(quote.latestBuyerCounter.unitPrice) > 0 || (Number(quote.latestBuyerCounter.targetBudget) > 0 && totalQtyNum > 0)) && (
+                                <div>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Demanded Unit Rate:</span>
+                                  <strong className="text-purple-900 font-extrabold">
+                                    ₹{Number(quote.latestBuyerCounter.unitPrice || Math.round(Number(quote.latestBuyerCounter.targetBudget) / (Number(quote.latestBuyerCounter.totalQuantity) || totalQtyNum || 1))).toLocaleString()} / unit
+                                  </strong>
                                 </div>
                               )}
                               {Number(quote.latestBuyerCounter.requestedDeliveryDays) > 0 && (
                                 <div>
-                                  <span className="text-gray-400 block text-[10px]">Requested Lead Time:</span>
-                                  <strong className="text-purple-900">{quote.latestBuyerCounter.requestedDeliveryDays} Days</strong>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Requested Lead Time:</span>
+                                  <strong className="text-purple-900 font-extrabold">{quote.latestBuyerCounter.requestedDeliveryDays} Days</strong>
                                 </div>
                               )}
                               {Number(quote.latestBuyerCounter.proposedAdvancePercentage) > 0 && (
                                 <div>
-                                  <span className="text-gray-400 block text-[10px]">Proposed Prepayment:</span>
-                                  <strong className="text-purple-900">{quote.latestBuyerCounter.proposedAdvancePercentage}% Advance</strong>
+                                  <span className="text-gray-400 block text-[10px] font-sans font-medium">Proposed Prepayment:</span>
+                                  <strong className="text-purple-900 font-extrabold">{quote.latestBuyerCounter.proposedAdvancePercentage}% Advance</strong>
                                 </div>
                               )}
                             </div>
+                            {Array.isArray(quote.latestBuyerCounter.itemDemands) && quote.latestBuyerCounter.itemDemands.length > 0 && (
+                              <div className="pt-1.5 border-t border-purple-100">
+                                <span className="text-[10px] text-gray-500 font-semibold block mb-1">Demanded Line Items & Quantities:</span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {quote.latestBuyerCounter.itemDemands.map((dm, dmIdx) => (
+                                    <span key={dm.itemId || dmIdx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-purple-200 text-[10px] text-purple-900 font-bold">
+                                      <span>{dm.itemName}:</span>
+                                      <span className="text-purple-700">{dm.quantity} units</span>
+                                      {dm.targetUnitPrice > 0 && <span className="text-gray-400">@ ₹{dm.targetUnitPrice}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             {quote.latestBuyerCounter.notes && (
                               <p className="text-[11px] text-purple-950 italic pt-1 border-t border-purple-100">
                                 "{quote.latestBuyerCounter.notes}"
@@ -1354,74 +1515,40 @@ export default function BulkOrderPreviewModal({
                           );
                         })()}
 
-                        {/* Collapsible Negotiation Timeline */}
-                        {Array.isArray(quote.negotiationHistory) && quote.negotiationHistory.length > 0 && (
+                        {/* Interactive Extended Negotiation Timeline Div */}
+                        {expandedTimelineQuoteId === qId ? (
+                          <div className="pt-2 animate-in fade-in duration-200">
+                            <NegotiationTimelineDiv
+                              quotation={quote}
+                              order={order}
+                              userRole={userRole}
+                              initialSelectedVersion={selectedTimelineVersion || quote.currentVersion || 1}
+                              onClose={() => toggleTimelineForQuote(qId)}
+                              onOpenCounterDemand={onSubmitCounterDemand ? () => handleOpenCounterDrawer(quote) : null}
+                              onApproveQuote={onApproveQuote ? () => handleOpenAcceptQuoteModal(quote) : null}
+                              onOpenComparisonModal={() => handleOpenVersionComparison(quote)}
+                            />
+                          </div>
+                        ) : (
                           <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/50">
                             <button
                               type="button"
-                              onClick={() => toggleHistory(qId)}
+                              onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
                               className="w-full px-3.5 py-2 flex items-center justify-between text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
                             >
                               <span className="flex items-center gap-1.5">
                                 <Clock size={13} className="text-teal-700" />
-                                Negotiation Rounds ({quote.negotiationHistory.length} Rounds)
+                                <span>Negotiation Timeline & Version History</span>
+                                {(quote.currentVersion > 1 || (quote.negotiationHistory && quote.negotiationHistory.length > 0)) && (
+                                  <span className="text-[10px] bg-teal-100 text-teal-800 font-extrabold px-2 py-0.5 rounded-full">
+                                    v{quote.currentVersion || 1} ({quote.negotiationHistory?.length || 1} rounds)
+                                  </span>
+                                )}
                               </span>
                               <span className="text-[11px] text-teal-700 font-extrabold">
-                                {expandedHistoryQuotes[qId] ? 'Hide Timeline ▲' : 'View Timeline ▼'}
+                                View Interactive Timeline ▼
                               </span>
                             </button>
-                            {expandedHistoryQuotes[qId] && (
-                              <div className="p-3 space-y-2 border-t border-gray-200 bg-white">
-                                {quote.negotiationHistory.map((roundItem, rIdx) => {
-                                  const isBuyer = roundItem.senderRole === 'buyer';
-                                  return (
-                                    <div
-                                      key={rIdx}
-                                      className={`p-2.5 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
-                                        isBuyer ? 'bg-purple-50/50 border-purple-200' : 'bg-teal-50/50 border-teal-200'
-                                      }`}
-                                    >
-                                      <div className="space-y-0.5">
-                                        <div className="flex items-center gap-2">
-                                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                                            isBuyer ? 'bg-purple-600 text-white' : 'bg-teal-700 text-white'
-                                          }`}>
-                                            Round {roundItem.round || (rIdx + 1)} • {isBuyer ? 'School / Buyer' : 'Vendor'}
-                                          </span>
-                                          <span className="text-[11px] text-gray-500 font-medium">
-                                            {new Date(roundItem.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                          </span>
-                                        </div>
-                                        {roundItem.notes && (
-                                          <p className="text-[11px] text-gray-700 italic">"{roundItem.notes}"</p>
-                                        )}
-                                      </div>
-                                      <div className="flex flex-wrap items-center gap-1.5 sm:text-right font-mono text-[11px]">
-                                        {Number(roundItem.quoteAmount) > 0 && (
-                                          <span className="font-extrabold text-gray-900 bg-white px-2 py-0.5 rounded border border-gray-200">
-                                            ₹{Number(roundItem.quoteAmount).toLocaleString()}
-                                          </span>
-                                        )}
-                                        {Number(roundItem.prepaymentPercentage) > 0 && (
-                                          <span className={`px-2 py-0.5 rounded border ${
-                                            roundItem.prepaymentRaised ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold' : 'bg-white text-gray-700 border-gray-200'
-                                          }`}>
-                                            {roundItem.prepaymentPercentage}% Adv {roundItem.prepaymentRaised ? '⚠️ Raised' : ''}
-                                          </span>
-                                        )}
-                                        {Number(roundItem.estimatedDeliveryDays) > 0 && (
-                                          <span className={`px-2 py-0.5 rounded border ${
-                                            roundItem.deliveryDaysRaised ? 'bg-blue-100 text-blue-900 border-blue-300 font-bold' : 'bg-white text-gray-700 border-gray-200'
-                                          }`}>
-                                            {roundItem.estimatedDeliveryDays} Days {roundItem.deliveryDaysRaised ? '⏳ Extended' : ''}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
                           </div>
                         )}
 
@@ -1440,6 +1567,17 @@ export default function BulkOrderPreviewModal({
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2">
+                            {(quote.currentVersion > 1 || (quote.negotiationHistory && quote.negotiationHistory.length > 0)) && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenVersionComparison(quote)}
+                                className="px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                              >
+                                <SlidersHorizontal size={12} />
+                                <span>Compare Versions</span>
+                              </button>
+                            )}
+
                             {userRole === 'admin' && !isApproved && (
                               <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200">
                                 Awaiting Buyer Decision / Review Only
@@ -2304,45 +2442,86 @@ export default function BulkOrderPreviewModal({
                 </div>
               </div>
 
-              {/* Item-by-item target prices if available */}
+              {/* Item-by-item target prices & quantity adjustment */}
               {counterItemDemands.length > 0 && (
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-700 flex items-center justify-between">
-                    <span>Target Price Per Demanded Product</span>
-                    <span className="text-[10px] text-gray-400">Updates target budget automatically</span>
-                  </label>
-                  <div className="border border-gray-200 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                      <Package size={14} className="text-purple-600" />
+                      <span>Adjust Item Quantities & Target Rates (2nd Version)</span>
+                    </label>
+                    <span className="text-[11px] font-extrabold text-purple-800 bg-purple-100/80 px-2.5 py-0.5 rounded-full border border-purple-200">
+                      Total Order: {counterItemDemands.reduce((s, it) => s + (Number(it.quantity) || 0), 0)} Units
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    You can edit the <strong>Quantity</strong> to increase or scale your order size, and customize your target unit rate. The total budget recalculates automatically.
+                  </p>
+                  <div className="border border-purple-200/80 rounded-xl overflow-hidden max-h-56 overflow-y-auto shadow-2xs">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-500 border-b border-gray-200">
-                          <th className="py-2 px-3">Item</th>
-                          <th className="py-2 px-2 text-center">Qty</th>
-                          <th className="py-2 px-2 text-right">Vendor Rate</th>
-                          <th className="py-2 px-2 text-right">Your Target/Unit</th>
-                          <th className="py-2 px-3 text-right">Target Total</th>
+                        <tr className="bg-purple-50/80 text-[10px] uppercase font-bold text-purple-900 border-b border-purple-200">
+                          <th className="py-2.5 px-3">Item Demand</th>
+                          <th className="py-2.5 px-2 text-center">Quantity (Units)</th>
+                          <th className="py-2.5 px-2 text-right">Vendor Quoted</th>
+                          <th className="py-2.5 px-2 text-right">Target Rate / Unit</th>
+                          <th className="py-2.5 px-3 text-right">Line Target Total</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-purple-100 bg-white">
                         {counterItemDemands.map((it, idx) => (
-                          <tr key={idx} className="hover:bg-purple-50/20">
-                            <td className="py-2 px-3 font-semibold text-gray-900">{it.itemName}</td>
-                            <td className="py-2 px-2 text-center font-bold text-gray-700">{it.quantity}</td>
-                            <td className="py-2 px-2 text-right font-mono text-gray-500">₹{it.currentSellerPrice}</td>
-                            <td className="py-2 px-2 text-right">
+                          <tr key={it.itemId || idx} className="hover:bg-purple-50/30 transition-colors">
+                            <td className="py-2.5 px-3">
+                              <span className="font-semibold text-gray-900 block">{it.itemName}</span>
+                              <span className="text-[10px] text-gray-400">Item #{idx + 1}</span>
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
                               <input
                                 type="number"
-                                min="0"
-                                value={it.targetUnitPrice}
-                                onChange={(e) => handleCounterItemPriceChange(idx, e.target.value)}
-                                className="w-20 px-2 py-1 text-right bg-white border border-gray-300 rounded-lg text-xs font-mono font-bold text-purple-900 focus:outline-none focus:border-purple-600"
+                                min="1"
+                                value={it.quantity}
+                                onChange={(e) => handleCounterItemQuantityChange(idx, e.target.value)}
+                                className="w-20 px-2 py-1 text-center bg-purple-50/50 border border-purple-300 rounded-lg text-xs font-mono font-bold text-purple-950 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-600 transition-all"
+                                title="Edit item quantity to increase or adjust order size"
+                                placeholder="Qty"
                               />
                             </td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-gray-900">
-                              ₹{(it.targetTotalPrice || 0).toLocaleString()}
+                            <td className="py-2.5 px-2 text-right font-mono text-gray-500 font-medium">
+                              ₹{it.currentSellerPrice}
+                            </td>
+                            <td className="py-2.5 px-2 text-right">
+                              <div className="inline-flex items-center justify-end">
+                                <span className="text-gray-400 text-xs mr-0.5">₹</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={it.targetUnitPrice}
+                                  onChange={(e) => handleCounterItemPriceChange(idx, e.target.value)}
+                                  className="w-20 px-2 py-1 text-right bg-white border border-gray-300 rounded-lg text-xs font-mono font-bold text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-600"
+                                  placeholder="Rate"
+                                />
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-extrabold text-purple-950">
+                              ₹{(Number(it.targetTotalPrice) || 0).toLocaleString()}
                             </td>
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot>
+                        <tr className="bg-purple-100/60 font-bold border-t border-purple-200 text-xs">
+                          <td className="py-2 px-3 text-purple-900">Total Demanded:</td>
+                          <td className="py-2 px-2 text-center font-mono font-black text-purple-950">
+                            {counterItemDemands.reduce((s, it) => s + (Number(it.quantity) || 0), 0)} Units
+                          </td>
+                          <td colSpan="2" className="py-2 px-2 text-right text-[11px] text-purple-800 font-bold">
+                            Calculated Target Budget:
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-black text-purple-950">
+                            ₹{counterItemDemands.reduce((s, it) => s + (Number(it.targetTotalPrice) || 0), 0).toLocaleString()}
+                          </td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </div>
@@ -2391,6 +2570,16 @@ export default function BulkOrderPreviewModal({
           isOpen={isInvoiceOpen}
           onClose={() => setIsInvoiceOpen(false)}
           order={taxInvoiceOrder}
+        />
+      )}
+
+      {/* Quotation Version Comparison Modal */}
+      {isComparisonOpen && comparingQuote && (
+        <QuotationVersionComparisonModal
+          isOpen={isComparisonOpen}
+          onClose={() => setIsComparisonOpen(false)}
+          quotation={comparingQuote}
+          order={order}
         />
       )}
 
