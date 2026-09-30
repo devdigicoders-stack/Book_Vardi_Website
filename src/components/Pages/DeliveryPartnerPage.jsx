@@ -14,13 +14,18 @@ import {
   User,
   Package,
   ArrowLeft,
-  DollarSign
+  DollarSign,
+  Building2,
+  CreditCard
 } from 'lucide-react';
 import {
   fetchDeliveryPartnerOrderApi,
   resendDeliveryOtpApi,
   verifyDeliveryOtpApi,
-  updateDeliveryLocationApi
+  updateDeliveryLocationApi,
+  createSchoolBulkRemainingPaymentOrderApi,
+  verifySchoolBulkRemainingPaymentApi,
+  loadRazorpayScript
 } from '../../utils/api';
 
 export default function DeliveryPartnerPage({ onNavigate }) {
@@ -28,6 +33,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [order, setOrder] = useState(null);
+  const [isPayingRemaining, setIsPayingRemaining] = useState(false);
   const [error, setError] = useState(null);
 
   // OTP Verification Modal & Input State
@@ -132,6 +138,85 @@ export default function DeliveryPartnerPage({ onNavigate }) {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isGpsBroadcasting, token]);
+
+  const handlePayRemainingBalance = async () => {
+    if (!order || isPayingRemaining) return;
+    try {
+      setIsPayingRemaining(true);
+      const isRazorpayReady = await loadRazorpayScript();
+      if (!isRazorpayReady || typeof window.Razorpay === 'undefined') {
+        alert('Razorpay payment gateway failed to load. Please check your internet connection.');
+        setIsPayingRemaining(false);
+        return;
+      }
+
+      const targetId = order.id || order._id || order.orderId;
+      const rzpRes = await createSchoolBulkRemainingPaymentOrderApi(targetId);
+      if (!rzpRes?.success && !rzpRes?.razorpayOrderId) {
+        alert(rzpRes?.message || 'Failed to initialize online remaining balance payment.');
+        setIsPayingRemaining(false);
+        return;
+      }
+
+      const options = {
+        key: rzpRes.key || 'rzp_test_6kz5nGEzi8uXRw',
+        amount: rzpRes.amount,
+        currency: rzpRes.currency || 'INR',
+        name: 'Bookvardi Bulk Procurement',
+        description: `Remaining Balance for Order #${rzpRes.referenceId || order.orderId}`,
+        order_id: rzpRes.razorpayOrderId,
+        prefill: {
+          name: rzpRes.customer?.name || order.customer?.name || '',
+          contact: rzpRes.customer?.phone || order.customer?.phone || '',
+          email: rzpRes.customer?.email || order.customer?.email || ''
+        },
+        theme: {
+          color: '#0f766e'
+        },
+        handler: async (response) => {
+          try {
+            const verifyRes = await verifySchoolBulkRemainingPaymentApi(targetId, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              paidAmount: rzpRes.remainingAmountRupees || order.remainingAmount
+            });
+
+            if (verifyRes && verifyRes.success) {
+              setOrder((prev) => (prev ? {
+                ...prev,
+                paymentStatus: 'paid',
+                remainingPaymentStatus: 'paid',
+                overallStatus: 'Delivered',
+                status: 'Delivered'
+              } : prev));
+              setDeliverySuccess(true);
+              alert(`🎉 Remaining balance payment of ₹${(rzpRes.remainingAmountRupees || order.remainingAmount).toLocaleString()} verified successfully! Order completed.`);
+            } else {
+              alert(verifyRes?.message || 'Payment received but verification failed. Please contact support.');
+            }
+          } catch (vErr) {
+            console.error('Remaining payment verification error:', vErr);
+            alert('Online remaining payment verification error. Please refresh and check status.');
+          } finally {
+            setIsPayingRemaining(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsPayingRemaining(false);
+          }
+        }
+      };
+
+      const rzpInstance = new window.Razorpay(options);
+      rzpInstance.open();
+    } catch (err) {
+      console.error('Initiate remaining payment error:', err);
+      alert('Failed to connect to online payment gateway: ' + err.message);
+      setIsPayingRemaining(false);
+    }
+  };
 
   const handleResendOtp = async () => {
     if (!token || resending || verifying || !order) return;
@@ -299,11 +384,15 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <div className="text-right">
                   <span className="text-[10px] font-extrabold uppercase text-gray-400">Payment</span>
                   <div className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
-                    order?.paymentMethod === 'COD' || order?.paymentStatus === 'pending'
-                      ? 'bg-amber-50 text-amber-900 border-amber-200'
-                      : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    order?.paymentStatus === 'paid' || order?.remainingPaymentStatus === 'paid'
+                      ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                      : 'bg-amber-50 text-amber-900 border-amber-200'
                   }`}>
-                    {order?.paymentMethod === 'COD' ? `COD: ₹${order?.totalAmount}` : 'Paid Online'}
+                    {order?.isBulkOrder
+                      ? (order?.paymentStatus === 'paid' || order?.remainingPaymentStatus === 'paid'
+                          ? 'Full Paid Online'
+                          : `Remaining: ₹${(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}`)
+                      : (order?.paymentMethod === 'COD' ? `COD: ₹${order?.totalAmount}` : 'Paid Online')}
                   </div>
                 </div>
               </div>
@@ -313,20 +402,31 @@ export default function DeliveryPartnerPage({ onNavigate }) {
             <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-3">
               <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                 <span className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                  <User size={16} className="text-teal-700" /> Customer Contact
+                  {order?.isBulkOrder ? <Building2 size={16} className="text-teal-700" /> : <User size={16} className="text-teal-700" />}
+                  {order?.isBulkOrder ? 'Institution / School Contact' : 'Customer Contact'}
                 </span>
                 {order?.customer?.phone && (
                   <a
                     href={`tel:${order.customer.phone}`}
                     className="flex items-center gap-1 bg-teal-700 text-white font-extrabold text-xs px-3 py-1.5 rounded-xl shadow-xs hover:bg-teal-800 transition-colors"
                   >
-                    <Phone size={14} /> Call Customer
+                    <Phone size={14} /> Call Contact
                   </a>
                 )}
               </div>
 
               <div>
-                <div className="text-base font-extrabold text-gray-900">{order?.customer?.name || 'Customer'}</div>
+                <div className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                  <span>{order?.customer?.name || 'Customer'}</span>
+                  {order?.isBulkOrder && (
+                    <span className="text-[10px] font-extrabold bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full border border-teal-200">
+                      School Bulk Delivery
+                    </span>
+                  )}
+                </div>
+                {order?.customer?.designation && (
+                  <div className="text-xs text-teal-800 font-semibold">{order.customer.designation}</div>
+                )}
                 <div className="text-xs text-gray-500 font-mono mt-0.5">{order?.customer?.phone}</div>
               </div>
 
@@ -362,38 +462,93 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     <div>
                       <div className="font-extrabold text-gray-900">{item.name}</div>
                       <div className="text-gray-500 text-[11px] font-medium">
-                        Qty: {item.quantity} {item.size ? `• Size: ${item.size}` : ''}
+                        Qty: {item.quantity} {item.size ? `• Size: ${item.size}` : ''} {item.category ? `• ${item.category}` : ''}
                       </div>
                     </div>
-                    <div className="font-bold text-gray-900">₹{item.price * item.quantity}</div>
+                    <div className="font-bold text-gray-900">₹{(item.price || 0) * (item.quantity || 1)}</div>
                   </div>
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-gray-200 flex justify-between font-extrabold text-sm text-gray-900">
-                <span>Total Collection Amount:</span>
-                <span className="text-teal-900 font-black">₹{order?.totalAmount || 0}</span>
-              </div>
+              {order?.isBulkOrder ? (
+                <div className="pt-2 border-t border-gray-200 space-y-1 text-xs font-bold">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Total Agreed Contract:</span>
+                    <span>₹{Number(order?.totalAmount || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Advance Prepayment (Paid Online):</span>
+                    <span>₹{Number(order?.advancePaidAmount || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-black text-sm text-gray-900 pt-1 border-t border-gray-100">
+                    <span>Remaining Balance Due:</span>
+                    <span className={order?.paymentStatus === 'paid' ? "text-emerald-700" : "text-amber-800 font-mono"}>
+                      ₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-2 border-t border-gray-200 flex justify-between font-extrabold text-sm text-gray-900">
+                  <span>Total Collection Amount:</span>
+                  <span className="text-teal-900 font-black">₹{order?.totalAmount || 0}</span>
+                </div>
+              )}
             </div>
 
             {/* Actions & Resend OTP Box */}
             {!deliverySuccess && (
               <div className="space-y-3">
-                {/* Cash Collection Banner for COD */}
-                {(order?.paymentMethod === 'COD' || order?.paymentStatus !== 'paid') && (
-                  <div className="p-3.5 bg-amber-500 text-white rounded-2xl shadow-md space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
-                        <DollarSign size={18} className="text-amber-200" /> Collect Cash on Delivery
+                {/* Payment Banners */}
+                {order?.isBulkOrder ? (
+                  order?.paymentStatus !== 'paid' && order?.remainingPaymentStatus !== 'paid' ? (
+                    <div className="p-4 bg-gradient-to-r from-amber-600 to-amber-700 text-white rounded-2xl shadow-md space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                          <DollarSign size={18} className="text-amber-200" /> Remaining Balance Due
+                        </span>
+                        <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
+                          ₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-100 font-medium">
+                        Mobilization advance was paid online. The school representative must settle the remaining balance before OTP verification.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handlePayRemainingBalance}
+                        disabled={isPayingRemaining}
+                        className="w-full py-2.5 bg-white hover:bg-amber-50 text-amber-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
+                      >
+                        <CreditCard size={15} />
+                        <span>{isPayingRemaining ? 'Connecting Razorpay...' : `Pay ₹${Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()} via UPI / Online`}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 bg-emerald-600 text-white rounded-2xl shadow-md flex items-center justify-between">
+                      <span className="text-xs font-black flex items-center gap-1.5">
+                        <CheckCircle size={18} className="text-amber-300" /> Full Payment Verified Online
                       </span>
-                      <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
-                        ₹{order?.totalAmount || 0}
+                      <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md">
+                        Razorpay / UPI Paid
                       </span>
                     </div>
-                    <p className="text-[11px] text-amber-100 font-medium">
-                      ⚠️ Please collect exactly <strong className="text-white">₹{order?.totalAmount || 0}</strong> cash from the customer before verifying their OTP.
-                    </p>
-                  </div>
+                  )
+                ) : (
+                  (order?.paymentMethod === 'COD' || order?.paymentStatus !== 'paid') && (
+                    <div className="p-3.5 bg-amber-500 text-white rounded-2xl shadow-md space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                          <DollarSign size={18} className="text-amber-200" /> Collect Cash on Delivery
+                        </span>
+                        <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
+                          ₹{order?.totalAmount || 0}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-100 font-medium">
+                        ⚠️ Please collect exactly <strong className="text-white">₹{order?.totalAmount || 0}</strong> cash from the customer before verifying their OTP.
+                      </p>
+                    </div>
+                  )
                 )}
 
                 {/* Security Guarantee Note */}

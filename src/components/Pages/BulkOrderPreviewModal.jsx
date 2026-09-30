@@ -37,6 +37,8 @@ import {
   fetchSingleBulkOrderApi,
   createSchoolBulkPrepaymentOrderApi,
   verifySchoolBulkPrepaymentApi,
+  createSchoolBulkRemainingPaymentOrderApi,
+  verifySchoolBulkRemainingPaymentApi,
   loadRazorpayScript,
   API_BASE_URL
 } from '../../utils/api';
@@ -414,6 +416,96 @@ export default function BulkOrderPreviewModal({
     }
   };
 
+  // Buyer Online Razorpay / UPI Remaining Balance Handler
+  const [isPayingRemaining, setIsPayingRemaining] = useState(false);
+
+  const handleInitiateOnlineRemainingPayment = async (quote, remAmount) => {
+    try {
+      setIsPayingRemaining(true);
+      const isRazorpayReady = await loadRazorpayScript();
+      if (!isRazorpayReady || typeof window.Razorpay === 'undefined') {
+        alert('Razorpay payment gateway failed to load. Please check your internet connection.');
+        setIsPayingRemaining(false);
+        return;
+      }
+
+      const targetId = order._id || order.id || order.referenceId;
+      const rzpRes = await createSchoolBulkRemainingPaymentOrderApi(targetId);
+
+      if (!rzpRes?.success && !rzpRes?.razorpayOrderId) {
+        alert(rzpRes?.message || 'Failed to initialize online remaining balance payment.');
+        setIsPayingRemaining(false);
+        return;
+      }
+
+      const contactNameVal = order.contactName || order.contactPerson || 'School Client';
+      const contactPhoneVal = order.contactPhone || order.userPhone || '';
+      const contactEmailVal = order.contactEmail || order.userEmail || '';
+
+      const options = {
+        key: rzpRes.key || 'rzp_test_6kz5nGEzi8uXRw',
+        amount: rzpRes.amount,
+        currency: rzpRes.currency || 'INR',
+        name: 'Book Vardi B2B Supply',
+        description: `Remaining Balance Settlement for Order ${order.referenceId || ''}`,
+        order_id: rzpRes.razorpayOrderId,
+        prefill: {
+          name: contactNameVal,
+          email: contactEmailVal,
+          contact: contactPhoneVal
+        },
+        theme: {
+          color: '#0f766e'
+        },
+        handler: async (response) => {
+          try {
+            const verifyRes = await verifySchoolBulkRemainingPaymentApi(targetId, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              paidAmount: rzpRes.remainingAmountRupees || remAmount
+            });
+
+            if (verifyRes?.success && verifyRes.order) {
+              setInternalOrder(verifyRes.order);
+              ['bv_customer_bulk_orders', 'bv_sync_school_orders'].forEach(key => {
+                try {
+                  const list = JSON.parse(localStorage.getItem(key) || '[]');
+                  const idx = list.findIndex(o => String(o.id || o._id) === String(targetId) || o.referenceId === targetId);
+                  if (idx !== -1) {
+                    list[idx] = verifyRes.order;
+                    localStorage.setItem(key, JSON.stringify(list));
+                  }
+                } catch (e) {}
+              });
+              window.dispatchEvent(new Event('bv_school_orders_updated'));
+              alert(`🎉 Remaining Balance Payment of ₹${(rzpRes.remainingAmountRupees || remAmount).toLocaleString()} Verified via UPI/Razorpay! Your bulk order is now officially COMPLETED.`);
+            } else {
+              alert(verifyRes?.message || 'Payment received but verification failed. Please contact support.');
+            }
+          } catch (vErr) {
+            console.error('Remaining payment verification error:', vErr);
+            alert('Online remaining payment verification error. Please refresh and check status.');
+          } finally {
+            setIsPayingRemaining(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsPayingRemaining(false);
+          }
+        }
+      };
+
+      const rzpInstance = new window.Razorpay(options);
+      rzpInstance.open();
+    } catch (err) {
+      console.error('Initiate remaining payment error:', err);
+      alert('Failed to connect to online payment gateway: ' + err.message);
+      setIsPayingRemaining(false);
+    }
+  };
+
   useEffect(() => {
     if (order) {
       if (initialTab) {
@@ -535,18 +627,15 @@ export default function BulkOrderPreviewModal({
 
   // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
   const normStatus = String(order?.deliveryStatus || order?.status || '').toLowerCase().replace(/_/g, ' ');
-  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
-  const isSelf = String(order?.deliveryMode || '').toLowerCase().includes('self') || Boolean(order?.selfDeliveryDetails?.deliveryPartnerToken || order?.selfDeliveryDetails?.deliveryPersonName);
-  const isThirdParty = String(order?.deliveryMode || '').toLowerCase().includes('third') || Boolean(order?.courierName && order?.courierName !== 'N/A');
-  const hasPartner = isSelf || isThirdParty || Boolean((order?.courierName && order?.courierName !== 'N/A') || order?.selfDeliveryDetails?.deliveryPersonName);
-  const canViewTracking = isOut && hasPartner && Boolean(order?.trackingNumber || order?.selfDeliveryDetails?.deliveryPartnerToken);
+  const isOut = normStatus === 'out for delivery' || normStatus === 'delivered' || normStatus === 'completed' || normStatus === 'received';
+  const riderName = order?.deliveryDetails?.deliveryBoyName || order?.selfDeliveryDetails?.deliveryPersonName || order?.deliveryBoyName || '';
+  const isSelf = true; // Bulk institutional orders are strictly Self-Delivery
+  const tokenVal = order?.deliveryDetails?.deliveryPartnerToken || order?.deliveryDetails?.trackingId || order?.selfDeliveryDetails?.deliveryPartnerToken || (order?.referenceId ? `BV-SLF-${order.referenceId}` : '');
+  const canViewTracking = isOut && Boolean(tokenVal || riderName);
 
-  const deliveryPartnerDisplay = isSelf 
-    ? (order?.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
-    : (order?.courierName || 'N/A');
-
-  const trackingNumberDisplay = order?.trackingNumber || (isSelf ? order?.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
-  const trackingLinkDisplay = order?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || '';
+  const deliveryPartnerDisplay = riderName ? `Direct Self-Delivery (Rider: ${riderName})` : 'Direct Self-Delivery (Store Fleet)';
+  const trackingNumberDisplay = tokenVal;
+  const trackingLinkDisplay = order?.deliveryDetails?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || order?.trackingUrl || (tokenVal ? `${window.location.origin}/#delivery-partner?token=${tokenVal}` : '');
 
   // Transform bulk order into TaxInvoice-compatible object
   const taxInvoiceOrder = useMemo(() => {
@@ -892,6 +981,67 @@ export default function BulkOrderPreviewModal({
                           </div>
                         )}
                       </div>
+
+                      {/* Financial Settlement Card: Advance Paid & Remaining Balance Due */}
+                      {(() => {
+                        const totalVal = Number(winningQuote.quoteAmount || winningQuote.totalPrice || order.overallBudget || 0);
+                        const advPaid = Number(order.advancePaidAmount || (order.advancePaymentStatus === 'paid' ? (winningQuote.prepaymentAmount || totalVal * 0.3) : 0));
+                        const remBal = Math.max(0, totalVal - advPaid);
+                        const isRemPaid = order.remainingPaymentStatus === 'paid' || order.status === 'completed';
+
+                        return (
+                          <div className="bg-white p-3 rounded-xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                                <DollarSign size={13} className="text-emerald-600" /> Financial Settlement Breakdown
+                              </span>
+                              <div className="flex flex-wrap items-center gap-3">
+                                <div>
+                                  <span className="text-gray-500">Agreed Contract:</span>{' '}
+                                  <strong className="text-gray-900 font-mono">₹{totalVal.toLocaleString()}</strong>
+                                </div>
+                                <div className="border-l border-gray-200 pl-3">
+                                  <span className="text-gray-500">Advance Paid:</span>{' '}
+                                  <strong className="text-emerald-700 font-mono">₹{advPaid.toLocaleString()}</strong>
+                                </div>
+                                <div className="border-l border-gray-200 pl-3">
+                                  <span className="text-gray-500">Remaining on Delivery:</span>{' '}
+                                  <strong className={isRemPaid ? "text-emerald-700 font-mono" : "text-amber-800 font-mono font-bold"}>₹{remBal.toLocaleString()}</strong>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {order.advancePaymentStatus === 'paid' && (
+                                <button
+                                  type="button"
+                                  onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                  className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
+                                >
+                                  <Download size={13} className="text-emerald-700" />
+                                  <span>Prepayment Invoice (PDF)</span>
+                                </button>
+                              )}
+
+                              {isRemPaid ? (
+                                <span className="px-3 py-1.5 bg-emerald-100 text-emerald-900 font-extrabold text-xs rounded-xl border border-emerald-300 flex items-center gap-1">
+                                  <CheckCircle2 size={13} className="text-emerald-700" /> Balance Paid & Order Completed
+                                </span>
+                              ) : (userRole === 'consumer' && remBal > 0) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleInitiateOnlineRemainingPayment(winningQuote, remBal)}
+                                  disabled={isPayingRemaining}
+                                  className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 animate-pulse"
+                                >
+                                  <CreditCard size={13} />
+                                  <span>{isPayingRemaining ? 'Processing...' : `Pay Remaining ₹${remBal.toLocaleString()} Online`}</span>
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Action Row: View Tax Invoice Button & Tracking Status */}
                       <div className="pt-2 border-t border-emerald-200/80 flex flex-wrap items-center justify-between gap-2">
@@ -1665,14 +1815,32 @@ export default function BulkOrderPreviewModal({
                                 </div>
 
                                 {isPrepaymentPaid ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-400 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
-                                  >
-                                    <Download size={12} className="text-emerald-700" />
-                                    <span>Advance Receipt (PDF)</span>
-                                  </button>
+                                  <div className="flex flex-col sm:flex-row items-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-400 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                    >
+                                      <Download size={12} className="text-emerald-700" />
+                                      <span>Advance Receipt (PDF)</span>
+                                    </button>
+
+                                    {order.remainingPaymentStatus === 'paid' || order.status === 'completed' ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 font-extrabold text-[11px] rounded-lg border border-emerald-300">
+                                        <CheckCircle2 size={12} /> Balance Paid
+                                      </span>
+                                    ) : (userRole === 'consumer' && remainingBal > 0) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInitiateOnlineRemainingPayment(quote, remainingBal)}
+                                        disabled={isPayingRemaining}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer animate-pulse"
+                                      >
+                                        <CreditCard size={13} />
+                                        <span>{isPayingRemaining ? 'Processing...' : `Pay Bal ₹${remainingBal.toLocaleString()}`}</span>
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 ) : (userRole === 'consumer' && isEligibleForPayment) ? (
                                   <button
                                     type="button"
