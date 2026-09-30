@@ -955,6 +955,27 @@ export async function verifySchoolBulkPrepaymentApi(orderId, verificationPayload
   });
 }
 
+export async function createSchoolBulkRemainingPaymentOrderApi(orderId) {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  return requestApi(`/schools/bulk-orders/${orderId}/remaining-payment/create-order`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+}
+
+export async function verifySchoolBulkRemainingPaymentApi(orderId, verificationPayload = {}) {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  return requestApi(`/schools/bulk-orders/${orderId}/remaining-payment/verify`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    data: verificationPayload
+  });
+}
+
 export async function submitContactMessageApi(formData) {
   return requestApi('/contact', {
     method: 'POST',

@@ -1932,7 +1932,13 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 flex-wrap gap-2">
                             <span className="flex items-center gap-1">
                               <Clock size={12} />
-                              Tracking: <strong className="text-gray-700 font-mono text-[11px]">{order.trackingNumber || `SHIP-${order.id}`}</strong>
+                              Tracking: {order.trackingNumber ? (
+                                <strong className="text-gray-700 font-mono text-[11px]">{order.trackingNumber}</strong>
+                              ) : (
+                                <span className="text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[10px]">
+                                  Not Assigned
+                                </span>
+                              )}
                             </span>
 
                             <div className="flex items-center gap-2">

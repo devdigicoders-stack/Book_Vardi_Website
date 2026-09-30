@@ -420,6 +420,29 @@ export function CartProvider({ children }) {
     }
   }, [isAuthenticated, userProfile?.phone, userProfile?.id, fetchUserOrders]);
 
+  // Real-time synchronization of customer orders when updated by Admin or Seller
+  useEffect(() => {
+    const handleOrderSync = () => {
+      if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
+        fetchUserOrders(userProfile?.phone || '');
+      }
+    };
+
+    window.addEventListener('bv_orders_updated', handleOrderSync);
+    window.addEventListener('focus', handleOrderSync);
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'bv_order_sync_timestamp' || e.key === 'admin_orders' || e.key === 'bv_seller_orders') {
+        handleOrderSync();
+      }
+    });
+
+    return () => {
+      window.removeEventListener('bv_orders_updated', handleOrderSync);
+      window.removeEventListener('focus', handleOrderSync);
+      window.removeEventListener('storage', handleOrderSync);
+    };
+  }, [backendEnabled, isAuthenticated, userProfile?.phone, userProfile?.id, fetchUserOrders]);
+
   const fetchActivePromotions = useCallback(async () => {
     if (!backendEnabled) return;
     try {

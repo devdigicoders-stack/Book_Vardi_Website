@@ -77,7 +77,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     order.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
     '';
 
-  const selfToken = selfDetails?.deliveryPartnerToken || (isSelfDelivery ? rawTracking || `DLV-${orderId}` : '');
+  const selfToken = selfDetails?.deliveryPartnerToken || (isSelfDelivery ? (rawTracking || '') : '');
   const selfDeliveryUrl = selfDetails?.trackingUrl || (selfToken ? `${window.location.origin}/#delivery-partner?token=${encodeURIComponent(selfToken)}` : '');
 
   const courierPartnerName = isSelfDelivery
