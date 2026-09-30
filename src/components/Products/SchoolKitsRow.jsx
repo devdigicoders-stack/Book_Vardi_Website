@@ -76,6 +76,11 @@ export default function SchoolKitsRow({ onNavigate }) {
       if (!isSchoolBlank) {
         matchSchool =
           kSchool === 'any school' ||
+          kSchool === 'all schools' ||
+          kSchool.includes('all school') ||
+          kSchool.includes('open for all') ||
+          kSchool === 'general' ||
+          (kit.schoolCode && ['all', 'gen', 'all-schools'].includes(String(kit.schoolCode).toLowerCase())) ||
           kSchool.includes(cleanSchool) ||
           cleanSchool.includes(kSchool) ||
           kTitle.includes(cleanSchool) ||
@@ -87,6 +92,8 @@ export default function SchoolKitsRow({ onNavigate }) {
         matchClass =
           kClass === 'all' ||
           kClass === 'any class' ||
+          kClass.includes('all grade') ||
+          kClass.includes('all class') ||
           kClass.includes(cleanClass) ||
           cleanClass.includes(kClass);
       }

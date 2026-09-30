@@ -26,12 +26,20 @@ import {
   ExternalLink,
   Lock,
   Printer,
-  SlidersHorizontal
+  SlidersHorizontal,
+  CreditCard,
+  Download
 } from 'lucide-react';
 import TaxInvoiceModal from '../Common/TaxInvoiceModal';
 import NegotiationTimelineDiv from './NegotiationTimelineDiv';
 import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
-import { fetchSingleBulkOrderApi } from '../../utils/api';
+import {
+  fetchSingleBulkOrderApi,
+  createSchoolBulkPrepaymentOrderApi,
+  verifySchoolBulkPrepaymentApi,
+  loadRazorpayScript,
+  API_BASE_URL
+} from '../../utils/api';
 
 export default function BulkOrderPreviewModal({
   order: propOrder,
@@ -75,7 +83,6 @@ export default function BulkOrderPreviewModal({
   }, [propOrder?._id, propOrder?.referenceId, userRole]);
 
   const order = internalOrder || propOrder;
-  if (!order) return null;
 
   // Active Lightbox / Image Preview
   const [zoomImage, setZoomImage] = useState(null);
@@ -94,26 +101,26 @@ export default function BulkOrderPreviewModal({
   }, [initialTab]);
 
   // Admin Distribution State
-  const [distributeMode, setDistributeMode] = useState(order.assignmentMode || 'direct');
+  const [distributeMode, setDistributeMode] = useState(order?.assignmentMode || 'direct');
   const [selectedSingleSeller, setSelectedSingleSeller] = useState(
-    order.sellerId ? (typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : ''
+    order?.sellerId ? (typeof order.sellerId === 'object' ? (order.sellerId._id || order.sellerId.id) : order.sellerId) : ''
   );
   const [selectedMultipleSellers, setSelectedMultipleSellers] = useState(
-    (order.invitedSellerIds || []).map(s => (typeof s === 'object' ? (s._id || s.id) : s))
+    (order?.invitedSellerIds || []).map(s => (typeof s === 'object' ? (s._id || s.id) : s))
   );
   const [sellerSearchQuery, setSellerSearchQuery] = useState('');
 
   // Seller Quotation State
   const currentSellerId = sellerUser?.id || sellerUser?._id || '';
-  const existingSellerQuote = Array.isArray(order.quotations)
+  const existingSellerQuote = Array.isArray(order?.quotations)
     ? order.quotations.find(q => String(q.sellerId) === String(currentSellerId))
     : null;
 
-  const targetBudgetNum = Number(order.targetBudgetPerKit || order.estimatedBudget || 0);
+  const targetBudgetNum = Number(order?.targetBudgetPerKit || order?.estimatedBudget || 0);
   const totalQtyNum = Number(
-    order.totalQuantity ||
-    order.quantity ||
-    (Array.isArray(order.requirements) ? order.requirements.reduce((s, r) => s + Number(r.quantity || 0), 0) : 100)
+    order?.totalQuantity ||
+    order?.quantity ||
+    (Array.isArray(order?.requirements) ? order.requirements.reduce((s, r) => s + Number(r.quantity || 0), 0) : 100)
   );
 
   const [quoteAmount, setQuoteAmount] = useState(
@@ -317,6 +324,96 @@ export default function BulkOrderPreviewModal({
     }
   };
 
+  // Buyer Online Razorpay Prepayment Handler
+  const [isPayingPrepayment, setIsPayingPrepayment] = useState(false);
+
+  const handleInitiateOnlinePrepayment = async (quote, advAmount) => {
+    try {
+      setIsPayingPrepayment(true);
+      const isRazorpayReady = await loadRazorpayScript();
+      if (!isRazorpayReady || typeof window.Razorpay === 'undefined') {
+        alert('Razorpay payment gateway failed to load. Please check your internet connection.');
+        setIsPayingPrepayment(false);
+        return;
+      }
+
+      const targetId = order._id || order.id || order.referenceId;
+      const rzpRes = await createSchoolBulkPrepaymentOrderApi(targetId);
+
+      if (!rzpRes?.success && !rzpRes?.razorpayOrderId) {
+        alert(rzpRes?.message || 'Failed to initialize online prepayment order.');
+        setIsPayingPrepayment(false);
+        return;
+      }
+
+      const contactNameVal = order.contactName || order.contactPerson || 'School Client';
+      const contactPhoneVal = order.contactPhone || order.userPhone || '';
+      const contactEmailVal = order.contactEmail || order.userEmail || '';
+
+      const options = {
+        key: rzpRes.key || 'rzp_test_6kz5nGEzi8uXRw',
+        amount: rzpRes.amount,
+        currency: rzpRes.currency || 'INR',
+        name: 'Book Vardi B2B Supply',
+        description: `Advance Prepayment for Order ${order.referenceId || ''}`,
+        order_id: rzpRes.razorpayOrderId,
+        prefill: {
+          name: contactNameVal,
+          email: contactEmailVal,
+          contact: contactPhoneVal
+        },
+        theme: {
+          color: '#0f766e'
+        },
+        handler: async (response) => {
+          try {
+            const verifyRes = await verifySchoolBulkPrepaymentApi(targetId, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              paidAmount: rzpRes.advanceAmountRupees || advAmount
+            });
+
+            if (verifyRes?.success && verifyRes.order) {
+              setInternalOrder(verifyRes.order);
+              ['bv_customer_bulk_orders', 'bv_sync_school_orders'].forEach(key => {
+                try {
+                  const list = JSON.parse(localStorage.getItem(key) || '[]');
+                  const idx = list.findIndex(o => String(o.id || o._id) === String(targetId) || o.referenceId === targetId);
+                  if (idx !== -1) {
+                    list[idx] = verifyRes.order;
+                    localStorage.setItem(key, JSON.stringify(list));
+                  }
+                } catch (e) {}
+              });
+              window.dispatchEvent(new Event('bv_school_orders_updated'));
+              alert(`🎉 Online Prepayment of ₹${(rzpRes.advanceAmountRupees || advAmount).toLocaleString()} Successful! The seller has been notified to begin packing and fulfillment.`);
+            } else {
+              alert(verifyRes?.message || 'Payment received but verification failed. Please contact support.');
+            }
+          } catch (vErr) {
+            console.error('Prepayment verification error:', vErr);
+            alert('Online prepayment verification error. Please refresh and check status.');
+          } finally {
+            setIsPayingPrepayment(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsPayingPrepayment(false);
+          }
+        }
+      };
+
+      const rzpInstance = new window.Razorpay(options);
+      rzpInstance.open();
+    } catch (err) {
+      console.error('Initiate prepayment error:', err);
+      alert('Failed to connect to online payment gateway: ' + err.message);
+      setIsPayingPrepayment(false);
+    }
+  };
+
   useEffect(() => {
     if (order) {
       if (initialTab) {
@@ -331,33 +428,34 @@ export default function BulkOrderPreviewModal({
   }, [order, initialTab]);
 
   // Normalization Helpers
-  const refId = order.referenceId || order.id || `SCH-${order._id}`;
-  const instName = order.institutionName || order.schoolName || 'School / College';
-  const instType = order.institutionType || 'Educational Institution';
-  const schId = order.schoolId || '';
+  const refId = order?.referenceId || order?.id || (order?._id ? `SCH-${order._id}` : 'SCH-BULK');
+  const instName = order?.institutionName || order?.schoolName || 'School / College';
+  const instType = order?.institutionType || 'Educational Institution';
+  const schId = order?.schoolId || '';
 
-  const contactName = order.contactName || order.contactPerson || 'Purchaser Contact';
-  const contactPhone = order.contactPhone || 'N/A';
-  const contactEmail = order.contactEmail || 'N/A';
-  const designation = order.designation || 'Administrator';
+  const contactName = order?.contactName || order?.contactPerson || 'Purchaser Contact';
+  const contactPhone = order?.contactPhone || 'N/A';
+  const contactEmail = order?.contactEmail || 'N/A';
+  const designation = order?.designation || 'Administrator';
 
-  const address = order.address || order.addressLine || 'N/A';
-  const city = order.city || 'Delhi';
-  const state = order.state || 'Delhi';
-  const pincode = order.pincode || '';
+  const address = order?.address || order?.addressLine || 'N/A';
+  const city = order?.city || 'Delhi';
+  const state = order?.state || 'Delhi';
+  const pincode = order?.pincode || '';
 
   const requirementsList = useMemo(() => {
+    if (!order) return [];
     return Array.isArray(order.requirements) && order.requirements.length > 0
       ? order.requirements
       : [
           {
             category: 'Bulk Procurement',
-            itemName: order.requirementSummary || order.additionalNotes || 'Bulk School Uniform & Stationery',
+            itemName: order?.requirementSummary || order?.additionalNotes || 'Bulk School Uniform & Stationery',
             quantity: totalQtyNum,
             budgetPerUnit: targetBudgetNum && totalQtyNum ? Math.round(targetBudgetNum / totalQtyNum) : 0,
             sellerPricePerUnit: 0,
             sampleImage: '',
-            notes: order.additionalNotes || ''
+            notes: order?.additionalNotes || ''
           }
         ];
   }, [order, totalQtyNum, targetBudgetNum]);
@@ -431,24 +529,24 @@ export default function BulkOrderPreviewModal({
     });
   };
 
-  const winningQuote = Array.isArray(order.quotations)
-    ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId))
+  const winningQuote = Array.isArray(order?.quotations)
+    ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order?.acceptedQuoteId))
     : null;
 
   // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
-  const normStatus = String(order.deliveryStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
+  const normStatus = String(order?.deliveryStatus || order?.status || '').toLowerCase().replace(/_/g, ' ');
   const isOut = normStatus === 'out for delivery' || normStatus === 'delivered';
-  const isSelf = String(order.deliveryMode || '').toLowerCase().includes('self') || Boolean(order.selfDeliveryDetails?.deliveryPartnerToken || order.selfDeliveryDetails?.deliveryPersonName);
-  const isThirdParty = String(order.deliveryMode || '').toLowerCase().includes('third') || Boolean(order.courierName && order.courierName !== 'N/A');
-  const hasPartner = isSelf || isThirdParty || Boolean((order.courierName && order.courierName !== 'N/A') || order.selfDeliveryDetails?.deliveryPersonName);
-  const canViewTracking = isOut && hasPartner && Boolean(order.trackingNumber || order.selfDeliveryDetails?.deliveryPartnerToken);
+  const isSelf = String(order?.deliveryMode || '').toLowerCase().includes('self') || Boolean(order?.selfDeliveryDetails?.deliveryPartnerToken || order?.selfDeliveryDetails?.deliveryPersonName);
+  const isThirdParty = String(order?.deliveryMode || '').toLowerCase().includes('third') || Boolean(order?.courierName && order?.courierName !== 'N/A');
+  const hasPartner = isSelf || isThirdParty || Boolean((order?.courierName && order?.courierName !== 'N/A') || order?.selfDeliveryDetails?.deliveryPersonName);
+  const canViewTracking = isOut && hasPartner && Boolean(order?.trackingNumber || order?.selfDeliveryDetails?.deliveryPartnerToken);
 
   const deliveryPartnerDisplay = isSelf 
-    ? (order.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
-    : (order.courierName || 'N/A');
+    ? (order?.selfDeliveryDetails?.deliveryPersonName ? `Direct Self-Delivery (Rider: ${order.selfDeliveryDetails.deliveryPersonName})` : 'Direct Self-Delivery (Store Fleet)')
+    : (order?.courierName || 'N/A');
 
-  const trackingNumberDisplay = order.trackingNumber || (isSelf ? order.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
-  const trackingLinkDisplay = order.trackingUrl || order.selfDeliveryDetails?.trackingUrl || '';
+  const trackingNumberDisplay = order?.trackingNumber || (isSelf ? order?.selfDeliveryDetails?.deliveryPartnerToken : '') || '';
+  const trackingLinkDisplay = order?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || '';
 
   // Transform bulk order into TaxInvoice-compatible object
   const taxInvoiceOrder = useMemo(() => {
@@ -574,6 +672,8 @@ export default function BulkOrderPreviewModal({
 
     setModalSubTab('specs');
   };
+
+  if (!order) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in">
@@ -1221,6 +1321,10 @@ export default function BulkOrderPreviewModal({
                     const qId = quote._id || quote.id;
                     const isApproved = quote.status === 'approved' || String(order.acceptedQuoteId) === String(qId);
                     const hasItemPrices = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0;
+                    const qAdvPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
+                    const qAdvAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (qAdvPct > 0 ? Math.round((Number(quote.quoteAmount) * qAdvPct) / 100) : 0);
+                    const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= qAdvAmt);
+                    const isSellerAcceptedCounter = quote.negotiationStage === 'seller_accepted_counter';
 
                     return (
                       <div
@@ -1295,6 +1399,34 @@ export default function BulkOrderPreviewModal({
                             </div>
                           </div>
                         </div>
+
+                        {/* Notice Banner: Vendor Accepted Buyer Counter Terms */}
+                        {isSellerAcceptedCounter && (
+                          <div className="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 space-y-2 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-xs text-emerald-950 flex items-center gap-1.5">
+                                <CheckCircle2 size={16} className="text-emerald-700" />
+                                <span>🎉 Vendor Accepted Your Version {quote.currentVersion || 2} Counter Terms!</span>
+                              </span>
+                              <span className="bg-emerald-200 text-emerald-900 font-black text-[10px] uppercase px-2.5 py-0.5 rounded-full">
+                                Counter Accepted
+                              </span>
+                            </div>
+                            <p className="text-xs text-emerald-800">
+                              {quote.sellerStoreName || quote.sellerName || "Vendor"} officially approved your counter-demand budget of <strong>₹{Number(quote.quoteAmount).toLocaleString()}</strong> and lead time of <strong>{quote.estimatedDeliveryDays} Days</strong>.
+                              {!isPrepaymentPaid && qAdvAmt > 0 && (
+                                <span className="block mt-1.5 text-emerald-950 font-bold bg-white/70 p-2 rounded-xl border border-emerald-200">
+                                  ⚠️ Prepayment of ₹{qAdvAmt.toLocaleString()} ({qAdvPct}%) is required via online payment only to mobilize production and lock delivery schedule.
+                                </span>
+                              )}
+                              {isPrepaymentPaid && (
+                                <span className="block mt-1.5 text-emerald-900 font-bold bg-white/70 p-2 rounded-xl border border-emerald-200">
+                                  ✅ Online prepayment of ₹{Number(order.advancePaidAmount || qAdvAmt).toLocaleString()} confirmed. Vendor has been authorized to proceed with packing and fulfillment.
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        )}
 
                         {/* Active Buyer Counter-Demand Info Card */}
                         {quote.latestBuyerCounter && (Number(quote.latestBuyerCounter.targetBudget) > 0 || quote.latestBuyerCounter.notes) && (
@@ -1487,29 +1619,71 @@ export default function BulkOrderPreviewModal({
                           const advAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (advPct > 0 ? Math.round((Number(quote.quoteAmount) * advPct) / 100) : 0);
                           const advTerms = quote.prepaymentTerms || quote.sellerAdvanceTerms || '';
                           const remainingBal = Math.max(0, Number(quote.quoteAmount) - advAmt);
+                          const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= advAmt);
+                          const isEligibleForPayment = (isApproved || quote.negotiationStage === 'seller_accepted_counter') && advAmt > 0 && !isPrepaymentPaid;
 
                           if (advPct <= 0 && advAmt <= 0 && !advTerms) return null;
 
                           return (
-                            <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-                              <div className="space-y-0.5">
-                                <span className="text-[10px] font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
-                                  <DollarSign size={13} className="text-emerald-700" /> Prepayment Required by Seller
-                                </span>
-                                <div className="text-emerald-950 font-bold">
-                                  Upfront Prepayment: <strong className="font-extrabold text-emerald-900 font-mono text-sm">₹{advAmt.toLocaleString()}</strong>
-                                  {advPct > 0 ? ` (${advPct}% prepayment)` : ''}
+                            <div className="bg-emerald-50/80 border-2 border-emerald-300 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-extrabold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+                                    <DollarSign size={13} className="text-emerald-700" /> Agreed Advance Prepayment
+                                  </span>
+                                  {isPrepaymentPaid ? (
+                                    <span className="bg-emerald-200 text-emerald-950 font-black text-[9px] uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                      <CheckCircle2 size={10} className="text-emerald-700" /> Verified Online
+                                    </span>
+                                  ) : isEligibleForPayment ? (
+                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[9px] uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                      <AlertCircle size={10} className="text-amber-700" /> Payment Required Online
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <div className="text-emerald-950 font-bold text-sm">
+                                  Upfront Prepayment: <strong className="font-extrabold text-emerald-900 font-mono text-base">₹{advAmt.toLocaleString()}</strong>
+                                  {advPct > 0 ? ` (${advPct}% deposit)` : ''}
                                 </div>
                                 {advTerms && (
                                   <p className="text-[11px] text-emerald-800 italic">
                                     Terms: "{advTerms}"
                                   </p>
                                 )}
+                                {isPrepaymentPaid && order.advanceTransactionId && (
+                                  <div className="text-[10px] font-mono text-emerald-800">
+                                    Razorpay TXN: <strong>{order.advanceTransactionId}</strong>
+                                  </div>
+                                )}
                               </div>
 
-                              <div className="sm:text-right bg-white px-3 py-1.5 rounded-lg border border-emerald-100 shadow-2xs">
-                                <span className="text-[10px] text-gray-500 uppercase font-semibold block">Balance on Delivery</span>
-                                <span className="font-mono font-bold text-gray-800">₹{remainingBal.toLocaleString()}</span>
+                              <div className="flex flex-wrap sm:flex-col sm:items-end justify-between gap-2">
+                                <div className="bg-white px-3 py-1.5 rounded-lg border border-emerald-100 shadow-2xs text-right">
+                                  <span className="text-[10px] text-gray-500 uppercase font-semibold block">Balance on Delivery</span>
+                                  <span className="font-mono font-bold text-gray-800">₹{remainingBal.toLocaleString()}</span>
+                                </div>
+
+                                {isPrepaymentPaid ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-400 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
+                                  >
+                                    <Download size={12} className="text-emerald-700" />
+                                    <span>Advance Receipt (PDF)</span>
+                                  </button>
+                                ) : (userRole === 'consumer' && isEligibleForPayment) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleInitiateOnlinePrepayment(quote, advAmt)}
+                                    disabled={isPayingPrepayment}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer font-display animate-pulse"
+                                  >
+                                    <CreditCard size={14} />
+                                    <span>{isPayingPrepayment ? 'Connecting...' : `Pay ₹${advAmt.toLocaleString()} Online`}</span>
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
                           );
@@ -1584,27 +1758,63 @@ export default function BulkOrderPreviewModal({
                               </span>
                             )}
 
-                            {userRole === 'consumer' && !isApproved && (
+                            {userRole === 'consumer' && (
                               <>
-                                {onSubmitCounterDemand && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenCounterDrawer(quote)}
-                                    className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 font-extrabold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
-                                  >
-                                    <Sparkles size={14} className="text-purple-600" />
-                                    <span>Send 2nd Version / Counter-Demand</span>
-                                  </button>
-                                )}
-                                {onApproveQuote && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenAcceptQuoteModal(quote)}
-                                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 font-display"
-                                  >
-                                    <CheckCircle2 size={15} />
-                                    <span>Accept Winning Quotation</span>
-                                  </button>
+                                {(isApproved || isSellerAcceptedCounter) ? (
+                                  <>
+                                    {isPrepaymentPaid ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                                          <CheckCircle2 size={14} className="text-emerald-700" /> Mobilization Deposit Confirmed
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                          className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                        >
+                                          <Download size={13} className="text-emerald-700" />
+                                          <span>Receipt PDF</span>
+                                        </button>
+                                      </div>
+                                    ) : qAdvAmt > 0 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleInitiateOnlinePrepayment(quote, qAdvAmt)}
+                                        disabled={isPayingPrepayment}
+                                        className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 font-display animate-pulse"
+                                      >
+                                        <CreditCard size={15} />
+                                        <span>{isPayingPrepayment ? 'Connecting Gateway...' : `Pay Prepayment Online (₹${qAdvAmt.toLocaleString()})`}</span>
+                                      </button>
+                                    ) : (
+                                      <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                                        <CheckCircle2 size={14} /> Approved & Winning Seller Quote
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {onSubmitCounterDemand && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenCounterDrawer(quote)}
+                                        className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-300 font-extrabold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                                      >
+                                        <Sparkles size={14} className="text-purple-600" />
+                                        <span>Send 2nd Version / Counter-Demand</span>
+                                      </button>
+                                    )}
+                                    {onApproveQuote && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenAcceptQuoteModal(quote)}
+                                        className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 font-display"
+                                      >
+                                        <CheckCircle2 size={15} />
+                                        <span>Accept Winning Quotation</span>
+                                      </button>
+                                    )}
+                                  </>
                                 )}
                               </>
                             )}

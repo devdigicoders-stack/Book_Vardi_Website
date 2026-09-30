@@ -46,7 +46,7 @@ import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi } from '../../utils/api';
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi, API_BASE_URL } from '../../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import OrderTrackingModal from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
@@ -2854,30 +2854,77 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                           {/* Approved Quotation Banner */}
                           {winningQuote && (
-                            <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                              <div>
-                                <span className="font-bold text-emerald-950 flex items-center gap-1">
-                                  <CheckCircle2 size={14} className="text-emerald-600" /> Approved Vendor Quote:
-                                </span>
-                                <div className="text-emerald-900 font-medium mt-0.5">
-                                  Fulfilled by <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong>
-                                </div>
-                                {(winningQuote.prepaymentAmount > 0 || winningQuote.sellerAdvanceAmount > 0 || winningQuote.prepaymentPercentage > 0 || winningQuote.sellerAdvancePercentage > 0) && (
-                                  <div className="text-[11px] font-bold text-emerald-800 mt-1 flex items-center gap-1.5 bg-emerald-100/60 px-2 py-0.5 rounded-md w-fit">
-                                    <span>Prepayment: ₹{Number(winningQuote.prepaymentAmount || winningQuote.sellerAdvanceAmount || Math.round((Number(winningQuote.quoteAmount) * (winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage || 0)) / 100)).toLocaleString()}</span>
-                                    {(winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage) ? ` (${winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage}%)` : ''}
+                            <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl space-y-2.5 text-xs">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                  <span className="font-bold text-emerald-950 flex items-center gap-1">
+                                    <CheckCircle2 size={14} className="text-emerald-600" /> Approved Vendor Quote:
+                                  </span>
+                                  <div className="text-emerald-900 font-medium mt-0.5">
+                                    Fulfilled by <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong>
                                   </div>
-                                )}
+                                  {(winningQuote.prepaymentAmount > 0 || winningQuote.sellerAdvanceAmount > 0 || winningQuote.prepaymentPercentage > 0 || winningQuote.sellerAdvancePercentage > 0) && (
+                                    <div className="text-[11px] font-bold text-emerald-800 mt-1 flex items-center gap-1.5 bg-emerald-100/60 px-2 py-0.5 rounded-md w-fit">
+                                      <span>Prepayment: ₹{Number(winningQuote.prepaymentAmount || winningQuote.sellerAdvanceAmount || Math.round((Number(winningQuote.quoteAmount) * (winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage || 0)) / 100)).toLocaleString()}</span>
+                                      {(winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage) ? ` (${winningQuote.prepaymentPercentage || winningQuote.sellerAdvancePercentage}%)` : ''}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="sm:text-right">
+                                  <div className="font-extrabold text-base text-emerald-900">
+                                    ₹{Number(winningQuote.quoteAmount).toLocaleString()}
+                                  </div>
+                                  <div className="text-[10px] text-emerald-700">
+                                    Est. Delivery: {winningQuote.estimatedDeliveryDays || 7} Days
+                                  </div>
+                                </div>
                               </div>
 
-                              <div className="text-right">
-                                <div className="font-extrabold text-base text-emerald-900">
-                                  ₹{Number(winningQuote.quoteAmount).toLocaleString()}
-                                </div>
-                                <div className="text-[10px] text-emerald-700">
-                                  Est. Delivery: {winningQuote.estimatedDeliveryDays || 7} Days
-                                </div>
-                              </div>
+                              {/* Prepayment Online Status Strip */}
+                              {(() => {
+                                const advReq = Number(order.sellerAdvanceAmount || winningQuote.prepaymentAmount || 0);
+                                const isPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= advReq);
+
+                                if (advReq <= 0) return null;
+
+                                if (isPaid) {
+                                  return (
+                                    <div className="bg-emerald-100/80 border border-emerald-300 p-2 rounded-lg flex items-center justify-between gap-2">
+                                      <span className="text-[11px] font-bold text-emerald-950 flex items-center gap-1">
+                                        <CheckCircle2 size={13} className="text-emerald-700" />
+                                        <span>Online Prepayment of ₹{Number(order.advancePaidAmount || advReq).toLocaleString()} Verified</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                        className="text-[11px] font-bold text-emerald-900 underline hover:text-emerald-700 cursor-pointer"
+                                      >
+                                        Receipt PDF
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="bg-amber-50 border border-amber-300 p-2 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <span className="text-[11px] font-bold text-amber-950 flex items-center gap-1">
+                                      <AlertCircle size={13} className="text-amber-700 shrink-0" />
+                                      <span>Prepayment of ₹{advReq.toLocaleString()} Required via Online Payment</span>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedBulkOrder(order);
+                                        setSelectedBulkOrderTab('quotes');
+                                      }}
+                                      className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] rounded-lg shadow-xs transition-colors cursor-pointer shrink-0"
+                                    >
+                                      Pay Prepayment Online
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
 
@@ -2966,11 +3013,12 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         onClose={() => setIsSellerModalOpen(false)}
       />
 
-      <BulkOrderPreviewModal
-        order={selectedBulkOrder}
-        onClose={() => setSelectedBulkOrder(null)}
-        userRole="consumer"
-        initialTab={selectedBulkOrderTab}
+      {selectedBulkOrder && (
+        <BulkOrderPreviewModal
+          order={selectedBulkOrder}
+          onClose={() => setSelectedBulkOrder(null)}
+          userRole="consumer"
+          initialTab={selectedBulkOrderTab}
         onApproveQuote={async (orderId, quoteId, updateData = {}) => {
           const applyApprovalLocally = (sourceOrder) => {
             const quotes = sourceOrder.quotations || [];
@@ -3171,6 +3219,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
           }
         }}
       />
+      )}
 
       <OrderTrackingModal
         isOpen={isTrackingModalOpen}
