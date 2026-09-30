@@ -5,6 +5,7 @@ import {
   Truck,
   MapPin,
   Calendar,
+  Clock,
   CreditCard,
   ArrowRight,
   Printer,
@@ -92,7 +93,9 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
   const isCancelled = currentStatus === 'cancelled';
-  const isPaidOnline = order.paymentStatus === 'paid' || order.paymentStatus === 'Paid' || (order.paymentMethod && String(order.paymentMethod).toUpperCase() !== 'COD');
+  const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
+  const isPaidOnline = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
+  const isPaymentVerified = isPaidOnline;
 
   const handleCopyOrderId = () => {
     if (order?.id) {
@@ -322,7 +325,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             <div className="relative py-0">
               <div className="flex items-center justify-between px-2 overflow-x-auto no-scrollbar scrollbar-none flex-nowrap gap-4">
                 {[
-                  { id: 1, full: 'Order Confirmed', sub: 'Payment verified', icon: FileText },
+                  { id: 1, full: 'Order Confirmed', sub: isPaymentVerified ? 'Payment verified' : 'Order placed (Pay on Delivery)', icon: FileText },
                   { id: 2, full: 'Processing & Packing', sub: 'At Merchant Facility', icon: Boxes },
                   { id: 3, full: 'Out for Delivery / Transit', sub: order.deliveryMode === 'self_delivery' ? 'Store Rider Dispatch' : ((order.courierName && order.courierName !== 'N/A') ? order.courierName : 'Logistics Carrier'), icon: Truck },
                   { id: 4, full: 'Delivered', sub: 'To your doorstep/campus', icon: ShieldCheck }
@@ -448,7 +451,9 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
 
                   <div className="pt-3 border-t-2 border-gray-300 flex justify-between items-baseline">
                     <div>
-                      <span className="text-sm font-black text-gray-900 block">Total Amount Paid:</span>
+                      <span className="text-sm font-black text-gray-900 block">
+                        {isPaymentVerified ? 'Total Amount Paid:' : 'Total Amount Payable (COD):'}
+                      </span>
                       <span className="text-[10px] text-gray-500 font-normal">(Inclusive of all taxes)</span>
                     </div>
                     <span className="font-display text-lg text-brand-teal font-mono">₹{grandVal.toFixed(2)}</span>
@@ -507,10 +512,17 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Status:</span>
-                  <span className="inline-flex items-center gap-1 font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px]">
-                    <ShieldCheck size={13} />
-                    Payment Verified
-                  </span>
+                  {isPaymentVerified ? (
+                    <span className="inline-flex items-center gap-1 font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] border border-emerald-200">
+                      <ShieldCheck size={13} />
+                      Payment Verified
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full text-[11px] border border-amber-200">
+                      <Clock size={13} />
+                      Unpaid (Pay on Delivery)
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Date:</span>

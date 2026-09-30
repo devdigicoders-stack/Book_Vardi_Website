@@ -7,7 +7,8 @@ export default function CancelOrderModal({ isOpen, onClose, order, onSuccess }) 
 
   const orderId = order.id || order.orderId || order._id;
   const userPhone = order.customer?.phone || order.shippingAddress?.phone || '';
-  const isPaid = order.paymentStatus === 'paid' || order.paymentStatus === 'Paid' || (order.paymentMethod && String(order.paymentMethod).toUpperCase() !== 'COD');
+  const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
+  const isPaid = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
 
   const [step, setStep] = useState(1); // Step 1: Reason, Step 2: Refund Details (if paid)
   const [selectedReason, setSelectedReason] = useState('Ordered by mistake');

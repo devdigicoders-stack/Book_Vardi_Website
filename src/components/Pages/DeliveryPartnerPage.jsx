@@ -382,18 +382,32 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-extrabold uppercase text-gray-400">Payment</span>
-                  <div className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
-                    order?.paymentStatus === 'paid' || order?.remainingPaymentStatus === 'paid'
-                      ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                      : 'bg-amber-50 text-amber-900 border-amber-200'
-                  }`}>
-                    {order?.isBulkOrder
-                      ? (order?.paymentStatus === 'paid' || order?.remainingPaymentStatus === 'paid'
-                          ? 'Full Paid Online'
-                          : `Remaining: ₹${(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}`)
-                      : (order?.paymentMethod === 'COD' ? `COD: ₹${order?.totalAmount}` : 'Paid Online')}
-                  </div>
+                  <span className="text-[10px] font-extrabold uppercase text-gray-400">Payment Status</span>
+                  {(() => {
+                    const isCod = String(order?.paymentMethod || '').toUpperCase().includes('COD');
+                    const isBulkPaid = order?.paymentStatus === 'paid' || order?.remainingPaymentStatus === 'paid';
+                    if (order?.isBulkOrder) {
+                      return (
+                        <div className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
+                          isBulkPaid ? 'bg-emerald-50 text-emerald-900 border-emerald-200' : 'bg-amber-50 text-amber-900 border-amber-200'
+                        }`}>
+                          {isBulkPaid ? 'Full Paid Online' : `Remaining: ₹${(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}`}
+                        </div>
+                      );
+                    }
+                    if (isCod) {
+                      return (
+                        <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-amber-50 text-amber-950 border-amber-300">
+                          💵 COD: ₹{order?.totalAmount || 0} (Collect Cash)
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-900 border-emerald-200">
+                        💳 Paid Online (UPI)
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -534,11 +548,11 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     </div>
                   )
                 ) : (
-                  (order?.paymentMethod === 'COD' || order?.paymentStatus !== 'paid') && (
+                  (String(order?.paymentMethod || '').toUpperCase().includes('COD') || (order?.paymentStatus !== 'paid' && order?.paymentStatus !== 'Paid')) ? (
                     <div className="p-3.5 bg-amber-500 text-white rounded-2xl shadow-md space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
-                          <DollarSign size={18} className="text-amber-200" /> Collect Cash on Delivery
+                          <DollarSign size={18} className="text-amber-200" /> Collect Cash on Delivery (COD)
                         </span>
                         <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
                           ₹{order?.totalAmount || 0}
@@ -547,6 +561,15 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                       <p className="text-[11px] text-amber-100 font-medium">
                         ⚠️ Please collect exactly <strong className="text-white">₹{order?.totalAmount || 0}</strong> cash from the customer before verifying their OTP.
                       </p>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 bg-emerald-600 text-white rounded-2xl shadow-md flex items-center justify-between">
+                      <span className="text-xs font-black flex items-center gap-1.5">
+                        <CheckCircle size={18} className="text-amber-300" /> Online Payment Verified
+                      </span>
+                      <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md">
+                        Paid via UPI / Razorpay
+                      </span>
                     </div>
                   )
                 )}
@@ -592,7 +615,9 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <Key size={24} />
               </div>
               <h3 className="text-lg font-black text-gray-900">
-                {order?.paymentMethod === 'COD' || order?.paymentStatus !== 'paid' ? `Collect ₹${order?.totalAmount || 0} Cash & Enter OTP` : 'Enter Customer OTP'}
+                {String(order?.paymentMethod || '').toUpperCase().includes('COD') || (order?.paymentStatus !== 'paid' && order?.paymentStatus !== 'Paid')
+                  ? `Collect ₹${order?.totalAmount || 0} Cash & Enter OTP`
+                  : 'Enter Customer OTP'}
               </h3>
               <p className="text-xs text-gray-500 font-medium">Ask customer for 4-digit PIN sent to their phone</p>
             </div>

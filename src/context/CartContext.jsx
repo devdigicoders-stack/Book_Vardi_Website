@@ -1858,6 +1858,9 @@ export function CartProvider({ children }) {
     const itemsToBuy = cartItems.filter((item) => item.selected !== false);
     const unselectedItems = cartItems.filter((item) => item.selected === false);
 
+    const isCod = /cod|cash\s*on\s*delivery/i.test(String(orderData.paymentMethod || ''));
+    const initialPaymentStatus = orderData.paymentStatus || (isCod ? 'Pending' : 'Paid');
+
     const newOrder = {
       id: randomId,
       date: formattedDate,
@@ -1866,6 +1869,7 @@ export function CartProvider({ children }) {
       trackingNumber: randomTracking,
       courierName: orderData.courierName || 'N/A',
       deliveryMode: orderData.deliveryMode || 'pending_choice',
+      paymentStatus: initialPaymentStatus,
       customer: {
         name: userProfile?.name || orderData?.shippingAddress?.name || 'Student Customer',
         email: userProfile?.email || orderData?.shippingAddress?.email || '',
@@ -1908,7 +1912,7 @@ export function CartProvider({ children }) {
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
       status: 'Processing',
       paymentMethod: orderData.paymentMethod || 'UPI',
-      paymentStatus: 'Paid',
+      paymentStatus: initialPaymentStatus,
       shippingAddress: typeof orderData.shippingAddress === 'object'
         ? `${orderData.shippingAddress.address || ''}, ${orderData.shippingAddress.city || ''} ${orderData.shippingAddress.pincode || ''}`
         : (orderData.shippingAddress || 'Customer Address'),
