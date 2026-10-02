@@ -411,7 +411,12 @@ export default function BulkOrderPreviewModal({
       rzpInstance.open();
     } catch (err) {
       console.error('Initiate prepayment error:', err);
-      alert('Failed to connect to online payment gateway: ' + err.message);
+      const errMsg = err.data?.message || err.message || 'Failed to initialize online payment gateway.';
+      if (errMsg.includes('mutually verified') || errMsg.includes('counter-demand') || errMsg.includes('agreed')) {
+        alert(`🤝 Quotation Agreement Required:\n\n${errMsg}\n\nPlease verify and confirm the quotation decision with the seller before proceeding with prepayment.`);
+      } else {
+        alert(`⚠️ Prepayment Notice: ${errMsg}`);
+      }
       setIsPayingPrepayment(false);
     }
   };
@@ -635,7 +640,8 @@ export default function BulkOrderPreviewModal({
 
   const deliveryPartnerDisplay = riderName ? `Direct Self-Delivery (Rider: ${riderName})` : 'Direct Self-Delivery (Store Fleet)';
   const trackingNumberDisplay = tokenVal;
-  const trackingLinkDisplay = order?.deliveryDetails?.trackingUrl || order?.selfDeliveryDetails?.trackingUrl || order?.trackingUrl || (tokenVal ? `${window.location.origin}/#delivery-partner?token=${tokenVal}` : '');
+  const isSelfOrder = String(order?.deliveryType || order?.fulfillmentType || '').toLowerCase().includes('self') || !order?.courierName;
+  const trackingLinkDisplay = !isSelfOrder ? (order?.deliveryDetails?.trackingUrl || order?.trackingUrl || '') : '';
 
   // Transform bulk order into TaxInvoice-compatible object
   const taxInvoiceOrder = useMemo(() => {
@@ -985,9 +991,12 @@ export default function BulkOrderPreviewModal({
                       {/* Financial Settlement Card: Advance Paid & Remaining Balance Due */}
                       {(() => {
                         const totalVal = Number(winningQuote.quoteAmount || winningQuote.totalPrice || order.overallBudget || 0);
-                        const advPaid = Number(order.advancePaidAmount || (order.advancePaymentStatus === 'paid' ? (winningQuote.prepaymentAmount || totalVal * 0.3) : 0));
-                        const remBal = Math.max(0, totalVal - advPaid);
-                        const isRemPaid = order.remainingPaymentStatus === 'paid' || order.status === 'completed';
+                        const advPaid = Number(order.advancePaidAmount || (order.advancePaymentStatus === 'paid' ? (winningQuote.prepaymentAmount || Math.round(totalVal * 0.3)) : 0));
+                        const totalPaid = advPaid + Number(order.remainingPaidAmount || 0);
+                        
+                        // Remaining unpaid balance due on delivery
+                        const isRemPaid = order.remainingPaymentStatus === 'paid' || (totalPaid >= totalVal && totalVal > 0);
+                        const remDue = isRemPaid ? 0 : Math.max(0, totalVal - advPaid);
 
                         return (
                           <div className="bg-white p-3 rounded-xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
@@ -1006,7 +1015,7 @@ export default function BulkOrderPreviewModal({
                                 </div>
                                 <div className="border-l border-gray-200 pl-3">
                                   <span className="text-gray-500">Remaining on Delivery:</span>{' '}
-                                  <strong className={isRemPaid ? "text-emerald-700 font-mono" : "text-amber-800 font-mono font-bold"}>₹{remBal.toLocaleString()}</strong>
+                                  <strong className={isRemPaid ? "text-emerald-700 font-mono" : "text-amber-800 font-mono font-bold"}>₹{remDue.toLocaleString()}</strong>
                                 </div>
                               </div>
                             </div>
@@ -1027,17 +1036,21 @@ export default function BulkOrderPreviewModal({
                                 <span className="px-3 py-1.5 bg-emerald-100 text-emerald-900 font-extrabold text-xs rounded-xl border border-emerald-300 flex items-center gap-1">
                                   <CheckCircle2 size={13} className="text-emerald-700" /> Balance Paid & Order Completed
                                 </span>
-                              ) : (userRole === 'consumer' && remBal > 0) ? (
+                              ) : (userRole === 'consumer' && remDue > 0) ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleInitiateOnlineRemainingPayment(winningQuote, remBal)}
+                                  onClick={() => handleInitiateOnlineRemainingPayment(winningQuote, remDue)}
                                   disabled={isPayingRemaining}
                                   className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 animate-pulse"
                                 >
                                   <CreditCard size={13} />
-                                  <span>{isPayingRemaining ? 'Processing...' : `Pay Remaining ₹${remBal.toLocaleString()} Online`}</span>
+                                  <span>{isPayingRemaining ? 'Processing...' : `Pay Remaining ₹${remDue.toLocaleString()} Online`}</span>
                                 </button>
-                              ) : null}
+                              ) : (
+                                <span className="px-3 py-1.5 bg-amber-50 text-amber-900 font-extrabold text-xs rounded-xl border border-amber-300 flex items-center gap-1">
+                                  <Clock size={13} className="text-amber-700" /> Pending Balance (₹{remDue.toLocaleString()})
+                                </span>
+                              )}
                             </div>
                           </div>
                         );
@@ -1768,8 +1781,11 @@ export default function BulkOrderPreviewModal({
                           const advPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
                           const advAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (advPct > 0 ? Math.round((Number(quote.quoteAmount) * advPct) / 100) : 0);
                           const advTerms = quote.prepaymentTerms || quote.sellerAdvanceTerms || '';
-                          const remainingBal = Math.max(0, Number(quote.quoteAmount) - advAmt);
                           const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= advAmt);
+                          const actualAdvPaid = isPrepaymentPaid ? (Number(order.advancePaidAmount) || advAmt) : 0;
+                          const totalPaid = actualAdvPaid + Number(order.remainingPaidAmount || 0);
+                          const isRemPaid = order.remainingPaymentStatus === 'paid' || (totalPaid >= Number(quote.quoteAmount) && Number(quote.quoteAmount) > 0);
+                          const remainingBal = isRemPaid ? 0 : Math.max(0, Number(quote.quoteAmount) - actualAdvPaid);
                           const isEligibleForPayment = (isApproved || quote.negotiationStage === 'seller_accepted_counter') && advAmt > 0 && !isPrepaymentPaid;
 
                           if (advPct <= 0 && advAmt <= 0 && !advTerms) return null;
@@ -1825,7 +1841,7 @@ export default function BulkOrderPreviewModal({
                                       <span>Advance Receipt (PDF)</span>
                                     </button>
 
-                                    {order.remainingPaymentStatus === 'paid' || order.status === 'completed' ? (
+                                    {isRemPaid ? (
                                       <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 font-extrabold text-[11px] rounded-lg border border-emerald-300">
                                         <CheckCircle2 size={12} /> Balance Paid
                                       </span>
@@ -1839,7 +1855,11 @@ export default function BulkOrderPreviewModal({
                                         <CreditCard size={13} />
                                         <span>{isPayingRemaining ? 'Processing...' : `Pay Bal ₹${remainingBal.toLocaleString()}`}</span>
                                       </button>
-                                    ) : null}
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-900 font-extrabold text-[11px] rounded-lg border border-amber-300">
+                                        <Clock size={12} className="text-amber-700" /> Pending Bal ₹{remainingBal.toLocaleString()}
+                                      </span>
+                                    )}
                                   </div>
                                 ) : (userRole === 'consumer' && isEligibleForPayment) ? (
                                   <button
@@ -2502,15 +2522,16 @@ export default function BulkOrderPreviewModal({
       {/* BUYER QUOTATION ACCEPTANCE & ORDER SIZE ADJUSTMENT MODAL */}
       {/* ========================================== */}
       {acceptQuoteModalData && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 text-xs space-y-4 max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-5 sm:p-6 text-xs max-h-[92vh] sm:max-h-[88vh] flex flex-col my-auto overflow-hidden border border-gray-100">
+            {/* Pinned Header */}
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800">
-                  <CheckCircle2 size={22} />
+                <div className="w-9 h-9 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800">
+                  <CheckCircle2 size={20} />
                 </div>
                 <div>
-                  <h4 className="font-extrabold text-gray-900 text-base">
+                  <h4 className="font-extrabold text-gray-900 text-sm sm:text-base font-display">
                     Accept Quotation & Finalize Order Size
                   </h4>
                   <p className="text-[11px] text-gray-500 mt-0.5">
@@ -2527,164 +2548,167 @@ export default function BulkOrderPreviewModal({
               </button>
             </div>
 
-            <div className="p-3.5 bg-teal-50 border border-teal-200 rounded-2xl text-[11px] text-teal-950 flex items-start gap-2 shrink-0">
-              <Sparkles size={16} className="text-teal-700 shrink-0 mt-0.5" />
-              <div>
-                <strong className="block text-teal-900 font-extrabold mb-0.5">
-                  Update Item Counts / Order Size to Existing Count
-                </strong>
-                <span>
-                  You can increase or decrease the quantities below to match your school/institutional headcount before accepting. Line totals and the final order budget will recalculate automatically based on vendor unit rates.
-                </span>
-              </div>
-            </div>
-
-            {/* Editable Item Quantities Table */}
-            <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs flex-1 overflow-y-auto min-h-48">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-600 border-b border-gray-200 sticky top-0">
-                    <th className="py-2.5 px-3">Item / Requirement</th>
-                    <th className="py-2.5 px-2 text-right">Quoted Rate</th>
-                    <th className="py-2.5 px-3 text-center">Order Count (Units)</th>
-                    <th className="py-2.5 px-3 text-right">Line Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {acceptQuoteModalData.items.map((item, itIdx) => {
-                    return (
-                      <tr key={itIdx} className="hover:bg-gray-50/50">
-                        <td className="py-2.5 px-3">
-                          <div className="font-bold text-gray-900">{item.itemName}</div>
-                          <div className="text-[10px] text-gray-400">{item.category}</div>
-                        </td>
-                        <td className="py-2.5 px-2 text-right font-mono font-bold text-emerald-900">
-                          ₹{item.pricePerUnit > 0 ? item.pricePerUnit.toLocaleString() : '0'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <div className="inline-flex items-center border border-gray-300 rounded-xl overflow-hidden bg-white shadow-2xs">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newQty = Math.max(1, item.quantity - 5);
-                                setAcceptQuoteModalData(prev => {
-                                  const updatedItems = [...prev.items];
-                                  updatedItems[itIdx] = {
-                                    ...updatedItems[itIdx],
-                                    quantity: newQty,
-                                    totalPrice: newQty * updatedItems[itIdx].pricePerUnit
-                                  };
-                                  return { ...prev, items: updatedItems };
-                                });
-                              }}
-                              className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 font-bold cursor-pointer text-xs"
-                            >
-                              -
-                            </button>
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) => {
-                                const val = Math.max(1, Number(e.target.value) || 1);
-                                setAcceptQuoteModalData(prev => {
-                                  const updatedItems = [...prev.items];
-                                  updatedItems[itIdx] = {
-                                    ...updatedItems[itIdx],
-                                    quantity: val,
-                                    totalPrice: val * updatedItems[itIdx].pricePerUnit
-                                  };
-                                  return { ...prev, items: updatedItems };
-                                });
-                              }}
-                              className="w-16 text-center font-bold text-gray-900 py-1 focus:outline-none text-xs"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newQty = item.quantity + 5;
-                                setAcceptQuoteModalData(prev => {
-                                  const updatedItems = [...prev.items];
-                                  updatedItems[itIdx] = {
-                                    ...updatedItems[itIdx],
-                                    quantity: newQty,
-                                    totalPrice: newQty * updatedItems[itIdx].pricePerUnit
-                                  };
-                                  return { ...prev, items: updatedItems };
-                                });
-                              }}
-                              className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 font-bold cursor-pointer text-xs"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-extrabold text-gray-900">
-                          ₹{item.totalPrice.toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Calculations & Live Summary Bar */}
-            {(() => {
-              const totalAdjustedQty = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.quantity || 0), 0);
-              const totalAdjustedAmount = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.totalPrice || 0), 0) || Number(acceptQuoteModalData.quote.quoteAmount);
-
-              const advPct = Number(acceptQuoteModalData.quote.prepaymentPercentage ?? acceptQuoteModalData.quote.sellerAdvancePercentage ?? 0);
-              const advAmt = advPct > 0 
-                ? Math.round((totalAdjustedAmount * advPct) / 100) 
-                : Number(acceptQuoteModalData.quote.prepaymentAmount ?? acceptQuoteModalData.quote.sellerAdvanceAmount ?? 0);
-              const remainingBal = Math.max(0, totalAdjustedAmount - advAmt);
-
-              return (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3 text-xs shrink-0">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <span className="text-[11px] text-emerald-800 font-bold uppercase tracking-wider block">
-                        Updated Headcount & Items
-                      </span>
-                      <div className="font-extrabold text-gray-900 text-sm mt-0.5">
-                        {totalAdjustedQty} Total Demanded Units ({acceptQuoteModalData.items.length} Products)
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-[11px] text-gray-500 font-bold uppercase tracking-wider block">
-                        Final Accepted Order Total
-                      </span>
-                      <div className="font-mono font-black text-xl text-emerald-950">
-                        ₹{totalAdjustedAmount.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-
-                  {(advPct > 0 || advAmt > 0) && (
-                    <div className="pt-2 border-t border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-emerald-900">
-                      <div>
-                        Seller Demanded Prepayment ({advPct > 0 ? `${advPct}%` : 'Fixed'}): <strong className="font-mono text-emerald-950 text-xs">₹{advAmt.toLocaleString()}</strong>
-                        {acceptQuoteModalData.quote.prepaymentTerms || acceptQuoteModalData.quote.sellerAdvanceTerms ? (
-                          <span className="italic block text-[10px] text-emerald-700">"{acceptQuoteModalData.quote.prepaymentTerms || acceptQuoteModalData.quote.sellerAdvanceTerms}"</span>
-                        ) : null}
-                      </div>
-                      <div className="sm:text-right">
-                        Balance upon Delivery: <strong className="font-mono text-gray-900 text-xs">₹{remainingBal.toLocaleString()}</strong>
-                      </div>
-                    </div>
-                  )}
+            {/* Scrollable Middle Content Container */}
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-4 py-3 pr-1 scrollbar-thin">
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-[11px] text-teal-950 flex items-start gap-2">
+                <Sparkles size={15} className="text-teal-700 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block text-teal-900 font-extrabold mb-0.5">
+                    Update Item Counts / Order Size to Existing Count
+                  </strong>
+                  <span>
+                    You can increase or decrease the quantities below to match your school/institutional headcount before accepting. Line totals and the final order budget will recalculate automatically based on vendor unit rates.
+                  </span>
                 </div>
-              );
-            })()}
+              </div>
 
-            {/* Modal Actions */}
-            <div className="flex items-center gap-3 pt-2 shrink-0">
+              {/* Editable Item Quantities Table (Scrollable Container) */}
+              <div className="border border-gray-200 rounded-2xl overflow-y-auto max-h-[40vh] sm:max-h-[300px] min-h-[120px] bg-white shadow-2xs scrollbar-thin">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-600 border-b border-gray-200 sticky top-0 z-10 shadow-2xs">
+                      <th className="py-2.5 px-3 bg-gray-50">Item / Requirement</th>
+                      <th className="py-2.5 px-2 text-right bg-gray-50">Quoted Rate</th>
+                      <th className="py-2.5 px-3 text-center bg-gray-50">Order Count (Units)</th>
+                      <th className="py-2.5 px-3 text-right bg-gray-50">Line Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {acceptQuoteModalData.items.map((item, itIdx) => {
+                      return (
+                        <tr key={itIdx} className="hover:bg-gray-50/50">
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold text-gray-900">{item.itemName}</div>
+                            <div className="text-[10px] text-gray-400">{item.category}</div>
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-bold text-emerald-900">
+                            ₹{item.pricePerUnit > 0 ? item.pricePerUnit.toLocaleString() : '0'}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <div className="inline-flex items-center border border-gray-300 rounded-xl overflow-hidden bg-white shadow-2xs">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newQty = Math.max(1, item.quantity - 5);
+                                  setAcceptQuoteModalData(prev => {
+                                    const updatedItems = [...prev.items];
+                                    updatedItems[itIdx] = {
+                                      ...updatedItems[itIdx],
+                                      quantity: newQty,
+                                      totalPrice: newQty * updatedItems[itIdx].pricePerUnit
+                                    };
+                                    return { ...prev, items: updatedItems };
+                                  });
+                                }}
+                                className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 font-bold cursor-pointer text-xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => {
+                                  const val = Math.max(1, Number(e.target.value) || 1);
+                                  setAcceptQuoteModalData(prev => {
+                                    const updatedItems = [...prev.items];
+                                    updatedItems[itIdx] = {
+                                      ...updatedItems[itIdx],
+                                      quantity: val,
+                                      totalPrice: val * updatedItems[itIdx].pricePerUnit
+                                    };
+                                    return { ...prev, items: updatedItems };
+                                  });
+                                }}
+                                className="w-16 text-center font-bold text-gray-900 py-1 focus:outline-none text-xs"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newQty = item.quantity + 5;
+                                  setAcceptQuoteModalData(prev => {
+                                    const updatedItems = [...prev.items];
+                                    updatedItems[itIdx] = {
+                                      ...updatedItems[itIdx],
+                                      quantity: newQty,
+                                      totalPrice: newQty * updatedItems[itIdx].pricePerUnit
+                                    };
+                                    return { ...prev, items: updatedItems };
+                                  });
+                                }}
+                                className="px-2.5 py-1 text-gray-600 hover:bg-gray-100 font-bold cursor-pointer text-xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-extrabold text-gray-900">
+                            ₹{item.totalPrice.toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Calculations & Live Summary Bar */}
+              {(() => {
+                const totalAdjustedQty = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+                const totalAdjustedAmount = acceptQuoteModalData.items.reduce((s, it) => s + Number(it.totalPrice || 0), 0) || Number(acceptQuoteModalData.quote.quoteAmount);
+
+                const advPct = Number(acceptQuoteModalData.quote.prepaymentPercentage ?? acceptQuoteModalData.quote.sellerAdvancePercentage ?? 0);
+                const advAmt = advPct > 0 
+                  ? Math.round((totalAdjustedAmount * advPct) / 100) 
+                  : Number(acceptQuoteModalData.quote.prepaymentAmount ?? acceptQuoteModalData.quote.sellerAdvanceAmount ?? 0);
+                const remainingBal = Math.max(0, totalAdjustedAmount - advAmt);
+
+                return (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3 text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="text-[11px] text-emerald-800 font-bold uppercase tracking-wider block">
+                          Updated Headcount & Items
+                        </span>
+                        <div className="font-extrabold text-gray-900 text-sm mt-0.5">
+                          {totalAdjustedQty} Total Demanded Units ({acceptQuoteModalData.items.length} Products)
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[11px] text-gray-500 font-bold uppercase tracking-wider block">
+                          Final Accepted Order Total
+                        </span>
+                        <div className="font-mono font-black text-xl text-emerald-950">
+                          ₹{totalAdjustedAmount.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {(advPct > 0 || advAmt > 0) && (
+                      <div className="pt-2 border-t border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-emerald-900">
+                        <div>
+                          Seller Demanded Prepayment ({advPct > 0 ? `${advPct}%` : 'Fixed'}): <strong className="font-mono text-emerald-950 text-xs">₹{advAmt.toLocaleString()}</strong>
+                          {acceptQuoteModalData.quote.prepaymentTerms || acceptQuoteModalData.quote.sellerAdvanceTerms ? (
+                            <span className="italic block text-[10px] text-emerald-700">"{acceptQuoteModalData.quote.prepaymentTerms || acceptQuoteModalData.quote.sellerAdvanceTerms}"</span>
+                          ) : null}
+                        </div>
+                        <div className="sm:text-right">
+                          Balance upon Delivery: <strong className="font-mono text-gray-900 text-xs">₹{remainingBal.toLocaleString()}</strong>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Pinned Modal Footer Actions */}
+            <div className="flex items-center gap-3 pt-3 border-t border-gray-100 shrink-0 bg-white">
               <button
                 type="button"
                 onClick={() => setAcceptQuoteModalData(null)}
-                className="flex-1 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer"
+                className="flex-1 py-2.5 font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer transition-colors"
               >
                 Cancel
               </button>
@@ -2716,10 +2740,10 @@ export default function BulkOrderPreviewModal({
 
                   setAcceptQuoteModalData(null);
                 }}
-                className="flex-1 py-2.5 font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 font-display"
+                className="flex-1 py-2.5 font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5 font-display transition-colors"
               >
                 <CheckCircle2 size={16} />
-                <span>Confirm & Accept Quotation</span>
+                <span>Confirm & Accept Winning Proposal</span>
               </button>
             </div>
           </div>

@@ -25,7 +25,7 @@ import {
   Key,
   RotateCcw
 } from 'lucide-react';
-import { trackAwbApi } from '../../utils/api';
+import { trackAwbApi, downloadInvoiceApi } from '../../utils/api';
 
 export default function OrderTrackingModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
@@ -461,44 +461,26 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
               </div>
 
-              {/* 3. Self-Delivery Tracking & Verification Link */}
-              {selfDeliveryUrl && (
-                <div className="bg-white p-3.5 rounded-2xl border border-teal-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-gray-800 flex items-center gap-1.5">
-                      <ExternalLink size={13} className="text-teal-700" />
-                      Self-Delivery Driver Portal & Verification Link:
+              {/* 3. Buyer Tracking ID Card */}
+              {(selfToken || awbNumber) && (
+                <div className="bg-white p-3.5 rounded-2xl border border-teal-200 shadow-2xs flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">
+                      Delivery Tracking ID
                     </span>
-                    <span className="text-[10px] font-mono font-bold bg-teal-50 border border-teal-200 px-2 py-0.5 rounded text-teal-800">
-                      Token: {selfToken}
+                    <span className="text-xs sm:text-sm font-mono font-extrabold text-brand-teal mt-0.5 block">
+                      {selfToken || awbNumber}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      readOnly
-                      value={selfDeliveryUrl}
-                      className="flex-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl font-mono text-[11px] text-gray-700 truncate select-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleCopyLink(selfDeliveryUrl)}
-                      className="px-3 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-[11px] rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-                    >
-                      {copiedLink ? <Check size={13} /> : <Copy size={13} />}
-                      <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
-                    </button>
-                    <a
-                      href={selfDeliveryUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-                    >
-                      <ExternalLink size={13} />
-                      <span>Open Portal</span>
-                    </a>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(selfToken || awbNumber)}
+                    className="px-3.5 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs"
+                  >
+                    {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{copiedLink ? 'Copied ID!' : 'Copy Tracking ID'}</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -629,11 +611,47 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
         </div>
 
         {/* Modal Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex justify-end shrink-0">
+        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {isCancelled ? (
+              <button
+                type="button"
+                onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'credit-note')}
+                className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText size={14} />
+                <span>Download Credit Note</span>
+              </button>
+            ) : (
+              <>
+                {['confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) && (
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'invoice')}
+                    className="px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl border border-teal-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileText size={14} />
+                    <span>Download Tax Invoice</span>
+                  </button>
+                )}
+                {(order.returnRequest?.requestType === 'exchange' || order.returnRequest?.type === 'exchange') && ['exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) && (
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'exchange-invoice')}
+                    className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileText size={14} />
+                    <span>Download Exchange Invoice</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+            className="px-6 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer ml-auto"
           >
             Close Tracking
           </button>
@@ -642,3 +660,4 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     </div>
   );
 }
+

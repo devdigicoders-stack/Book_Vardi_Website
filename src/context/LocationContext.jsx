@@ -310,17 +310,105 @@ export function LocationProvider({ children }) {
 
 
 
-  // Check on initial load if user needs to be prompted
+  // Silent background location fetcher
+  const fetchLocationInBackground = useCallback(() => {
+    if (!navigator.geolocation) return;
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const coords = { lat, lng, accuracy: position.coords.accuracy };
+        setUserLocation(coords);
+        setPermissionStatus('granted');
+
+        try {
+          localStorage.setItem('bv_user_coords', JSON.stringify(coords));
+          localStorage.setItem('bv_location_permission', 'granted');
+          localStorage.setItem('bv_location_prompted_once', 'true');
+        } catch {}
+
+        // Resolve reverse geocoding in background
+        try {
+          const resolvedLabel = await resolveSubdistrictFromCoords(lat, lng);
+          setUserSubdistrict(resolvedLabel);
+          setLocationLabel(resolvedLabel);
+          localStorage.setItem('bv_user_location_label', resolvedLabel);
+          localStorage.setItem('bv_user_subdistrict', resolvedLabel);
+        } catch {}
+        setIsLocating(false);
+      },
+      (error) => {
+        setIsLocating(false);
+        if (error.code === error.PERMISSION_DENIED) {
+          setPermissionStatus('denied');
+        }
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: 300000
+      }
+    );
+  }, []);
+
+  // Check initial permission status & navigator.permissions API
   useEffect(() => {
-    const hasPrompted = localStorage.getItem('bv_location_prompted_once');
-    if (!hasPrompted || permissionStatus === 'prompt') {
-      // Delay opening modal slightly for smooth initial landing
-      const timer = setTimeout(() => {
-        setIsPermissionModalOpen(true);
-      }, 700);
-      return () => clearTimeout(timer);
-    }
-  }, [permissionStatus]);
+    let isMounted = true;
+
+    const checkPermissionAndStartBg = async () => {
+      const storedPermission = localStorage.getItem('bv_location_permission');
+      const hasPrompted = localStorage.getItem('bv_location_prompted_once');
+
+      // Check native browser permissions if available
+      if (navigator.permissions && navigator.permissions.query) {
+        try {
+          const status = await navigator.permissions.query({ name: 'geolocation' });
+          if (!isMounted) return;
+
+          if (status.state === 'granted') {
+            setPermissionStatus('granted');
+            setIsPermissionModalOpen(false); // Hide popup
+            fetchLocationInBackground(); // Run in background
+
+            status.onchange = () => {
+              if (status.state === 'granted') {
+                setPermissionStatus('granted');
+                setIsPermissionModalOpen(false);
+                fetchLocationInBackground();
+              }
+            };
+            return;
+          } else if (status.state === 'denied') {
+            setPermissionStatus('denied');
+          }
+        } catch (err) {
+          console.warn('Permissions API check failed:', err);
+        }
+      }
+
+      // If stored as granted or manual, hide popup and run background sync if granted
+      if (storedPermission === 'granted') {
+        setPermissionStatus('granted');
+        setIsPermissionModalOpen(false);
+        fetchLocationInBackground();
+      } else if (storedPermission === 'manual' || hasPrompted === 'true') {
+        setIsPermissionModalOpen(false);
+      } else if (!hasPrompted || permissionStatus === 'prompt') {
+        // Show modal only if user has never been prompted
+        const timer = setTimeout(() => {
+          if (isMounted) setIsPermissionModalOpen(true);
+        }, 700);
+        return () => clearTimeout(timer);
+      }
+    };
+
+    checkPermissionAndStartBg();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchLocationInBackground, permissionStatus]);
 
   // Request native browser GPS permission
   const requestBrowserLocation = useCallback(() => {
@@ -334,7 +422,11 @@ export function LocationProvider({ children }) {
     }
 
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
+        // ON ALLOW: IMMEDIATELY HIDE POPUP & RUN REST IN BACKGROUND
+        setIsPermissionModalOpen(false);
+        setPermissionStatus('granted');
+
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         const coords = {
@@ -344,21 +436,26 @@ export function LocationProvider({ children }) {
         };
         setUserLocation(coords);
 
-        const resolvedLabel = await resolveSubdistrictFromCoords(lat, lng);
-
-        setUserSubdistrict(resolvedLabel);
-        setLocationLabel(resolvedLabel);
-        setPermissionStatus('granted');
-        setIsLocating(false);
-        setIsPermissionModalOpen(false);
-
         try {
           localStorage.setItem('bv_user_coords', JSON.stringify(coords));
-          localStorage.setItem('bv_user_location_label', resolvedLabel);
-          localStorage.setItem('bv_user_subdistrict', resolvedLabel);
           localStorage.setItem('bv_location_permission', 'granted');
           localStorage.setItem('bv_location_prompted_once', 'true');
         } catch {}
+
+        // Resolve reverse geocoding asynchronously in background without blocking UI
+        resolveSubdistrictFromCoords(lat, lng)
+          .then((resolvedLabel) => {
+            setUserSubdistrict(resolvedLabel);
+            setLocationLabel(resolvedLabel);
+            setIsLocating(false);
+            try {
+              localStorage.setItem('bv_user_location_label', resolvedLabel);
+              localStorage.setItem('bv_user_subdistrict', resolvedLabel);
+            } catch {}
+          })
+          .catch(() => {
+            setIsLocating(false);
+          });
       },
       (error) => {
         setIsLocating(false);

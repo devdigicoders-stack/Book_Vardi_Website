@@ -101,3 +101,36 @@ export const isCouponApplicableToCart = (coupon, cartItems = [], cartTotal = 0) 
 
   return cartItems.some((item) => isCouponApplicableToProduct(coupon, item));
 };
+
+/**
+ * Calculates the exact discount amount for a coupon applied to a product price or subtotal.
+ * Enforces minAmount threshold and caps discount at maxDiscount if maxDiscount is specified.
+ *
+ * @param {Object} coupon - The coupon object
+ * @param {number} subtotal - Price of product or subtotal of eligible items
+ * @returns {number} Calculated discount amount restricted to maxDiscount boundary
+ */
+export const calculateCouponDiscount = (coupon, subtotal) => {
+  const amt = Number(subtotal || 0);
+  if (!coupon || isNaN(amt) || amt <= 0) return 0;
+
+  const minVal = Number(coupon.minOrderValue || coupon.minOrderAmount || coupon.minAmount || coupon.minPurchase || 0);
+  if (minVal > 0 && amt < minVal) return 0;
+
+  const isPercent = coupon.discountType === 'percentage' || coupon.type === 'percentage' || coupon.type === 'percent';
+  const discVal = Number(coupon.discountValue ?? coupon.discount ?? coupon.value ?? 0);
+  let discountAmt = 0;
+
+  if (isPercent) {
+    discountAmt = Math.round(((amt * discVal) / 100) * 100) / 100;
+  } else {
+    discountAmt = Math.min(amt, discVal);
+  }
+
+  const maxCap = Number(coupon.maxDiscount || coupon.maxDiscountAmount || coupon.maxCap || 0);
+  if (maxCap > 0 && discountAmt > maxCap) {
+    discountAmt = maxCap;
+  }
+
+  return Math.max(0, discountAmt);
+};

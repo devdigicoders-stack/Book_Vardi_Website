@@ -300,6 +300,31 @@ export default function DeliveryPartnerPage({ onNavigate }) {
 
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddressStr)}`;
 
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-800 flex items-center justify-center mb-4 shadow-sm border border-amber-200">
+          <ShieldCheck size={32} />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 mb-2">Delivery Executive Portal Restricted</h2>
+        <p className="text-xs text-slate-600 max-w-sm mb-6 leading-relaxed">
+          This portal is reserved strictly for authorized BookVardi delivery executives and riders.
+          <br /><br />
+          If you are a customer/buyer, you can view your live order status and checkpoints inside <strong>My Orders</strong> using your Tracking ID.
+        </p>
+        <button
+          onClick={() => {
+            if (onNavigate) onNavigate('profile');
+            else window.location.hash = '#profile';
+          }}
+          className="px-5 py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+        >
+          Return to My Orders
+        </button>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">

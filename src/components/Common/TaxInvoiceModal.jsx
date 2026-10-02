@@ -64,9 +64,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const orderStatus = String(order.status || order.overallStatus || '').toLowerCase();
   const isCancelled = orderStatus === 'cancelled' || order.isCancelled || Boolean(order.cancelledAt);
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
-  const isPaymentVerified = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
+  const isPaymentVerified = String(order.paymentStatus || '').toLowerCase() === 'paid';
 
-  const confirmed = isCancelled || orderStatus === 'confirmed' || orderStatus === 'shipped' || orderStatus === 'out for delivery' || orderStatus === 'out_for_delivery' || orderStatus === 'delivered' || orderStatus === 'processing' || order.paymentStatus === 'paid' || order.paymentStatus === 'Paid';
+  const confirmed = isCancelled || isPaymentVerified;
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
@@ -295,13 +295,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
               <Lock size={28} />
             </div>
             <div>
-              <h4 className="font-display font-extrabold text-lg text-gray-900">Certificate Generation Locked</h4>
+              <h4 className="font-display font-extrabold text-lg text-gray-900">Tax Invoice Generation Locked</h4>
               <p className="text-xs text-gray-500 max-w-md mx-auto mt-1">
-                Official Tax Invoice and Order Certificate are strictly generated only after order confirmation or payment settlement.
+                Official Tax Invoice can only be created strictly after payment status is verified and confirmed.
               </p>
             </div>
             <div className="inline-block bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold px-4 py-2 rounded-xl">
-              Current Order Status: <span className="uppercase font-black text-amber-950">{order.status || 'Pending Verification'}</span>
+              Current Payment Status: <span className="uppercase font-black text-amber-950">{order.paymentStatus || 'Pending Verification'}</span>
             </div>
           </div>
         ) : (
