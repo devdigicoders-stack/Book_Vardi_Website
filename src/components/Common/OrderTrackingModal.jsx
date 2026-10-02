@@ -461,44 +461,26 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
               </div>
 
-              {/* 3. Self-Delivery Tracking & Verification Link */}
-              {selfDeliveryUrl && (
-                <div className="bg-white p-3.5 rounded-2xl border border-teal-200 space-y-2 shadow-2xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-gray-800 flex items-center gap-1.5">
-                      <ExternalLink size={13} className="text-teal-700" />
-                      Self-Delivery Driver Portal & Verification Link:
+              {/* 3. Buyer Tracking ID Card */}
+              {(selfToken || awbNumber) && (
+                <div className="bg-white p-3.5 rounded-2xl border border-teal-200 shadow-2xs flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">
+                      Delivery Tracking ID
                     </span>
-                    <span className="text-[10px] font-mono font-bold bg-teal-50 border border-teal-200 px-2 py-0.5 rounded text-teal-800">
-                      Token: {selfToken}
+                    <span className="text-xs sm:text-sm font-mono font-extrabold text-brand-teal mt-0.5 block">
+                      {selfToken || awbNumber}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      readOnly
-                      value={selfDeliveryUrl}
-                      className="flex-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl font-mono text-[11px] text-gray-700 truncate select-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleCopyLink(selfDeliveryUrl)}
-                      className="px-3 py-1.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-[11px] rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-                    >
-                      {copiedLink ? <Check size={13} /> : <Copy size={13} />}
-                      <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
-                    </button>
-                    <a
-                      href={selfDeliveryUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px] rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-                    >
-                      <ExternalLink size={13} />
-                      <span>Open Portal</span>
-                    </a>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyLink(selfToken || awbNumber)}
+                    className="px-3.5 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs"
+                  >
+                    {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{copiedLink ? 'Copied ID!' : 'Copy Tracking ID'}</span>
+                  </button>
                 </div>
               )}
             </div>

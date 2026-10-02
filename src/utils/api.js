@@ -426,15 +426,39 @@ export function loadRazorpayScript() {
         resolve(true);
         return;
       }
-      existingScript.addEventListener('load', () => resolve(true));
-      existingScript.addEventListener('error', () => resolve(false));
-      return;
+      existingScript.remove(); // Clean up existing failed/hanging script tag for retry
     }
+
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.async = true;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
+
+    let isResolved = false;
+    const timeoutTimer = setTimeout(() => {
+      if (!isResolved) {
+        isResolved = true;
+        if (script.parentNode) script.remove();
+        console.warn('⚠️ Razorpay checkout.js CDN script load timed out.');
+        resolve(false);
+      }
+    }, 12000);
+
+    script.onload = () => {
+      if (!isResolved) {
+        isResolved = true;
+        clearTimeout(timeoutTimer);
+        resolve(true);
+      }
+    };
+    script.onerror = () => {
+      if (!isResolved) {
+        isResolved = true;
+        clearTimeout(timeoutTimer);
+        if (script.parentNode) script.remove();
+        resolve(false);
+      }
+    };
+
     document.body.appendChild(script);
   });
 }

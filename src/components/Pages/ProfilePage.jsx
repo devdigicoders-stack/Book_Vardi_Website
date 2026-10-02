@@ -2894,8 +2894,43 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 const advReq = Number(order.sellerAdvanceAmount || winningQuote.prepaymentAmount || 0) || Math.round((Number(winningQuote.quoteAmount || order.overallBudget || 0) * advPct) / 100);
                                 const isPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= advReq);
 
+                                const isRemainingPaid = order.remainingPaymentStatus === 'paid' || String(order.status || '').toLowerCase() === 'completed' || String(order.status || '').toLowerCase() === 'remaining_paid' || String(order.overallStatus || '').toLowerCase() === 'completed' || String(order.overallStatus || '').toLowerCase() === 'delivered';
+                                const isOrderAdvanced = isRemainingPaid || [
+                                  'prepayment_pending',
+                                  'advance_paid',
+                                  'in_production',
+                                  'processing',
+                                  'dispatched',
+                                  'out_for_delivery',
+                                  'remaining_pending',
+                                  'remaining_paid',
+                                  'completed',
+                                  'delivered'
+                                ].includes(String(order.status || '').toLowerCase()) ||
+                                order.advancePaymentStatus === 'paid' ||
+                                order.paymentStatus === 'paid' ||
+                                order.paymentStatus === 'completed';
+
+                                if (isRemainingPaid) {
+                                  return (
+                                    <div className="bg-emerald-100/90 border border-emerald-400 p-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                                      <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
+                                        <CheckCircle2 size={16} className="text-emerald-700 shrink-0" />
+                                        <span>🎉 Balance Paid & Order Completed! Thank you for your order.</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                        className="px-3 py-1 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer shrink-0"
+                                      >
+                                        Receipt PDF
+                                      </button>
+                                    </div>
+                                  );
+                                }
+
                                 // Scenario 1: Seller accepted buyer counter-deal -> Buyer must confirm acceptance and proceed with prepayment
-                                if (order.status === 'seller_accepted_counter' || winningQuote.status === 'seller_accepted') {
+                                if (!isOrderAdvanced && (order.status === 'seller_accepted_counter' || winningQuote.status === 'seller_accepted')) {
                                   return (
                                     <div className="bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-300 p-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
                                       <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950">
@@ -2928,7 +2963,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 }
 
                                 // Scenario 2: Buyer accepted seller quote -> Awaiting seller confirmation & prepayment request
-                                if (order.status === 'buyer_accepted' || winningQuote.status === 'buyer_accepted') {
+                                if (!isOrderAdvanced && (order.status === 'buyer_accepted' || winningQuote.status === 'buyer_accepted')) {
                                   return (
                                     <div className="bg-blue-50 border border-blue-300 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs font-bold text-blue-950">
                                       <span className="flex items-center gap-1.5">

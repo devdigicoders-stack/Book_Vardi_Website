@@ -1931,7 +1931,7 @@ function dataURLtoBlob(dataurl, filename = 'file') {
 
                       <div className="flex flex-col sm:flex-row items-center gap-2">
                         <label className="px-3.5 py-1.5 rounded-xl bg-brand-teal text-white font-bold text-xs hover:bg-brand-teal-light transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5">
-                          <Upload size={14} />
+                          <UploadCloud size={14} />
                           <span>{formData.sampleProductImage ? 'Change Image' : 'Upload Photo'}</span>
                           <input
                             type="file"

@@ -187,7 +187,8 @@ export function CartProvider({ children }) {
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null);
+  const [toastState, setToastState] = useState(null);
+  const toastMessage = toastState?.message || null;
 
   // Dynamic Products and Promotions from global platform sync
   const [products, setProducts] = useState(() => {
@@ -718,13 +719,37 @@ export function CartProvider({ children }) {
     });
   };
 
-  // Trigger temporary notification
-  const showToast = (message) => {
-    setToastMessage(message);
+  // Trigger temporary notification toast
+  const hideToast = useCallback(() => {
+    setToastState(null);
+  }, []);
+
+  const showToast = useCallback((message, type = 'info', duration = 4000) => {
+    if (!message) return;
+    setToastState({ message, type });
     setTimeout(() => {
-      setToastMessage(null);
-    }, 3000);
-  };
+      setToastState(null);
+    }, duration);
+  }, []);
+
+  useEffect(() => {
+    const originalAlert = window.alert;
+    window.alert = (msg) => {
+      const msgStr = String(msg || '');
+      let type = 'info';
+      if (msgStr.includes('Error') || msgStr.includes('failed') || msgStr.includes('Invalid') || msgStr.includes('exceeds')) {
+        type = 'error';
+      } else if (msgStr.includes('Please') || msgStr.includes('Required') || msgStr.includes('Notice') || msgStr.includes('Quotation')) {
+        type = 'warning';
+      } else if (msgStr.includes('Success') || msgStr.includes('saved') || msgStr.includes('copied') || msgStr.includes('!') || msgStr.includes('Accepted')) {
+        type = 'success';
+      }
+      showToast(msgStr, type);
+    };
+    return () => {
+      window.alert = originalAlert;
+    };
+  }, [showToast]);
 
   const openProductDetails = (product) => {
     if (product) {
@@ -2080,6 +2105,8 @@ export function CartProvider({ children }) {
     isCartOpen,
     isWishlistOpen,
     toastMessage,
+    toastState,
+    hideToast,
     totalItemsCount,
     subtotal,
     freeShippingThreshold,
@@ -2148,6 +2175,7 @@ export function CartProvider({ children }) {
     isCartOpen,
     isWishlistOpen,
     toastMessage,
+    toastState,
     totalItemsCount,
     subtotal,
     freeShippingThreshold,
