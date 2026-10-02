@@ -1685,19 +1685,25 @@ export function CartProvider({ children }) {
 
       const isPercent = dynamicPromo.discountType === 'percentage' || dynamicPromo.type === 'percent';
       const discountVal = Number(dynamicPromo.discountValue) || Number(dynamicPromo.discount) || Number(dynamicPromo.value) || 0;
-      const calculatedDiscount = isPercent
+      let calculatedDiscount = isPercent
         ? Math.round(((eligibleSubtotal * discountVal) / 100) * 100) / 100
         : Math.min(eligibleSubtotal, discountVal);
+
+      const maxCap = Number(dynamicPromo.maxDiscount || dynamicPromo.maxDiscountAmount || dynamicPromo.maxCap || 0);
+      if (maxCap > 0 && calculatedDiscount > maxCap) {
+        calculatedDiscount = maxCap;
+      }
 
       const coupon = {
         code: dynamicPromo.code,
         type: isPercent ? 'percent' : 'flat',
         value: discountVal,
+        maxDiscount: maxCap,
         discountAmount: calculatedDiscount,
         label: dynamicPromo.title || `${code} Applied!`
       };
       setAppliedCoupon(coupon);
-      showToast(`🎉 Coupon ${code} applied! ₹${calculatedDiscount} off.`);
+      showToast(`🎉 Coupon ${code} applied! ₹${calculatedDiscount} discount added${maxCap > 0 && calculatedDiscount === maxCap ? ` (Capped at Max ₹${maxCap} OFF)` : ''}.`);
       return { success: true, message: `${coupon.label} applied!`, discountAmount: calculatedDiscount };
     }
 

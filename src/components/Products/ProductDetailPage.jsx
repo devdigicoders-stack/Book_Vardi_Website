@@ -362,40 +362,55 @@ export default function ProductDetailPage({ onNavigate }) {
   const formatPromoItem = (p) => {
     const isPercent = p.discountType === 'percentage' || p.type === 'percentage' || p.type === 'percent';
     const discVal = Number(p.discountValue ?? p.discount ?? p.value ?? 0);
-    const formattedDiscount = isPercent ? `${discVal}% OFF` : `₹${discVal} OFF`;
     const minVal = Number(p.minOrderValue || p.minOrderAmount || p.minAmount || 0);
+    const maxCap = Number(p.maxDiscount || p.maxDiscountAmount || p.maxCap || 0);
+
+    const prodPrice = Number(currentPrice || basePrice || selectedProduct?.price || 0);
+    const rawDiscount = isPercent ? Math.round((prodPrice * discVal) / 100) : Math.min(prodPrice, discVal);
+    const isCapped = maxCap > 0 && rawDiscount > maxCap;
+    const effectiveSavings = isCapped ? maxCap : rawDiscount;
+
+    let formattedDiscount = isPercent ? `${discVal}% OFF` : `₹${discVal} OFF`;
+    if (isPercent && maxCap > 0) {
+      formattedDiscount = `${discVal}% OFF (Max ₹${maxCap} OFF)`;
+    }
+
+    let subtitleStr = p.subtitle || p.description;
+    if (!subtitleStr) {
+      if (isPercent && maxCap > 0) {
+        subtitleStr = `${discVal}% OFF up to ₹${maxCap} on eligible items`;
+      } else {
+        subtitleStr = `${formattedDiscount} on eligible items`;
+      }
+    }
 
     return {
       code: p.code,
       title: p.title || `${p.code} Promo Offer`,
-      subtitle: p.subtitle || p.description || `${formattedDiscount} on eligible stationery`,
+      subtitle: subtitleStr,
       discountType: isPercent ? 'percentage' : 'flat',
       discountValue: formattedDiscount,
+      discountVal: discVal,
+      maxDiscount: maxCap,
+      isCapped,
+      effectiveSavings,
       minOrder: minVal,
       minOrderLabel: minVal > 0 ? `Min Order Value ₹${minVal}` : 'No Minimum Limit',
+      maxCapLabel: maxCap > 0 ? `Max Discount Cap ₹${maxCap}` : null,
       expiry: p.expiryDate ? new Date(p.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Limited Time',
       colorScheme: 'teal',
-      details: p.details || `Exclusive offer for ${p.code}. Valid on eligible catalog products. Only 1 coupon can be applied per order.`,
+      details: p.details || `Exclusive offer for ${p.code}.${maxCap > 0 ? ` Maximum discount cap is ₹${maxCap}.` : ''} Valid on eligible catalog products. Only 1 coupon can be applied per order.`,
       isStorewide: !p.sellerId && !p.storeId && (!p.applicableProducts || p.applicableProducts.length === 0)
     };
   };
 
-  // Product-specific applicable coupons
-  const productSpecificCoupons = (promotions || [])
+  // Product-specific applicable coupons ONLY (Created for this product, seller storewide for this seller, or global platform coupon)
+  const applicableCoupons = (promotions || [])
     .filter((p) => isCouponApplicableToProduct(p, selectedProduct))
     .map(formatPromoItem);
 
-  // All active store/platform coupons
-  const allActiveCoupons = (promotions || []).map(formatPromoItem);
-
-  // Prioritize product-specific coupons first, followed by storewide/active coupons (deduplicated)
-  const prioritizedCoupons = [
-    ...productSpecificCoupons,
-    ...allActiveCoupons.filter(ac => !productSpecificCoupons.some(pc => (pc.code && ac.code && pc.code.toLowerCase() === ac.code.toLowerCase()) || (pc.id && ac.id && pc.id === ac.id)))
-  ];
-
-  const availableCoupons = prioritizedCoupons;
-  const allCouponsForModal = prioritizedCoupons;
+  const availableCoupons = applicableCoupons;
+  const allCouponsForModal = applicableCoupons;
 
   // Dynamic Confidence Badges Calculation
   const isApprovedOrAdminCertified = Boolean(
@@ -1814,6 +1829,12 @@ export default function ProductDetailPage({ onNavigate }) {
                       <span className="font-semibold text-gray-500">Minimum Purchase:</span>
                       <span className="font-bold text-gray-800">{selectedCouponForDetails.minOrderLabel}</span>
                     </div>
+                    {selectedCouponForDetails.maxDiscount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-gray-500">Max Discount Limit:</span>
+                        <span className="font-bold text-amber-700">₹{selectedCouponForDetails.maxDiscount} OFF Cap</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-gray-500">Validity:</span>
                       <span className="font-bold text-gray-800">{selectedCouponForDetails.expiry}</span>

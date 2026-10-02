@@ -25,7 +25,7 @@ import {
   Key,
   RotateCcw
 } from 'lucide-react';
-import { trackAwbApi } from '../../utils/api';
+import { trackAwbApi, downloadInvoiceApi } from '../../utils/api';
 
 export default function OrderTrackingModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
@@ -629,11 +629,47 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
         </div>
 
         {/* Modal Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex justify-end shrink-0">
+        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {isCancelled ? (
+              <button
+                type="button"
+                onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'credit-note')}
+                className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText size={14} />
+                <span>Download Credit Note</span>
+              </button>
+            ) : (
+              <>
+                {['confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) && (
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'invoice')}
+                    className="px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl border border-teal-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileText size={14} />
+                    <span>Download Tax Invoice</span>
+                  </button>
+                )}
+                {(order.returnRequest?.requestType === 'exchange' || order.returnRequest?.type === 'exchange') && ['exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) && (
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'exchange-invoice')}
+                    className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileText size={14} />
+                    <span>Download Exchange Invoice</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+            className="px-6 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer ml-auto"
           >
             Close Tracking
           </button>
@@ -642,3 +678,4 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     </div>
   );
 }
+

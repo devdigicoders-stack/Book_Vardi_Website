@@ -934,6 +934,26 @@ export async function approveSellerQuotationApi(orderId, quoteId, payload = {}) 
   });
 }
 
+export async function confirmBuyerAcceptanceApi(orderId) {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  return requestApi(`/schools/bulk-orders/${orderId}/confirm-buyer-acceptance`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+}
+
+export async function confirmSellerAcceptanceApi(orderId) {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  return requestApi(`/schools/bulk-orders/${orderId}/confirm-seller-acceptance`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+}
+
 export async function createSchoolBulkPrepaymentOrderApi(orderId) {
   const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
   return requestApi(`/schools/bulk-orders/${orderId}/advance-payment/create-order`, {
@@ -990,13 +1010,37 @@ export async function fetchAnnouncementsFromBackend() {
   });
 }
 
-export async function downloadInvoiceApi(orderId, phone = '') {
-  return requestApi(`/orders/${orderId}/invoice`, {
-    method: 'GET',
-    headers: phone ? { 'x-user-phone': phone } : {},
-    fallback: { success: true, message: 'Downloading invoice PDF...' }
-  });
+export function getInvoiceDownloadUrl(orderId, type = 'invoice') {
+  const cleanId = encodeURIComponent(orderId);
+  if (type === 'credit-note') return `${apiBaseUrl}/orders/${cleanId}/credit-note`;
+  if (type === 'exchange-invoice') return `${apiBaseUrl}/orders/${cleanId}/exchange-invoice`;
+  return `${apiBaseUrl}/orders/${cleanId}/invoice`;
 }
+
+export async function downloadInvoiceApi(orderId, phone = '', type = 'invoice') {
+  const url = getInvoiceDownloadUrl(orderId, type);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: phone ? { 'x-user-phone': phone } : {}
+    });
+    if (!res.ok) throw new Error('Failed to download PDF document');
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = `${type.toUpperCase()}_${orderId}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+    return { success: true };
+  } catch (err) {
+    window.open(url, '_blank');
+    return { success: true };
+  }
+}
+
 
 // ==========================================
 // Delivery Partner Portal APIs
