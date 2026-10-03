@@ -83,13 +83,30 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   const currentStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
   const isCancelEligible = ['placed', 'pending', 'confirmed', 'processing', 'packed'].includes(currentStatus);
   const isDelivered = ['delivered', 'completed'].includes(currentStatus);
-  const firstItem = order.items?.[0] || {};
-  const isReturnable = firstItem.isReturnable !== false;
-  const returnWindowDays = firstItem.returnWindowDays || 7;
+  const orderItems = order.items || [];
+  const firstItem = orderItems[0] || {};
+  const isItemReturnable = (item) => {
+    if (!item) return false;
+    const policy = String(item.returnPolicy || item.product?.returnPolicy || '').toLowerCase().trim();
+    if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
+    if (item.isReturnable === false || item.product?.isReturnable === false) return false;
+    return item.isReturnable ?? item.product?.isReturnable ?? true;
+  };
+  const isItemExchangeable = (item) => {
+    if (!item) return false;
+    const policy = String(item.returnPolicy || item.product?.returnPolicy || '').toLowerCase().trim();
+    if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
+    if (item.isExchangeable === false || item.product?.isExchangeable === false) return false;
+    return item.isExchangeable ?? item.product?.isExchangeable ?? true;
+  };
+  const isOrderReturnable = orderItems.length > 0
+    ? orderItems.some(it => isItemReturnable(it) || isItemExchangeable(it))
+    : (isItemReturnable(firstItem) || isItemExchangeable(firstItem));
+  const returnWindowDays = firstItem.returnWindowDays || firstItem.product?.returnWindowDays || 7;
   const deliveredDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.date || order.createdAt || Date.now());
   const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
   const now = new Date();
-  const isReturnWindowValid = isDelivered && isReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged'].includes(currentStatus);
+  const isReturnWindowValid = isDelivered && isOrderReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
   const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
   const isCancelled = currentStatus === 'cancelled';
