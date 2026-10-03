@@ -25,7 +25,29 @@ import {
   Key,
   RotateCcw
 } from 'lucide-react';
-import { trackAwbApi, downloadInvoiceApi } from '../../utils/api';
+const hasActiveReturnRequest = (order) => {
+  if (!order) return false;
+  const req = order.returnRequest;
+  if (req && typeof req === 'object') {
+    const type = req.requestType || req.type;
+    const status = String(req.status || '').toLowerCase().trim();
+    const invalidStatuses = ['', 'none', 'n/a', 'no_request', 'normal', 'null', 'undefined', 'requesting', 'requested'];
+    
+    if (type && !['none', 'n/a', ''].includes(String(type).toLowerCase())) return true;
+    if (status && !invalidStatuses.includes(status)) return true;
+    if (req.requestedAt) return true;
+    if (req.reason && req.reason !== 'N/A' && req.reason.trim() !== '') return true;
+  }
+  
+  const s = String(order.status || order.rawStatus || '').toLowerCase();
+  const returnStatuses = [
+    'return_requested', 'exchange_requested', 'return_approved', 'exchange_approved',
+    'return_rejected', 'exchange_rejected', 'pickup_scheduled', 'product_received',
+    'refund_initiated', 'refund_processed', 'refund_completed', 'exchanged', 'exchange_dispatched',
+    'refund_requested', 'refunded'
+  ];
+  return returnStatuses.includes(s);
+};
 
 export default function OrderTrackingModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
@@ -220,7 +242,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
           )}
 
           {/* Return / Exchange Request Live Status & Timeline */}
-          {order.returnRequest && (
+          {hasActiveReturnRequest(order) && (
             <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl text-amber-950 space-y-3 shadow-xs">
               <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
                 <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-amber-900">

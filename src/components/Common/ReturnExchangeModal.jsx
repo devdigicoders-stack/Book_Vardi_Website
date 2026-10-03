@@ -7,10 +7,27 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
 
   const orderId = order.id || order.orderId || order._id;
   const userPhone = order.customer?.phone || order.shippingAddress?.phone || '';
-  const firstItem = order.items?.[0] || {};
+  const orderItems = order.items || [];
+  const firstItem = orderItems[0] || {};
 
-  const isReturnable = firstItem.isReturnable ?? firstItem.product?.isReturnable ?? true;
-  const isExchangeable = firstItem.isExchangeable ?? firstItem.product?.isExchangeable ?? true;
+  const getItemReturnable = (it) => {
+    if (!it) return false;
+    const policy = String(it.returnPolicy || it.product?.returnPolicy || '').toLowerCase().trim();
+    if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
+    if (it.isReturnable === false || it.product?.isReturnable === false) return false;
+    return it.isReturnable ?? it.product?.isReturnable ?? true;
+  };
+
+  const getItemExchangeable = (it) => {
+    if (!it) return false;
+    const policy = String(it.returnPolicy || it.product?.returnPolicy || '').toLowerCase().trim();
+    if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
+    if (it.isExchangeable === false || it.product?.isExchangeable === false) return false;
+    return it.isExchangeable ?? it.product?.isExchangeable ?? true;
+  };
+
+  const isReturnable = orderItems.length > 0 ? orderItems.some(getItemReturnable) : getItemReturnable(firstItem);
+  const isExchangeable = orderItems.length > 0 ? orderItems.some(getItemExchangeable) : getItemExchangeable(firstItem);
 
   const [activeType, setActiveType] = useState(() => {
     if (!isReturnable && isExchangeable) return 'exchange';
@@ -107,6 +124,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
       setLoading(false);
       if (res && (res.success || res.order)) {
         const newStatus = activeType === 'exchange' ? 'exchange_requested' : 'return_requested';
+        try {
+          localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+          window.dispatchEvent(new Event('bv_orders_updated'));
+        } catch (e) {}
         if (onSuccess) onSuccess(res.order || { ...order, status: newStatus, overallStatus: newStatus });
         onClose();
       } else {
@@ -115,6 +136,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     } catch (err) {
       setLoading(false);
       const newStatus = activeType === 'exchange' ? 'exchange_requested' : 'return_requested';
+      try {
+        localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+        window.dispatchEvent(new Event('bv_orders_updated'));
+      } catch (e) {}
       if (onSuccess) onSuccess({ ...order, status: newStatus, overallStatus: newStatus });
       onClose();
     }

@@ -107,6 +107,10 @@ export default function CancelOrderModal({ isOpen, onClose, order, onSuccess }) 
       const res = await cancelOrderApi(orderId, payload, userPhone);
       setLoading(false);
       if (res && (res.success || res.order)) {
+        try {
+          localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+          window.dispatchEvent(new Event('bv_orders_updated'));
+        } catch (e) {}
         if (onSuccess) onSuccess(res.order || { ...order, status: 'cancelled', overallStatus: 'cancelled' });
         onClose();
       } else {
@@ -114,6 +118,10 @@ export default function CancelOrderModal({ isOpen, onClose, order, onSuccess }) 
       }
     } catch (err) {
       setLoading(false);
+      try {
+        localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+        window.dispatchEvent(new Event('bv_orders_updated'));
+      } catch (e) {}
       if (onSuccess) onSuccess({ ...order, status: 'cancelled', overallStatus: 'cancelled' });
       onClose();
     }

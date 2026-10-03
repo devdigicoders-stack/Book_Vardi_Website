@@ -1804,16 +1804,30 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                       const isCancelEligible = ['placed', 'pending', 'confirmed', 'processing', 'packed'].includes(currentStatus);
                       const isDelivered = ['delivered', 'completed'].includes(currentStatus);
-                      const firstItem = order.items?.[0] || {};
-                      const isItemReturnable = firstItem.isReturnable ?? firstItem.product?.isReturnable ?? true;
-                      const isItemRefundable = firstItem.isRefundable ?? firstItem.product?.isRefundable ?? true;
-                      const isItemExchangeable = firstItem.isExchangeable ?? firstItem.product?.isExchangeable ?? true;
-                      const isReturnable = isItemReturnable || isItemRefundable || isItemExchangeable;
-                      const returnWindowDays = firstItem.returnWindowDays || 7;
+                      const orderItems = order.items || [];
+                      const firstItem = orderItems[0] || {};
+                      const isItemReturnable = (item) => {
+                        if (!item) return false;
+                        const policy = String(item.returnPolicy || item.product?.returnPolicy || '').toLowerCase().trim();
+                        if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
+                        if (item.isReturnable === false || item.product?.isReturnable === false) return false;
+                        return item.isReturnable ?? item.product?.isReturnable ?? true;
+                      };
+                      const isItemExchangeable = (item) => {
+                        if (!item) return false;
+                        const policy = String(item.returnPolicy || item.product?.returnPolicy || '').toLowerCase().trim();
+                        if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
+                        if (item.isExchangeable === false || item.product?.isExchangeable === false) return false;
+                        return item.isExchangeable ?? item.product?.isExchangeable ?? true;
+                      };
+                      const isOrderReturnable = orderItems.length > 0
+                        ? orderItems.some(it => isItemReturnable(it) || isItemExchangeable(it))
+                        : (isItemReturnable(firstItem) || isItemExchangeable(firstItem));
+                      const returnWindowDays = firstItem.returnWindowDays || firstItem.product?.returnWindowDays || 7;
                       const deliveredDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.date || order.createdAt || Date.now());
                       const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
                       const now = new Date();
-                      const isReturnWindowValid = isDelivered && isReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged'].includes(currentStatus);
+                      const isReturnWindowValid = isDelivered && isOrderReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
                       const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
                       const daysLeft = Math.max(0, Math.ceil((returnTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 
@@ -1899,16 +1913,22 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                           {/* Return / Exchange Policy Tag Banner for Delivered Orders */}
                           {isDelivered && (
-                            <div className="mb-3 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border bg-emerald-50/70 border-emerald-200/80 text-emerald-950 flex-wrap">
+                            <div className={`mb-3 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border flex-wrap ${
+                              isReturnWindowValid
+                                ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950'
+                                : isOrderReturnable
+                                ? 'bg-amber-50/70 border-amber-200/80 text-amber-950'
+                                : 'bg-gray-50 border-gray-200 text-gray-700'
+                            }`}>
                               <div className="flex items-center gap-2">
-                                <RotateCcw size={13} className="text-emerald-600 shrink-0" />
+                                <RotateCcw size={13} className={isReturnWindowValid ? "text-emerald-600 shrink-0" : "text-gray-500 shrink-0"} />
                                 <span>
                                   {isReturnWindowValid ? (
                                     <>Return / Exchange available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
-                                  ) : isReturnable ? (
+                                  ) : isOrderReturnable ? (
                                     <>Return / Exchange window closed on <strong className="font-mono">{formattedTillDate}</strong></>
                                   ) : (
-                                    <>Non-Returnable Product Policy</>
+                                    <>Non-Returnable / Non-Exchangeable Product Policy</>
                                   )}
                                 </span>
                               </div>
