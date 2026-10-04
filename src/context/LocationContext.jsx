@@ -193,6 +193,48 @@ export function findNearestSubdistrict(lat, lng) {
   return `Locality (${lat.toFixed(2)}, ${lng.toFixed(2)})`;
 }
 
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand',
+  'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+  'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab',
+  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura',
+  'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Delhi', 'Jammu & Kashmir', 'Ladakh'
+];
+
+export function parseLocationDetails(data = {}) {
+  const addr = data.address || {};
+  const displayName = data.display_name || '';
+
+  const street = addr.road || addr.building || addr.amenity || (addr.house_number ? `${addr.house_number}, ${addr.road || ''}` : '');
+  const colony = addr.suburb || addr.neighbourhood || addr.residential || addr.subdistrict || addr.city_district || addr.village || addr.hamlet || '';
+  const landmark = addr.amenity || addr.landmark || addr.commercial || addr.historic || addr.shop || '';
+  const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || addr.state_district || 'Lucknow';
+
+  let state = addr.state || addr.state_district || addr.region || addr.province || '';
+  if (!state && displayName) {
+    const matchedState = INDIAN_STATES.find((s) => new RegExp(`\\b${s}\\b`, 'i').test(displayName));
+    if (matchedState) state = matchedState;
+  }
+  if (!state) state = 'Uttar Pradesh';
+
+  let pincode = addr.postcode || addr.postal_code || addr.zip || addr.zipcode || '';
+  if (!pincode && displayName) {
+    const pinMatch = displayName.match(/\b[1-9][0-9]{5}\b/);
+    if (pinMatch) pincode = pinMatch[0];
+  }
+
+  return {
+    street,
+    colony,
+    landmark,
+    city,
+    state,
+    pincode,
+    displayName
+  };
+}
+
 /**
  * Reverse geocodes live GPS coordinates into subdistrict / locality name using Nominatim with fallback
  */
@@ -202,7 +244,7 @@ export async function resolveSubdistrictFromCoords(lat, lng) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000);
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&addressdetails=1`,
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`,
       {
         headers: { 'Accept-Language': 'en' },
         signal: controller.signal
@@ -211,28 +253,99 @@ export async function resolveSubdistrictFromCoords(lat, lng) {
     clearTimeout(timeoutId);
     if (response.ok) {
       const data = await response.json();
-      const address = data.address || {};
-      const subdistrict =
-        address.suburb ||
-        address.neighbourhood ||
-        address.residential ||
-        address.subdistrict ||
-        address.city_district ||
-        address.county ||
-        address.village;
-      const city = address.city || address.town || address.state_district || address.state || '';
-      if (subdistrict && city) {
-        return `${subdistrict}, ${city}`;
-      } else if (subdistrict) {
-        return subdistrict;
-      } else if (city) {
-        return city;
+      const parsed = parseLocationDetails(data);
+      if (parsed.state) localStorage.setItem('bv_user_state', parsed.state);
+      if (parsed.pincode) localStorage.setItem('bv_user_pincode', parsed.pincode);
+
+      if (parsed.colony && parsed.city) {
+        return `${parsed.colony}, ${parsed.city}`;
+      } else if (parsed.colony) {
+        return parsed.colony;
+      } else if (parsed.city) {
+        return parsed.city;
       }
     }
   } catch (e) {
     console.warn('Live reverse geocoding fallback to nearest subdistrict:', e);
   }
   return findNearestSubdistrict(lat, lng);
+}
+
+/**
+ * Looks up city, state, district, and locality details for a 6-digit Indian PIN Code
+ */
+export async function fetchDetailsFromPincode(pincode) {
+  if (!pincode || !/^\d{6}$/.test(String(pincode).trim())) return null;
+  const pin = String(pincode).trim();
+
+  // Primary API: Official India Post Postal Pincode API
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(`https://api.postalpincode.in/pincode/${pin}`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (
+        Array.isArray(data) &&
+        data[0]?.Status === 'Success' &&
+        Array.isArray(data[0]?.PostOffice) &&
+        data[0].PostOffice.length > 0
+      ) {
+        const po = data[0].PostOffice[0];
+        const state = po.State || '';
+        const city = po.District || po.Division || po.Circle || '';
+        const locality = po.Name && po.Name !== po.District ? po.Name : '';
+
+        return {
+          pincode: pin,
+          state,
+          city,
+          district: po.District || city,
+          locality,
+          areaName: po.Name || ''
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('India Post Pincode API lookup failed, trying fallback:', err);
+  }
+
+  // Fallback API: OpenStreetMap Nominatim Postal Search
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?postalcode=${pin}&country=India&format=json&addressdetails=1`,
+      {
+        headers: { 'Accept-Language': 'en' },
+        signal: controller.signal
+      }
+    );
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const list = await res.json();
+      if (Array.isArray(list) && list.length > 0) {
+        const parsed = parseLocationDetails(list[0]);
+        return {
+          pincode: pin,
+          state: parsed.state,
+          city: parsed.city,
+          district: parsed.city,
+          locality: parsed.colony || parsed.street || '',
+          areaName: parsed.colony || ''
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Nominatim pincode lookup failed:', err);
+  }
+
+  return null;
 }
 
 const LocationContext = createContext(null);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { parseLocationDetails, fetchDetailsFromPincode } from '../../context/LocationContext';
 import {
   Store,
   CheckCircle2,
@@ -164,6 +165,24 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     }
   });
 
+  // Auto-fill state and city when 6-digit PIN code is typed
+  useEffect(() => {
+    const pin = formData.pincode ? String(formData.pincode).trim() : '';
+    if (pin.length === 6 && /^\d{6}$/.test(pin)) {
+      fetchDetailsFromPincode(pin).then((details) => {
+        if (details) {
+          setFormData((prev) => ({
+            ...prev,
+            state: details.state || prev.state,
+            city: details.city || prev.city,
+            addressLine2: details.locality && !prev.addressLine2 ? details.locality : prev.addressLine2
+          }));
+          showToast(`📍 Auto-filled details for PIN ${pin}: ${details.city}, ${details.state}`);
+        }
+      });
+    }
+  }, [formData.pincode]);
+
   const [otpSent, setOtpSent] = useState(false);
   const [mobileOtp, setMobileOtp] = useState('');
   const [showOtpPopup, setShowOtpPopup] = useState(false);
@@ -220,25 +239,18 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       async (position) => {
         const { latitude, longitude } = position.coords;
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`);
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=16&addressdetails=1`);
           const data = await res.json();
-          const addr = data.address || {};
-
-          const street = addr.road || addr.building || (addr.house_number ? `${addr.house_number}, ${addr.road || ''}` : '');
-          const colony = addr.suburb || addr.neighbourhood || addr.residential || addr.village || addr.subdistrict || '';
-          const landmark = addr.amenity || addr.landmark || addr.commercial || '';
-          const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || '';
-          const state = addr.state || 'Uttar Pradesh';
-          const pincode = addr.postcode || '';
+          const parsed = parseLocationDetails(data);
 
           setFormData(prev => ({
             ...prev,
-            addressLine1: street || prev.addressLine1,
-            addressLine2: colony || prev.addressLine2,
-            landmark: landmark || prev.landmark,
-            city: city || prev.city,
-            state: state || prev.state || 'Uttar Pradesh',
-            pincode: pincode || prev.pincode
+            addressLine1: parsed.street || prev.addressLine1,
+            addressLine2: parsed.colony || prev.addressLine2,
+            landmark: parsed.landmark || prev.landmark,
+            city: parsed.city || prev.city,
+            state: parsed.state || prev.state || 'Uttar Pradesh',
+            pincode: parsed.pincode || prev.pincode
           }));
           setLocationStatus('GPS Location detected successfully!');
         } catch (err) {
