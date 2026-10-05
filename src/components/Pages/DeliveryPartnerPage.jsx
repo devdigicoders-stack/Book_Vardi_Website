@@ -98,11 +98,11 @@ export default function DeliveryPartnerPage({ onNavigate }) {
           setDeliverySuccess(true);
         }
         const isBulkPaid = Boolean(ord.isBulkOrder) && (ord.paymentStatus === 'paid' || ord.remainingPaymentStatus === 'paid');
-        const isOnline = isBulkPaid || (
+        const isOnline = !ord.isBulkOrder && (
           !String(ord.paymentMethod || '').toUpperCase().includes('COD') &&
           (ord.paymentStatus === 'paid' || ord.paymentStatus === 'Paid' || String(ord.paymentMethod || '').toLowerCase() !== 'cod')
         );
-        if (isOnline || ord.paymentStatus === 'paid' || ord.paymentStatus === 'Paid') {
+        if (!ord.isBulkOrder && (isOnline || ord.paymentStatus === 'paid' || ord.paymentStatus === 'Paid')) {
           setIsCashVerifiedByExecutive(true);
         } else {
           setIsCashVerifiedByExecutive(false);
@@ -200,12 +200,13 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               setOrder((prev) => (prev ? {
                 ...prev,
                 paymentStatus: 'paid',
-                remainingPaymentStatus: 'paid',
-                overallStatus: 'Delivered',
-                status: 'Delivered'
+                remainingPaymentStatus: 'paid'
               } : prev));
-              setDeliverySuccess(true);
-              alert(`🎉 Remaining balance payment of ₹${(rzpRes.remainingAmountRupees || order.remainingAmount).toLocaleString()} verified successfully! Order completed.`);
+              window.dispatchEvent(new CustomEvent('bv_orders_updated'));
+              try {
+                localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+              } catch (e) {}
+              alert(`🎉 Remaining balance payment of ₹${(rzpRes.remainingAmountRupees || order.remainingAmount).toLocaleString()} verified successfully! Please enter the customer 4-digit OTP to complete delivery.`);
             } else {
               alert(verifyRes?.message || 'Payment received but verification failed. Please contact support.');
             }
@@ -233,11 +234,13 @@ export default function DeliveryPartnerPage({ onNavigate }) {
   };
 
   const isBulkPaid = Boolean(order?.isBulkOrder) && (order?.paymentStatus === 'paid' || order?.remainingPaymentStatus === 'paid');
-  const isOnlinePayment = isBulkPaid || (
+  const isOnlinePayment = !order?.isBulkOrder && (
     !String(order?.paymentMethod || '').toUpperCase().includes('COD') &&
     (order?.paymentStatus === 'paid' || order?.paymentStatus === 'Paid' || String(order?.paymentMethod || '').toLowerCase() !== 'cod')
   );
-  const isPaymentVerified = isOnlinePayment || isCashVerifiedByExecutive || order?.paymentStatus === 'paid' || order?.paymentStatus === 'Paid' || deliverySuccess;
+  const isPaymentVerified = order?.isBulkOrder
+    ? isBulkPaid
+    : (isOnlinePayment || isCashVerifiedByExecutive || order?.paymentStatus === 'paid' || order?.paymentStatus === 'Paid' || deliverySuccess);
 
   const handleResendOtp = async () => {
     if (!token || resending || verifying || !order) return;
@@ -248,7 +251,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     setResending(true);
     setResendMsg('');
     try {
-      const res = await resendDeliveryOtpApi(token);
+      const res = await resendDeliveryOtpApi(token, { isCashCollected: isCashVerifiedByExecutive, isPaymentVerified });
       if (res && res.success) {
         setResendMsg(res.message || `📲 OTP resent to customer (${order?.customer?.phone || ''})`);
       } else {
@@ -295,11 +298,15 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     setVerifying(true);
     setOtpError('');
     try {
-      const res = await verifyDeliveryOtpApi(token, fullOtp);
+      const res = await verifyDeliveryOtpApi(token, fullOtp, { isCashCollected: isCashVerifiedByExecutive, isPaymentVerified });
       if (res && res.success) {
         setDeliverySuccess(true);
         setIsOtpModalOpen(false);
         setOrder((prev) => (prev ? { ...prev, overallStatus: 'Delivered', status: 'Delivered', paymentStatus: 'paid' } : prev));
+        window.dispatchEvent(new CustomEvent('bv_orders_updated'));
+        try {
+          localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+        } catch (e) {}
       } else {
         setOtpError(res?.message || 'Invalid Delivery OTP code. Please ask customer for the correct 4-digit PIN.');
       }
@@ -601,66 +608,41 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               <div className="space-y-3">
                 {/* Payment Banners */}
                 {order?.isBulkOrder ? (
-                  order?.paymentStatus !== 'paid' && order?.remainingPaymentStatus !== 'paid' ? (
-                    !isCashVerifiedByExecutive ? (
-                      <div className="p-4 bg-gradient-to-r from-amber-600 to-amber-700 text-white rounded-2xl shadow-md space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
-                            <DollarSign size={18} className="text-amber-200" /> Remaining Balance Due
-                          </span>
-                          <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
-                            ₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-amber-100 font-medium">
-                          Mobilization advance was paid online. The school representative can pay online via UPI or settle cash directly with the executive before OTP verification.
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={handlePayRemainingBalance}
-                            disabled={isPayingRemaining}
-                            className="w-full py-2.5 bg-white hover:bg-amber-50 text-amber-900 font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <CreditCard size={15} />
-                            <span>{isPayingRemaining ? 'Connecting Razorpay...' : `Pay Online / UPI`}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsCashVerifiedByExecutive(true);
-                              setResendMsg(`💵 Cash payment of ₹${(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()} marked as collected & verified by executive!`);
-                              setTimeout(() => setResendMsg(''), 4000);
-                            }}
-                            className="w-full py-2.5 bg-amber-950 hover:bg-black text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <CheckCircle size={15} className="text-emerald-400" />
-                            <span>Confirm Cash Collected</span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-3.5 bg-emerald-600 text-white rounded-2xl shadow-md flex items-center justify-between">
-                        <div className="space-y-0.5">
-                          <span className="text-xs font-black flex items-center gap-1.5">
-                            <CheckCircle size={18} className="text-amber-300" /> Cash Remaining Payment Collected & Verified
-                          </span>
-                          <span className="text-[10px] text-emerald-100 block font-medium">
-                            Verified by Executive • Ready for OTP verification
-                          </span>
-                        </div>
-                        <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md shrink-0">
-                          ₹{(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()} Cash Verified
+                  !isBulkPaid ? (
+                    <div className="p-4 bg-gradient-to-r from-teal-800 to-teal-900 text-white rounded-2xl shadow-md space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                          <DollarSign size={18} className="text-amber-300" /> Remaining Balance Due
+                        </span>
+                        <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
+                          ₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}
                         </span>
                       </div>
-                    )
+                      <p className="text-[11px] text-teal-100 font-medium">
+                        🔒 No cash accepted for School Bulk Delivery. The remaining balance of <strong className="text-amber-300">₹{Number(order?.remainingAmount ?? (order?.totalAmount - (order?.advancePaidAmount || 0))).toLocaleString()}</strong> must be paid online via Razorpay (UPI / Dynamic QR) to unlock OTP verification.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handlePayRemainingBalance}
+                        disabled={isPayingRemaining}
+                        className="w-full py-3 bg-amber-400 hover:bg-amber-500 text-teal-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <CreditCard size={16} />
+                        <span>{isPayingRemaining ? 'Connecting Razorpay Payment Gateway...' : `Pay Online / Generate UPI QR (Razorpay)`}</span>
+                      </button>
+                    </div>
                   ) : (
                     <div className="p-3.5 bg-emerald-600 text-white rounded-2xl shadow-md flex items-center justify-between">
-                      <span className="text-xs font-black flex items-center gap-1.5">
-                        <CheckCircle size={18} className="text-amber-300" /> Full Payment Verified Online
-                      </span>
-                      <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md">
-                        Razorpay / UPI Paid
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <CheckCircle size={18} className="text-amber-300" /> Full Remaining Payment Verified Online
+                        </span>
+                        <span className="text-[10px] text-emerald-100 block font-medium">
+                          Paid via Razorpay / UPI • Ready for OTP verification
+                        </span>
+                      </div>
+                      <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md shrink-0">
+                        Razorpay Paid
                       </span>
                     </div>
                   )

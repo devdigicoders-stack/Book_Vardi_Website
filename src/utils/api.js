@@ -1075,16 +1075,17 @@ export async function fetchDeliveryPartnerOrderApi(token) {
   });
 }
 
-export async function resendDeliveryOtpApi(token) {
+export async function resendDeliveryOtpApi(token, payload = {}) {
   return requestApi(`/delivery/partner/${token}/resend-otp`, {
-    method: 'POST'
+    method: 'POST',
+    data: payload
   });
 }
 
-export async function verifyDeliveryOtpApi(token, otp) {
+export async function verifyDeliveryOtpApi(token, otp, payload = {}) {
   return requestApi(`/delivery/partner/${token}/verify-otp`, {
     method: 'POST',
-    data: { otp }
+    data: { otp, ...payload }
   });
 }
 
