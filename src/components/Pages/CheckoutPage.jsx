@@ -24,9 +24,10 @@ import {
   PlusCircle
 } from 'lucide-react';
 import { useCart, getCartItemKey } from '../../context/CartContext';
+import { fetchDetailsFromPincode } from '../../context/LocationContext';
 import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, loadRazorpayScript, getUpiIntentUrl, resolveImageUrl, getProductMainImage } from '../../utils/api';
 import { getCartPaymentRestrictions } from '../../utils/paymentRestrictions';
-import { isCouponApplicableToCart } from '../../utils/couponApplicability';
+import { isCouponApplicableToCart, calculateEligibleSubtotal, getCouponDiscountDetails } from '../../utils/couponApplicability';
 
 const POPULAR_BANKS = [
   { id: 'sbi', name: 'State Bank of India', code: 'SBI' },
@@ -129,6 +130,57 @@ export default function CheckoutPage({ onNavigate }) {
     setEditingAddrForm(null);
   };
 
+  // Auto-fill guest address state and city when 6-digit PIN code is entered
+  React.useEffect(() => {
+    const pin = guestAddress.pincode ? String(guestAddress.pincode).trim() : '';
+    if (pin.length === 6 && /^\d{6}$/.test(pin)) {
+      fetchDetailsFromPincode(pin).then((details) => {
+        if (details) {
+          setGuestAddress((prev) => ({
+            ...prev,
+            state: details.state || prev.state,
+            city: details.city || prev.city,
+            street: details.locality && !prev.street ? details.locality : prev.street
+          }));
+        }
+      });
+    }
+  }, [guestAddress.pincode]);
+
+  // Auto-fill new address modal state and city when 6-digit PIN code is entered
+  React.useEffect(() => {
+    const pin = newAddrForm.pincode ? String(newAddrForm.pincode).trim() : '';
+    if (pin.length === 6 && /^\d{6}$/.test(pin)) {
+      fetchDetailsFromPincode(pin).then((details) => {
+        if (details) {
+          setNewAddrForm((prev) => ({
+            ...prev,
+            state: details.state || prev.state,
+            city: details.city || prev.city,
+            street: details.locality && !prev.street ? details.locality : prev.street
+          }));
+        }
+      });
+    }
+  }, [newAddrForm.pincode]);
+
+  // Auto-fill edit address modal state and city when 6-digit PIN code is entered
+  React.useEffect(() => {
+    const pin = editingAddrForm?.pincode ? String(editingAddrForm.pincode).trim() : '';
+    if (pin.length === 6 && /^\d{6}$/.test(pin)) {
+      fetchDetailsFromPincode(pin).then((details) => {
+        if (details) {
+          setEditingAddrForm((prev) => (prev ? {
+            ...prev,
+            state: details.state || prev.state,
+            city: details.city || prev.city,
+            street: details.locality && !prev.street ? details.locality : prev.street
+          } : null));
+        }
+      });
+    }
+  }, [editingAddrForm?.pincode]);
+
   // Shipping Speed
   const [deliverySpeed, setDeliverySpeed] = useState('standard'); // 'standard' | 'express'
 
@@ -222,12 +274,14 @@ export default function CheckoutPage({ onNavigate }) {
   const totalShippingCost = baseShippingCost + expressExtraFee;
 
   let couponDiscount = 0;
+  let isCouponCapped = false;
+  let maxCap = 0;
+
   if (appliedCoupon) {
-    if (appliedCoupon.type === 'percent') {
-      couponDiscount = Math.round((subtotal * appliedCoupon.value) / 100);
-    } else if (appliedCoupon.type === 'flat') {
-      couponDiscount = appliedCoupon.value;
-    }
+    const details = getCouponDiscountDetails(appliedCoupon, selectedCartItems);
+    couponDiscount = details.discountAmount;
+    isCouponCapped = details.isCapped;
+    maxCap = details.maxDiscount;
   }
 
   const pointsDiscount = isRedeemingPoints ? Math.min(50, subtotal) : 0;
@@ -1064,7 +1118,14 @@ export default function CheckoutPage({ onNavigate }) {
                     <div className="flex items-center gap-2">
                       <Tag size={14} className="text-emerald-600" />
                       <div>
-                        <p className="font-bold text-emerald-800">{appliedCoupon.code}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-bold text-emerald-800">{appliedCoupon.code}</p>
+                          {(isCouponCapped || (maxCap > 0 && couponDiscount >= maxCap)) && (
+                            <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                              Max Cap ₹{maxCap} Applied
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[10px] text-emerald-600">{appliedCoupon.label}</p>
                       </div>
                     </div>
@@ -1156,8 +1217,15 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
 
                 {couponDiscount > 0 && (
-                  <div className="flex justify-between text-emerald-700 font-bold">
-                    <span>Coupon Discount ({appliedCoupon?.code})</span>
+                  <div className="flex justify-between items-start text-emerald-700 font-bold">
+                    <div>
+                      <div>Coupon Discount ({appliedCoupon?.code})</div>
+                      {(isCouponCapped || (maxCap > 0 && couponDiscount >= maxCap)) && (
+                        <span className="block text-[10px] text-amber-700 font-semibold mt-0.5">
+                          (Max Cap ₹{maxCap} Applied)
+                        </span>
+                      )}
+                    </div>
                     <span>-₹{couponDiscount}</span>
                   </div>
                 )}

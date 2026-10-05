@@ -91,16 +91,31 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
     addToCart({
       ...kit,
       id: isCustomized ? `kit-${kitId}-${selectedIds.slice().sort().join('-')}` : kitId,
+      kitId: kitId,
       name: isCustomized ? `${kitName} (Custom Bundle)` : `${kitName} (Full Bundle)`,
       price: bundlePrice,
       kitItems: bundleItems,
+      isCustomized: Boolean(isCustomized),
+      isFullBundle: !isCustomized,
+      category: 'kits',
       bundleType: 'kit'
     }, 1);
     onClose();
   };
 
   const handleBuyFullKit = () => {
-    addToCart({ ...kit, id: kitId, name: kitName, price: kitPrice, image: kitImage, category: 'kits', bundleType: 'kit' }, 1);
+    addToCart({
+      ...kit,
+      id: kitId,
+      kitId: kitId,
+      name: `${kitName} (Full Bundle)`,
+      price: kitPrice,
+      image: kitImage,
+      category: 'kits',
+      bundleType: 'kit',
+      isCustomized: false,
+      isFullBundle: true
+    }, 1);
     onClose();
   };
 

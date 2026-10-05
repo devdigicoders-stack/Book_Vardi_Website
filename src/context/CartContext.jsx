@@ -1652,15 +1652,25 @@ export function CartProvider({ children }) {
         });
         const data = await res.json();
         if (res.ok && data.success !== false && data.coupon) {
+          const maxCap = Number(data.coupon.maxDiscount || data.maxDiscount || 0);
+          const isCapped = Boolean(data.isCapped || (maxCap > 0 && data.discountAmount >= maxCap));
           const couponObj = {
             code: data.coupon.code,
             type: (data.coupon.type === 'fixed' || data.coupon.type === 'flat') ? 'flat' : 'percent',
             value: data.coupon.discount,
             discountAmount: data.discountAmount,
+            eligibleSubtotal: data.eligibleSubtotal,
+            minAmount: data.coupon.minAmount || 0,
+            maxDiscount: maxCap,
+            isCapped,
+            applicableProducts: data.coupon.applicableProducts || [],
+            applicableKits: data.coupon.applicableKits || [],
+            createdRole: data.coupon.createdRole,
+            sellerId: data.coupon.sellerId,
             label: `${data.coupon.code} Applied (${data.coupon.discount}${data.coupon.type === 'percentage' ? '%' : '₹'} off eligible items)`
           };
           setAppliedCoupon(couponObj);
-          showToast(`🎉 Coupon ${code} applied! ₹${data.discountAmount} discount added.`);
+          showToast(`🎉 Coupon ${code} applied! ₹${data.discountAmount} discount added${isCapped ? ` (Capped at Max ₹${maxCap} OFF)` : ''}.`);
           return { success: true, message: `Discount of ₹${data.discountAmount} applied!`, discountAmount: data.discountAmount };
         } else if (data.message) {
           showToast(`⚠️ ${data.message}`);
@@ -1676,6 +1686,13 @@ export function CartProvider({ children }) {
       (p) => (p.code || '').toUpperCase() === code && p.status !== 'expired'
     );
     if (dynamicPromo) {
+      const uLimit = Number(dynamicPromo.usageLimit || 0);
+      const uCount = Number(dynamicPromo.usageCount || 0);
+      if (uLimit > 0 && uCount >= uLimit) {
+        showToast('⚠️ This coupon code has reached its maximum usage limit.');
+        return { success: false, message: 'This coupon code has reached its maximum usage limit.' };
+      }
+
       const isSeller = Boolean(dynamicPromo.sellerId || dynamicPromo.storeId || dynamicPromo.createdRole === 'seller');
       const targetSeller = dynamicPromo.sellerId || dynamicPromo.storeId;
       const applicableProds = dynamicPromo.specificProductId
@@ -1704,8 +1721,8 @@ export function CartProvider({ children }) {
       const minVal = dynamicPromo.minOrderValue || dynamicPromo.minOrderAmount || dynamicPromo.minAmount || 0;
 
       if (eligibleSubtotal < minVal) {
-        showToast(`⚠️ ${code} requires minimum ₹${minVal} purchase of eligible items.`);
-        return { success: false, message: `Minimum cart value of ₹${minVal} required for eligible items.` };
+        showToast(`⚠️ Minimum purchase of ₹${minVal} on eligible items is required to use this coupon.`);
+        return { success: false, message: `Minimum purchase of ₹${minVal} on eligible items is required to use this coupon.` };
       }
 
       const isPercent = dynamicPromo.discountType === 'percentage' || dynamicPromo.type === 'percent';
@@ -1715,20 +1732,31 @@ export function CartProvider({ children }) {
         : Math.min(eligibleSubtotal, discountVal);
 
       const maxCap = Number(dynamicPromo.maxDiscount || dynamicPromo.maxDiscountAmount || dynamicPromo.maxCap || 0);
+      let isCapped = false;
       if (maxCap > 0 && calculatedDiscount > maxCap) {
         calculatedDiscount = maxCap;
+        isCapped = true;
       }
 
       const coupon = {
         code: dynamicPromo.code,
         type: isPercent ? 'percent' : 'flat',
         value: discountVal,
+        minAmount: minVal,
         maxDiscount: maxCap,
+        usageLimit: uLimit,
+        usageCount: uCount,
+        isCapped,
         discountAmount: calculatedDiscount,
+        eligibleSubtotal,
+        applicableProducts: dynamicPromo.applicableProducts || [],
+        applicableKits: dynamicPromo.applicableKits || [],
+        createdRole: dynamicPromo.createdRole,
+        sellerId: dynamicPromo.sellerId || dynamicPromo.storeId,
         label: dynamicPromo.title || `${code} Applied!`
       };
       setAppliedCoupon(coupon);
-      showToast(`🎉 Coupon ${code} applied! ₹${calculatedDiscount} discount added${maxCap > 0 && calculatedDiscount === maxCap ? ` (Capped at Max ₹${maxCap} OFF)` : ''}.`);
+      showToast(`🎉 Coupon ${code} applied! ₹${calculatedDiscount} discount added${isCapped ? ` (Capped at Max ₹${maxCap} OFF)` : ''}.`);
       return { success: true, message: `${coupon.label} applied!`, discountAmount: calculatedDiscount };
     }
 

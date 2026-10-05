@@ -61,12 +61,25 @@ export function getProductGstRate(item) {
 export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
 
-  const orderStatus = String(order.status || order.overallStatus || '').toLowerCase();
+  const orderStatus = String(order.status || order.overallStatus || '').toLowerCase().trim();
   const isCancelled = orderStatus === 'cancelled' || order.isCancelled || Boolean(order.cancelledAt);
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
   const isPaymentVerified = String(order.paymentStatus || '').toLowerCase() === 'paid';
+  const isPending = !orderStatus || orderStatus === 'pending' || orderStatus === 'unconfirmed' || orderStatus === 'placed';
 
-  const confirmed = isCancelled || isPaymentVerified;
+  const isOrderConfirmedStatus = [
+    'confirmed',
+    'processing',
+    'packed',
+    'shipped',
+    'dispatched',
+    'out for delivery',
+    'out_for_delivery',
+    'delivered',
+    'completed'
+  ].includes(orderStatus);
+
+  const confirmed = isCancelled || (!isPending && (isOrderConfirmedStatus || isPaymentVerified));
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress

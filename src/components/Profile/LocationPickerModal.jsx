@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Search, Crosshair, Check, X, Loader2, Navigation } from 'lucide-react';
+import { parseLocationDetails, fetchDetailsFromPincode } from '../../context/LocationContext';
 
 export default function LocationPickerModal({ isOpen, onClose, onSelectLocation, initialAddress = {} }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,6 +33,23 @@ export default function LocationPickerModal({ isOpen, onClose, onSelectLocation,
       }
     }
   }, [isOpen, initialAddress]);
+
+  // Auto-fill state and city when 6-digit PIN code is typed
+  useEffect(() => {
+    const pin = addressDetails.pincode ? String(addressDetails.pincode).trim() : '';
+    if (pin.length === 6 && /^\d{6}$/.test(pin)) {
+      fetchDetailsFromPincode(pin).then((details) => {
+        if (details) {
+          setAddressDetails((prev) => ({
+            ...prev,
+            state: details.state || prev.state,
+            city: details.city || prev.city,
+            colony: details.locality && !prev.colony ? details.locality : prev.colony
+          }));
+        }
+      });
+    }
+  }, [addressDetails.pincode]);
 
   const mapContainerRef = useRef(null);
   const leafletMapRef = useRef(null);
@@ -123,24 +140,17 @@ export default function LocationPickerModal({ isOpen, onClose, onSelectLocation,
   const reverseGeocode = async (lat, lng) => {
     setIsReverseGeocoding(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`);
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`);
       const data = await res.json();
-      if (data && data.address) {
-        const addr = data.address;
-        const street = addr.road || addr.building || (addr.house_number ? `${addr.house_number}, ${addr.road || ''}` : '');
-        const colony = addr.suburb || addr.neighbourhood || addr.residential || addr.village || addr.subdistrict || '';
-        const landmark = addr.amenity || addr.landmark || addr.commercial || addr.historic || '';
-        const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || 'Lucknow';
-        const state = addr.state || 'Uttar Pradesh';
-        const pincode = addr.postcode || '';
-
+      if (data) {
+        const parsed = parseLocationDetails(data);
         setAddressDetails(prev => ({
-          street: street || prev.street,
-          colony: colony || prev.colony,
-          landmark: landmark || prev.landmark,
-          city: city || prev.city,
-          state: state || prev.state,
-          pincode: pincode || prev.pincode
+          street: parsed.street || prev.street,
+          colony: parsed.colony || prev.colony,
+          landmark: parsed.landmark || prev.landmark,
+          city: parsed.city || prev.city,
+          state: parsed.state || prev.state,
+          pincode: parsed.pincode || prev.pincode
         }));
       }
     } catch (err) {
@@ -182,21 +192,15 @@ export default function LocationPickerModal({ isOpen, onClose, onSelectLocation,
     }
     setSearchResults([]);
 
-    const addr = result.address || {};
-    const street = addr.road || addr.building || (addr.house_number ? `${addr.house_number}, ${addr.road || ''}` : '');
-    const colony = addr.suburb || addr.neighbourhood || addr.residential || addr.village || addr.subdistrict || '';
-    const landmark = addr.amenity || addr.landmark || addr.commercial || '';
-    const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || 'Lucknow';
-    const state = addr.state || 'Uttar Pradesh';
-    const pincode = addr.postcode || '';
+    const parsed = parseLocationDetails(result);
 
     setAddressDetails(prev => ({
-      street: street || searchQuery || prev.street,
-      colony: colony || prev.colony,
-      landmark: landmark || prev.landmark,
-      city: city || prev.city,
-      state: state || prev.state,
-      pincode: pincode || prev.pincode
+      street: parsed.street || searchQuery || prev.street,
+      colony: parsed.colony || prev.colony,
+      landmark: parsed.landmark || prev.landmark,
+      city: parsed.city || prev.city,
+      state: parsed.state || prev.state,
+      pincode: parsed.pincode || prev.pincode
     }));
   };
 

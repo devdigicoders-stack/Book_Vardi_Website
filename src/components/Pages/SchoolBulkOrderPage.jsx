@@ -30,11 +30,12 @@ import {
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import { backendEnabled, submitSchoolBulkOrderInBackend, API_BASE_URL } from '../../utils/api';
 import { useCart } from '../../context/CartContext';
-import { useLocation } from '../../context/LocationContext';
+import { useLocation, parseLocationDetails, fetchDetailsFromPincode } from '../../context/LocationContext';
 
 export default function SchoolBulkOrderPage({ onNavigate }) {
   const { isAuthenticated, openAuthModal, userProfile, showToast } = useCart();
   const { userLocation, locationLabel, requestBrowserLocation, isLocating } = useLocation();
+  const [isDetectingLoc, setIsDetectingLoc] = useState(false);
 
   // Institution & Contact Info State
   const [institutionName, setInstitutionName] = useState('');
@@ -103,26 +104,126 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
     }
   }, [isAuthenticated, userProfile]);
 
-  // Handle Location Auto-Detect
-  const handleAutoDetectLocation = () => {
-    if (requestBrowserLocation) {
-      requestBrowserLocation();
-      showToast('📍 Detecting current location...');
-    }
-  };
+  // Helper for fallback location filling when reverse geocoding is unavailable
+  const fallbackLocationFill = () => {
+    setIsDetectingLoc(false);
+    const savedState = localStorage.getItem('bv_user_state') || 'Uttar Pradesh';
+    const savedPincode = localStorage.getItem('bv_user_pincode') || '226028';
 
-  // Sync detected location label into form fields when location updates
-  useEffect(() => {
     if (locationLabel && locationLabel !== 'Kamta, Lucknow') {
       const parts = locationLabel.split(',').map((s) => s.trim());
       if (parts.length >= 2) {
-        if (!city) setCity(parts[parts.length - 1] || parts[0]);
-        if (!state) setState(parts[parts.length - 1] || 'State');
-      } else if (parts.length === 1 && !city) {
-        setCity(parts[0]);
+        setAddress((prev) => prev || parts[0]);
+        setCity((prev) => prev || parts[parts.length - 1]);
+      } else {
+        setAddress((prev) => prev || locationLabel);
+        setCity((prev) => prev || 'Lucknow');
       }
+    } else {
+      setAddress((prev) => prev || 'Kamta Campus Road');
+      setCity((prev) => prev || 'Lucknow');
     }
-  }, [locationLabel]);
+
+    setState((prev) => prev || savedState);
+    setPincode((prev) => prev || savedPincode);
+    showToast('📍 Auto-filled campus location details');
+  };
+
+  // Handle Location Auto-Detect with Reverse Geocoding for Address, City, State, & Pincode
+  const handleAutoDetectLocation = () => {
+    setIsDetectingLoc(true);
+    showToast('📍 Detecting live location & campus address...');
+
+    if (requestBrowserLocation) {
+      requestBrowserLocation();
+    }
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`,
+              { headers: { 'Accept-Language': 'en' } }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              const parsed = parseLocationDetails(data);
+
+              const parts = [parsed.street, parsed.colony, parsed.landmark].filter(Boolean);
+              const formattedAddress = parts.length > 0
+                ? Array.from(new Set(parts)).join(', ')
+                : (parsed.displayName ? parsed.displayName.split(',').slice(0, 3).join(', ') : '');
+
+              if (formattedAddress) setAddress(formattedAddress);
+              if (parsed.city) setCity(parsed.city);
+              if (parsed.state) setState(parsed.state);
+              if (parsed.pincode) setPincode(parsed.pincode);
+
+              showToast('✅ Campus location, State & Pincode detected successfully!');
+              setIsDetectingLoc(false);
+              return;
+            }
+          } catch (err) {
+            console.warn('Live reverse geocoding error:', err);
+          }
+          fallbackLocationFill();
+        },
+        (err) => {
+          console.warn('Geolocation positioning error:', err);
+          fallbackLocationFill();
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    } else {
+      fallbackLocationFill();
+    }
+  };
+
+  // Sync userLocation updates into empty campus location fields
+  useEffect(() => {
+    if (userLocation?.lat && userLocation?.lng && (!address || !city || !state || !pincode)) {
+      fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.lat}&lon=${userLocation.lng}&zoom=16&addressdetails=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      )
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data) {
+            const parsed = parseLocationDetails(data);
+            const parts = [parsed.street, parsed.colony, parsed.landmark].filter(Boolean);
+            const formattedAddress = parts.length > 0
+              ? Array.from(new Set(parts)).join(', ')
+              : (parsed.displayName ? parsed.displayName.split(',').slice(0, 3).join(', ') : '');
+
+            if (formattedAddress) setAddress((prev) => prev || formattedAddress);
+            if (parsed.city) setCity((prev) => prev || parsed.city);
+            if (parsed.state) setState((prev) => prev || parsed.state);
+            if (parsed.pincode) setPincode((prev) => prev || parsed.pincode);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [userLocation]);
+
+  // Auto-fill state and city when 6-digit PIN code is entered
+  useEffect(() => {
+    const cleanPin = pincode ? String(pincode).trim() : '';
+    if (cleanPin.length === 6 && /^\d{6}$/.test(cleanPin)) {
+      fetchDetailsFromPincode(cleanPin).then((details) => {
+        if (details) {
+          if (details.state) setState(details.state);
+          if (details.city) setCity(details.city);
+          if (details.locality && !address) {
+            setAddress(`${details.locality} Campus Area`);
+          }
+          showToast(`📍 Auto-filled location for PIN ${cleanPin}: ${details.city}, ${details.state}`);
+        }
+      });
+    }
+  }, [pincode]);
 
   // Dynamic Requirements handlers
   const handleAddRequirement = () => {
@@ -680,6 +781,7 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                     onChange={(e) => setDesignation(e.target.value)}
                     className="w-full bg-gray-50/70 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs focus:ring-2 focus:ring-brand-teal focus:bg-white transition-all"
                   >
+                    <option value="Partner Merchant / Seller">Partner Merchant / Seller / Distributor</option>
                     <option value="Principal / Director">Principal / Director</option>
                     <option value="Procurement Lead">Procurement Lead / Store Manager</option>
                     <option value="Administrator">Administrator / Vice Principal</option>
@@ -735,11 +837,11 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
                 <button
                   type="button"
                   onClick={handleAutoDetectLocation}
-                  disabled={isLocating}
+                  disabled={isLocating || isDetectingLoc}
                   className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs px-3.5 py-2 rounded-xl border border-purple-200 transition-all cursor-pointer self-start sm:self-auto disabled:opacity-50"
                 >
-                  <Navigation size={14} className={isLocating ? 'animate-spin' : ''} />
-                  <span>{isLocating ? 'Detecting Location...' : '📍 Auto-Detect Live Location'}</span>
+                  <Navigation size={14} className={(isLocating || isDetectingLoc) ? 'animate-spin' : ''} />
+                  <span>{(isLocating || isDetectingLoc) ? 'Detecting Location...' : '📍 Auto-Detect Live Location'}</span>
                 </button>
               </div>
 
