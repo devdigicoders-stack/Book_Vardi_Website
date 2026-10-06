@@ -1807,14 +1807,6 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                       const isDelivered = ['delivered', 'completed'].includes(currentStatus);
                       const orderItems = order.items || [];
                       const firstItem = orderItems[0] || {};
-
-                      const hasReturnable = orderItems.length > 0
-                        ? orderItems.some(it => isItemReturnable(it))
-                        : isItemReturnable(firstItem);
-                      const hasExchangeable = orderItems.length > 0
-                        ? orderItems.some(it => isItemExchangeable(it))
-                        : isItemExchangeable(firstItem);
-                      const isOrderReturnable = hasReturnable || hasExchangeable;
                       const returnWindowDays = firstItem.returnWindowDays || firstItem.product?.returnWindowDays || 7;
                       const deliveredDate = (() => {
                         if (order.deliveredAt) return new Date(order.deliveredAt);
@@ -1822,11 +1814,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                         if (isDelivered) return new Date(order.updatedAt || Date.now());
                         return new Date(order.date || order.createdAt || Date.now());
                       })();
-                      const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
                       const now = new Date();
-                      const isReturnWindowValid = isDelivered && isOrderReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
-                      const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-                      const daysLeft = Math.max(0, Math.ceil((returnTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
 
                       const handleViewOrder = (e) => {
                         e.stopPropagation();
@@ -2053,59 +2041,6 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               </p>
                             </div>
                           )}
-
-                          {/* Return / Exchange Policy Tag Banner for Delivered Orders */}
-                          {isDelivered && (() => {
-                            const orderAvail = getReturnExchangeAvailability(hasReturnable, hasExchangeable, formattedTillDate, daysLeft);
-                            return (
-                              <div className={`mb-3 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border flex-wrap ${
-                                isReturnWindowValid
-                                  ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950'
-                                  : isOrderReturnable
-                                  ? 'bg-amber-50/70 border-amber-200/80 text-amber-950'
-                                  : 'bg-gray-50 border-gray-200 text-gray-700'
-                              }`}>
-                                <div className="flex items-center gap-2">
-                                  <RotateCcw size={13} className={isReturnWindowValid ? "text-emerald-600 shrink-0" : "text-gray-500 shrink-0"} />
-                                  <span>
-                                    {isReturnWindowValid ? (
-                                      orderAvail.mode === 'both' ? (
-                                        <>Return / Exchange available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
-                                      ) : orderAvail.mode === 'return_only' ? (
-                                        <>Return available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
-                                      ) : (
-                                        <>Exchange available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
-                                      )
-                                    ) : isOrderReturnable ? (
-                                      orderAvail.mode === 'both' ? (
-                                        <>Return / Exchange window closed on <strong className="font-mono">{formattedTillDate}</strong></>
-                                      ) : orderAvail.mode === 'return_only' ? (
-                                        <>Return window closed on <strong className="font-mono">{formattedTillDate}</strong></>
-                                      ) : (
-                                        <>Exchange window closed on <strong className="font-mono">{formattedTillDate}</strong></>
-                                      )
-                                    ) : (
-                                      <>Non-Returnable & Non-Exchangeable Product Policy</>
-                                    )}
-                                  </span>
-                                </div>
-                                {isReturnWindowValid && orderAvail.actionLabel && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setReturnModalOrder(order);
-                                      setIsReturnModalOpen(true);
-                                    }}
-                                    className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
-                                  >
-                                    <ArrowRightLeft size={12} />
-                                    <span>{orderAvail.actionLabel}</span>
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })()}
 
                           {/* Order Footer */}
                           <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 flex-wrap gap-2">

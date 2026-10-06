@@ -66,6 +66,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const isPaymentVerified = String(order.paymentStatus || '').toLowerCase() === 'paid' ||
     String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
     Number(order.advancePaidAmount || 0) > 0;
+  const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
   const isPending = !normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus);
 
   const isOrderConfirmedStatus = [
