@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2 } from 'lucide-react';
-import { requestReturnExchangeApi } from '../../utils/api';
+import React, { useState, useEffect } from 'react';
+import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2, AlertCircle } from 'lucide-react';
+import { requestReturnExchangeApi, fetchProductByIdFromBackend, trackAwbApi } from '../../utils/api';
+import { isItemReturnable, isItemExchangeable } from '../../utils/orderReturnPolicy';
 
 export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess }) {
   if (!isOpen || !order) return null;
@@ -8,37 +9,56 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   const orderId = order.id || order.orderId || order._id;
   const userPhone = order.customer?.phone || order.shippingAddress?.phone || '';
   const orderItems = order.items || [];
-  const firstItem = orderItems[0] || {};
+  const [selectedItemId, setSelectedItemId] = useState(() => {
+    return order.selectedItem?._id || order.selectedItem?.id || orderItems[0]?._id || orderItems[0]?.id || null;
+  });
 
-  const getItemReturnable = (it) => {
-    if (!it) return false;
-    const policy = String(it.returnPolicy || it.product?.returnPolicy || '').toLowerCase().trim();
-    if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
-    if (it.isReturnable === false || it.product?.isReturnable === false) return false;
-    return it.isReturnable ?? it.product?.isReturnable ?? true;
-  };
+  useEffect(() => {
+    if (order.selectedItem) {
+      setSelectedItemId(order.selectedItem._id || order.selectedItem.id);
+    }
+  }, [order.selectedItem]);
 
-  const getItemExchangeable = (it) => {
-    if (!it) return false;
-    const policy = String(it.returnPolicy || it.product?.returnPolicy || '').toLowerCase().trim();
-    if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
-    if (it.isExchangeable === false || it.product?.isExchangeable === false) return false;
-    return it.isExchangeable ?? it.product?.isExchangeable ?? true;
-  };
+  const activeItem = orderItems.find(it => String(it._id || it.id) === String(selectedItemId)) || order.selectedItem || orderItems[0] || {};
+  const isReturnable = isItemReturnable(activeItem);
+  const isExchangeable = isItemExchangeable(activeItem);
 
-  const isReturnable = orderItems.length > 0 ? orderItems.some(getItemReturnable) : getItemReturnable(firstItem);
-  const isExchangeable = orderItems.length > 0 ? orderItems.some(getItemExchangeable) : getItemExchangeable(firstItem);
+  const [fetchedProduct, setFetchedProduct] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const prodId = activeItem.productId || activeItem.id;
+    if (prodId) {
+      fetchProductByIdFromBackend(prodId)
+        .then((res) => {
+          if (isMounted && res) {
+            setFetchedProduct(res.product || res);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [activeItem.productId, activeItem.id]);
 
   const [activeType, setActiveType] = useState(() => {
     if (!isReturnable && isExchangeable) return 'exchange';
     return 'return';
   });
+
+  useEffect(() => {
+    if (!isReturnable && isExchangeable) {
+      setActiveType('exchange');
+    } else if (isReturnable && !isExchangeable) {
+      setActiveType('return');
+    }
+  }, [isReturnable, isExchangeable]);
+
   const [reason, setReason] = useState('Size too small / large');
   const [comment, setComment] = useState('');
-  const [exchangeSize, setExchangeSize] = useState('M');
+  const [exchangeSize, setExchangeSize] = useState(() => activeItem.size || 'M');
   const [refundMethod, setRefundMethod] = useState('UPI / Bank Transfer');
 
-  // Refund payout details state for return
+  // Refund payout details state for return / partial refund
   const [payoutMode, setPayoutMode] = useState('UPI'); // 'UPI' | 'BANK'
   const [upiId, setUpiId] = useState('');
   const [bankName, setBankName] = useState('');
@@ -50,8 +70,15 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   const [errorMsg, setErrorMsg] = useState('');
 
   // Calculate return window till date
-  const deliveredDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.date || order.createdAt || Date.now());
-  const returnWindowDays = firstItem.returnWindowDays || 7;
+  const deliveredDate = (() => {
+    if (order.deliveredAt) return new Date(order.deliveredAt);
+    if (order.deliveryDetails?.deliveredAt) return new Date(order.deliveryDetails.deliveredAt);
+    const status = String(order.overallStatus || order.status || '').toLowerCase().trim();
+    const isDelivered = ['delivered', 'completed', 'fulfilled', 'received'].includes(status);
+    if (isDelivered) return new Date(order.updatedAt || Date.now());
+    return new Date(order.date || order.createdAt || Date.now());
+  })();
+  const returnWindowDays = activeItem.returnWindowDays || activeItem.product?.returnWindowDays || 7;
   const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
   const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -70,7 +97,17 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     'Prefer different color / variant'
   ];
 
-  const availableSizes = ['24', '26', '28', '30', '32', '34', 'S', 'M', 'L', 'XL', 'XXL'];
+  const productVariants = fetchedProduct?.sizeVariants || fetchedProduct?.variants || activeItem.sizeVariants || activeItem.variants || [];
+  const availableSizes = productVariants.length > 0
+    ? productVariants.map(v => v.size || v.measureValue).filter(Boolean)
+    : (activeItem.size ? [activeItem.size, '24', '26', '28', '30', '32', '34', 'S', 'M', 'L', 'XL', 'XXL'] : ['24', '26', '28', '30', '32', '34', 'S', 'M', 'L', 'XL', 'XXL']);
+
+  // Price calculations
+  const originalPrice = Number(activeItem.price || activeItem.finalPrice || 0);
+  const matchingVariant = productVariants.find(v => String(v.size || v.measureValue).toUpperCase() === String(exchangeSize).toUpperCase());
+  const replacementPrice = matchingVariant ? Number(matchingVariant.price || matchingVariant.mrp || originalPrice) : originalPrice;
+  const priceDifference = replacementPrice - originalPrice;
+  const priceAdjustmentType = priceDifference > 0 ? 'extra_payment' : priceDifference < 0 ? 'partial_refund' : 'none';
 
   const handleSubmit = async () => {
     if (activeType === 'return' && !isReturnable) {
@@ -86,7 +123,8 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     setErrorMsg('');
 
     let refundDetailsPayload = null;
-    if (activeType === 'return') {
+    const isPayoutRequired = activeType === 'return' || (activeType === 'exchange' && priceAdjustmentType === 'partial_refund');
+    if (isPayoutRequired) {
       if (payoutMode === 'UPI') {
         if (!upiId.trim() || !upiId.includes('@')) {
           setLoading(false);
@@ -111,11 +149,17 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
 
     const payload = {
+      itemId: activeItem._id || activeItem.id,
+      itemName: activeItem.name,
       type: activeType,
       reason,
       comment,
       exchangeSize: activeType === 'exchange' ? exchangeSize : '',
-      refundMethod: activeType === 'return' ? refundMethod : '',
+      priceDifference: activeType === 'exchange' ? priceDifference : 0,
+      priceAdjustmentType: activeType === 'exchange' ? priceAdjustmentType : 'none',
+      originalItemPrice: originalPrice,
+      replacementItemPrice: activeType === 'exchange' ? replacementPrice : originalPrice,
+      refundMethod: isPayoutRequired ? refundMethod : '',
       refundDetails: refundDetailsPayload
     };
 
@@ -223,6 +267,66 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs text-gray-800">
+          {/* Order Item Selection if Multiple Items */}
+          {orderItems.length > 1 && !order.selectedItem && (
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-extrabold text-gray-700 uppercase tracking-wider">
+                Select Item to Return / Exchange ({orderItems.length} items in order)
+              </label>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {orderItems.map((it, idx) => {
+                  const itId = it._id || it.id || idx;
+                  const isSelected = String(itId) === String(selectedItemId);
+                  return (
+                    <button
+                      key={itId}
+                      type="button"
+                      onClick={() => setSelectedItemId(itId)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
+                        isSelected ? 'bg-brand-teal text-white border-brand-teal shadow-xs' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand-teal'
+                      }`}
+                    >
+                      <span className="truncate max-w-[120px]">{it.name}</span>
+                      <span className={`text-[10px] font-mono ${isSelected ? 'text-teal-100' : 'text-gray-500'}`}>₹{it.price}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Active Target Item Card */}
+          {activeItem && activeItem.name && (
+            <div className="bg-gray-50/80 border border-gray-200 rounded-2xl p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {activeItem.image ? (
+                  <img src={activeItem.image} alt={activeItem.name} className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-800 font-bold text-xs shrink-0">
+                    BV
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h4 className="font-bold text-gray-900 text-xs truncate">{activeItem.name}</h4>
+                  <div className="text-[11px] text-gray-500 font-mono">
+                    Qty: {Number(activeItem.quantity || 1).toFixed(2)} • ₹{Number(activeItem.price || 0).toFixed(2)} each
+                  </div>
+                  <div className="text-[10px] text-teal-800 font-semibold mt-0.5">
+                    Sold by: {activeItem.storeName || activeItem.sellerName || 'Partner Merchant'}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="font-extrabold text-xs text-gray-900 font-mono">
+                  ₹{(Number(activeItem.price || 0) * Number(activeItem.quantity || 1)).toFixed(2)}
+                </span>
+                <div className="text-[10px] font-bold text-emerald-800">
+                  {isReturnable && isExchangeable ? 'Return & Exchange' : isReturnable ? 'Return Only' : isExchangeable ? 'Exchange Only' : 'Non-Returnable'}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Policy Banner */}
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 flex items-center gap-3 text-emerald-950">
             <ShieldCheck size={20} className="text-emerald-600 shrink-0" />
@@ -263,40 +367,107 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
             </div>
           </div>
 
-          {/* If Exchange: Select Replacement Size */}
+          {/* If Exchange: Select Replacement Size & Price Adjustment */}
           {activeType === 'exchange' && (
-            <div>
-              <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider mb-2">
-                Select Required Replacement Size
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {availableSizes.map((sz) => (
-                  <button
-                    key={sz}
-                    type="button"
-                    onClick={() => setExchangeSize(sz)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      exchangeSize === sz
-                        ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
-                        : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
-                    }`}
-                  >
-                    Size {sz}
-                  </button>
-                ))}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider mb-2">
+                  Select Required Replacement Size
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {availableSizes.map((sz) => {
+                    const v = productVariants.find(item => String(item.size || item.measureValue).toUpperCase() === String(sz).toUpperCase());
+                    const vPrice = v ? Number(v.price || v.mrp || originalPrice) : originalPrice;
+                    const isSelected = exchangeSize === sz;
+                    return (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => setExchangeSize(sz)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
+                            : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
+                        }`}
+                      >
+                        <span>Size {sz}</span>
+                        {vPrice !== originalPrice && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                            isSelected ? 'bg-white/20 text-white font-mono' : 'bg-gray-100 text-gray-600 font-mono'
+                          }`}>
+                            ₹{vPrice}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Price Breakdown Banner */}
+              <div className="rounded-2xl border transition-all overflow-hidden">
+                {priceAdjustmentType === 'extra_payment' && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 space-y-1 text-xs">
+                    <div className="flex items-center justify-between font-extrabold text-amber-950">
+                      <span className="flex items-center gap-1.5">
+                        <AlertCircle size={15} className="text-amber-600" />
+                        <span>Additional Payment Required</span>
+                      </span>
+                      <span className="text-amber-700 font-mono font-bold text-sm">+₹{priceDifference}</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800">
+                      Original item: <strong>₹{originalPrice}</strong> → Replacement Size ({exchangeSize}): <strong>₹{replacementPrice}</strong>
+                    </p>
+                    <p className="text-[11px] text-amber-700">
+                      The seller / delivery agent will request the extra ₹{priceDifference} payment upon exchange fulfillment.
+                    </p>
+                  </div>
+                )}
+
+                {priceAdjustmentType === 'partial_refund' && (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-3.5 space-y-1 text-xs">
+                    <div className="flex items-center justify-between font-extrabold text-emerald-950">
+                      <span className="flex items-center gap-1.5">
+                        <CheckCircle2 size={15} className="text-emerald-600" />
+                        <span>Partial Refund Owed to You</span>
+                      </span>
+                      <span className="text-emerald-700 font-mono font-bold text-sm">₹{Math.abs(priceDifference)} Refund</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-800">
+                      Original item: <strong>₹{originalPrice}</strong> → Replacement Size ({exchangeSize}): <strong>₹{replacementPrice}</strong>
+                    </p>
+                    <p className="text-[11px] text-emerald-700">
+                      ₹{Math.abs(priceDifference)} will be refunded to your account. Please provide your receiving account details below.
+                    </p>
+                  </div>
+                )}
+
+                {priceAdjustmentType === 'none' && (
+                  <div className="bg-blue-50/70 border border-blue-200 text-blue-900 p-3 space-y-0.5 text-xs">
+                    <div className="flex items-center justify-between font-bold text-blue-950">
+                      <span>✅ Equal Price Exchange</span>
+                      <span className="font-mono text-blue-700 font-bold">₹0 Price Diff</span>
+                    </div>
+                    <p className="text-[11px] text-blue-700">
+                      Original item (₹{originalPrice}) and Replacement Size {exchangeSize} (₹{replacementPrice}) have equal pricing. No extra charge or refund needed.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* If Return: Receiving Payout Details */}
-          {activeType === 'return' && (
+          {/* Receiving Payout Details (for Return OR Exchange with Partial Refund) */}
+          {(activeType === 'return' || (activeType === 'exchange' && priceAdjustmentType === 'partial_refund')) && (
             <div className="space-y-4 pt-2 border-t border-gray-100">
               <div>
                 <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider mb-1">
-                  Receiving Refund Payout Account *
+                  {activeType === 'exchange' ? 'Receiving Partial Refund Account *' : 'Receiving Refund Payout Account *'}
                 </label>
                 <p className="text-[11px] text-gray-500 mb-3">
-                  Enter your UPI ID or Bank account details where your refund will be transferred once the product return is received.
+                  {activeType === 'exchange'
+                    ? `Enter your UPI ID or Bank account details where your partial refund of ₹${Math.abs(priceDifference)} will be transferred.`
+                    : 'Enter your UPI ID or Bank account details where your refund will be transferred once the product return is received.'}
                 </p>
 
                 {/* Mode Selector */}

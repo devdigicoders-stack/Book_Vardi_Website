@@ -52,6 +52,7 @@ import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import OrderTrackingModal from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
 import ReturnExchangeModal from '../Common/ReturnExchangeModal';
+import { isItemReturnable, isItemExchangeable, getReturnExchangeAvailability } from '../../utils/orderReturnPolicy';
 
 export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
@@ -1806,25 +1807,21 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                       const isDelivered = ['delivered', 'completed'].includes(currentStatus);
                       const orderItems = order.items || [];
                       const firstItem = orderItems[0] || {};
-                      const isItemReturnable = (item) => {
-                        if (!item) return false;
-                        const policy = String(item.returnPolicy || item.product?.returnPolicy || '').toLowerCase().trim();
-                        if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
-                        if (item.isReturnable === false || item.product?.isReturnable === false) return false;
-                        return item.isReturnable ?? item.product?.isReturnable ?? true;
-                      };
-                      const isItemExchangeable = (item) => {
-                        if (!item) return false;
-                        const policy = String(item.returnPolicy || item.product?.returnPolicy || '').toLowerCase().trim();
-                        if (policy === 'non_returnable' || policy === 'non-returnable' || policy === 'no_return') return false;
-                        if (item.isExchangeable === false || item.product?.isExchangeable === false) return false;
-                        return item.isExchangeable ?? item.product?.isExchangeable ?? true;
-                      };
-                      const isOrderReturnable = orderItems.length > 0
-                        ? orderItems.some(it => isItemReturnable(it) || isItemExchangeable(it))
-                        : (isItemReturnable(firstItem) || isItemExchangeable(firstItem));
+
+                      const hasReturnable = orderItems.length > 0
+                        ? orderItems.some(it => isItemReturnable(it))
+                        : isItemReturnable(firstItem);
+                      const hasExchangeable = orderItems.length > 0
+                        ? orderItems.some(it => isItemExchangeable(it))
+                        : isItemExchangeable(firstItem);
+                      const isOrderReturnable = hasReturnable || hasExchangeable;
                       const returnWindowDays = firstItem.returnWindowDays || firstItem.product?.returnWindowDays || 7;
-                      const deliveredDate = order.deliveredAt ? new Date(order.deliveredAt) : new Date(order.date || order.createdAt || Date.now());
+                      const deliveredDate = (() => {
+                        if (order.deliveredAt) return new Date(order.deliveredAt);
+                        if (order.deliveryDetails?.deliveredAt) return new Date(order.deliveryDetails.deliveredAt);
+                        if (isDelivered) return new Date(order.updatedAt || Date.now());
+                        return new Date(order.date || order.createdAt || Date.now());
+                      })();
                       const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
                       const now = new Date();
                       const isReturnWindowValid = isDelivered && isOrderReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
@@ -1869,26 +1866,172 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                           {/* Order Items */}
                           <div className="py-4 space-y-3">
-                            {order.items?.map((item, idx) => (
-                              <div key={idx} className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-3">
-                                  <img
-                                    src={resolveImageUrl(item.image)}
-                                    alt={item.name}
-                                    className="w-12 h-12 rounded-lg object-cover border border-gray-100 shrink-0"
-                                  />
-                                  <div>
-                                    <h4 className="text-xs font-bold text-gray-800 line-clamp-1">
-                                      {item.name}
-                                    </h4>
-                                    <span className="text-[11px] text-gray-500">
-                                      Qty: {item.quantity} • ₹{item.price} each
-                                    </span>
+                            {order.items?.map((item, idx) => {
+                              const itemRawStatus = String(item.status || order.overallStatus || order.status || 'Pending').toLowerCase().trim();
+                              const itemStatMeta = getOrderStatusMeta(itemRawStatus);
+                              const ItemStatusIcon = itemStatMeta.icon;
+
+                              const itemIsRet = isItemReturnable(item);
+                              const itemIsExc = isItemExchangeable(item);
+                              const itemReturnWindowDays = item.returnWindowDays || item.product?.returnWindowDays || returnWindowDays;
+                              const itemTillDate = new Date(deliveredDate.getTime() + itemReturnWindowDays * 24 * 60 * 60 * 1000);
+                              const itemFormattedTillDate = itemTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                              const itemDaysLeft = Math.max(0, Math.ceil((itemTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+                              const isItemDelivered = ['delivered', 'completed'].includes(itemRawStatus) || isDelivered;
+                              const isItemWindowValid = isItemDelivered && (itemIsRet || itemIsExc) && now <= itemTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
+                              const itemAvail = getReturnExchangeAvailability(itemIsRet, itemIsExc, itemFormattedTillDate, itemDaysLeft);
+
+                              return (
+                                <div key={idx} className="p-3 bg-gray-50/50 rounded-xl border border-gray-100/80 space-y-2">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3">
+                                      <img
+                                        src={resolveImageUrl(item.image)}
+                                        alt={item.name}
+                                        className="w-12 h-12 rounded-lg object-cover border border-gray-100 shrink-0"
+                                      />
+                                      <div>
+                                        <h4 className="text-xs font-bold text-gray-800 line-clamp-1">
+                                          {item.name}
+                                        </h4>
+                                        {(() => {
+                                          const isMeter = Boolean(
+                                            item.isMeterBased ||
+                                            item.unit === 'meter' ||
+                                            String(item.category || '').toLowerCase().includes('unstitched') ||
+                                            String(item.subCategory || '').toLowerCase().includes('unstitched') ||
+                                            String(item.name || '').toLowerCase().includes('unstitched')
+                                          );
+                                          const rawQty = Number(item.quantity || 1);
+                                          const formattedQty = `${rawQty.toFixed(2)}${isMeter ? 'm' : ''}`;
+                                          let formattedSize = '';
+                                          if (item.size) {
+                                            const sizeStr = String(item.size).trim();
+                                            const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*(m|meter|meters)?$/i);
+                                            if (match) {
+                                              const num = parseFloat(match[1]);
+                                              const hasMeter = isMeter || Boolean(match[2]);
+                                              formattedSize = `${num.toFixed(2)}${hasMeter ? 'm' : ''}`;
+                                            } else {
+                                              formattedSize = sizeStr;
+                                            }
+                                          }
+                                          return (
+                                            <span className="text-[11px] text-gray-500 font-mono flex items-center gap-1.5 flex-wrap">
+                                              <span>
+                                                {isMeter ? 'Length: ' : 'Qty: '}{formattedQty}
+                                              </span>
+                                              {formattedSize && <span>• Size: {formattedSize}</span>}
+                                              <span>• ₹{Number(item.price || 0).toFixed(2)}{isMeter ? '/m' : ' each'}</span>
+                                            </span>
+                                          );
+                                        })()}
+                                        <div className="text-[10px] text-teal-800 font-semibold mt-0.5">
+                                          Sold by: {item.storeName || item.sellerName || item.sellerDetails?.storeName || 'Partner Merchant'}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-right flex flex-col items-end gap-1 shrink-0">
+                                      <span className="font-display font-extrabold text-xs text-gray-900">
+                                        ₹{(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}
+                                      </span>
+                                      <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${itemStatMeta.badgeClass}`}>
+                                        <ItemStatusIcon size={11} className={itemStatMeta.iconClass} />
+                                        <span>{itemStatMeta.label}</span>
+                                      </span>
+                                    </div>
                                   </div>
+
+                                  {/* Item-level Return / Exchange Policy Tag & Button if Delivered */}
+                                  {isItemDelivered && (
+                                    <div className={`pt-2 border-t border-gray-200/60 flex items-center justify-between gap-2 text-[11px] flex-wrap ${
+                                      isItemWindowValid
+                                        ? 'text-emerald-950'
+                                        : (itemIsRet || itemIsExc)
+                                        ? 'text-amber-950'
+                                        : 'text-gray-500'
+                                    }`}>
+                                      <div className="flex items-center gap-1.5">
+                                        <RotateCcw size={12} className={isItemWindowValid ? "text-emerald-600 shrink-0" : "text-gray-400 shrink-0"} />
+                                        <span>
+                                          {isItemWindowValid ? (
+                                            itemAvail.mode === 'both' ? (
+                                              <>Return / Exchange available till <strong className="font-mono text-emerald-950 font-black">{itemFormattedTillDate}</strong> ({itemDaysLeft} days left)</>
+                                            ) : itemAvail.mode === 'return_only' ? (
+                                              <>Return available till <strong className="font-mono text-emerald-950 font-black">{itemFormattedTillDate}</strong> ({itemDaysLeft} days left)</>
+                                            ) : (
+                                              <>Exchange available till <strong className="font-mono text-emerald-950 font-black">{itemFormattedTillDate}</strong> ({itemDaysLeft} days left)</>
+                                            )
+                                          ) : (itemIsRet || itemIsExc) ? (
+                                            itemAvail.mode === 'both' ? (
+                                              <>Return / Exchange window closed on <strong className="font-mono">{itemFormattedTillDate}</strong></>
+                                            ) : itemAvail.mode === 'return_only' ? (
+                                              <>Return window closed on <strong className="font-mono">{itemFormattedTillDate}</strong></>
+                                            ) : (
+                                              <>Exchange window closed on <strong className="font-mono">{itemFormattedTillDate}</strong></>
+                                            )
+                                          ) : (
+                                            <>Non-Returnable & Non-Exchangeable Product Policy</>
+                                          )}
+                                        </span>
+                                      </div>
+
+                                      {isItemWindowValid && itemAvail.actionLabel && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setReturnModalOrder({ ...order, selectedItem: item });
+                                            setIsReturnModalOpen(true);
+                                          }}
+                                          className="text-[10px] font-extrabold bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
+                                        >
+                                          <ArrowRightLeft size={11} />
+                                          <span>{itemAvail.actionLabel}</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
+
+                          {/* Active Return / Exchange Request Details Banner */}
+                          {['exchange_requested', 'exchanged', 'return_requested', 'returned'].includes(currentStatus) && order.returnRequest && (
+                            <div className="mb-3 p-3 rounded-xl text-xs space-y-1 border bg-blue-50/80 border-blue-200 text-blue-950">
+                              <div className="flex items-center justify-between font-bold flex-wrap gap-1">
+                                <span className="flex items-center gap-1.5">
+                                  <ArrowRightLeft size={14} className="text-blue-600 shrink-0" />
+                                  <span>
+                                    {currentStatus.includes('exchange') ? 'Size Exchange Request' : 'Product Return Request'}
+                                    {order.returnRequest.exchangeSize && ` (Size ${order.returnRequest.exchangeSize})`}
+                                  </span>
+                                </span>
+                                {order.returnRequest.priceAdjustmentType === 'extra_payment' && (
+                                  <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
+                                    Extra Payable: +₹{order.returnRequest.priceDifference}
+                                  </span>
+                                )}
+                                {order.returnRequest.priceAdjustmentType === 'partial_refund' && (
+                                  <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
+                                    Partial Refund: ₹{Math.abs(order.returnRequest.priceDifference)}
+                                  </span>
+                                )}
+                                {order.returnRequest.priceAdjustmentType === 'none' && (
+                                  <span className="bg-blue-100 text-blue-900 border border-blue-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
+                                    Equal Price
+                                  </span>
+                                )}
+                              </div>
+                              {order.returnRequest.reason && (
+                                <p className="text-[11px] text-blue-800">
+                                  <strong>Reason:</strong> {order.returnRequest.reason}
+                                </p>
+                              )}
+                            </div>
+                          )}
 
                           {/* Cancellation & Refund Status Banner for Cancelled Orders */}
                           {currentStatus === 'cancelled' && (
@@ -1912,42 +2055,57 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           )}
 
                           {/* Return / Exchange Policy Tag Banner for Delivered Orders */}
-                          {isDelivered && (
-                            <div className={`mb-3 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border flex-wrap ${
-                              isReturnWindowValid
-                                ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950'
-                                : isOrderReturnable
-                                ? 'bg-amber-50/70 border-amber-200/80 text-amber-950'
-                                : 'bg-gray-50 border-gray-200 text-gray-700'
-                            }`}>
-                              <div className="flex items-center gap-2">
-                                <RotateCcw size={13} className={isReturnWindowValid ? "text-emerald-600 shrink-0" : "text-gray-500 shrink-0"} />
-                                <span>
-                                  {isReturnWindowValid ? (
-                                    <>Return / Exchange available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
-                                  ) : isOrderReturnable ? (
-                                    <>Return / Exchange window closed on <strong className="font-mono">{formattedTillDate}</strong></>
-                                  ) : (
-                                    <>Non-Returnable / Non-Exchangeable Product Policy</>
-                                  )}
-                                </span>
+                          {isDelivered && (() => {
+                            const orderAvail = getReturnExchangeAvailability(hasReturnable, hasExchangeable, formattedTillDate, daysLeft);
+                            return (
+                              <div className={`mb-3 p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border flex-wrap ${
+                                isReturnWindowValid
+                                  ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950'
+                                  : isOrderReturnable
+                                  ? 'bg-amber-50/70 border-amber-200/80 text-amber-950'
+                                  : 'bg-gray-50 border-gray-200 text-gray-700'
+                              }`}>
+                                <div className="flex items-center gap-2">
+                                  <RotateCcw size={13} className={isReturnWindowValid ? "text-emerald-600 shrink-0" : "text-gray-500 shrink-0"} />
+                                  <span>
+                                    {isReturnWindowValid ? (
+                                      orderAvail.mode === 'both' ? (
+                                        <>Return / Exchange available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
+                                      ) : orderAvail.mode === 'return_only' ? (
+                                        <>Return available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
+                                      ) : (
+                                        <>Exchange available till <strong className="font-mono text-emerald-950 font-black">{formattedTillDate}</strong> ({daysLeft} days left)</>
+                                      )
+                                    ) : isOrderReturnable ? (
+                                      orderAvail.mode === 'both' ? (
+                                        <>Return / Exchange window closed on <strong className="font-mono">{formattedTillDate}</strong></>
+                                      ) : orderAvail.mode === 'return_only' ? (
+                                        <>Return window closed on <strong className="font-mono">{formattedTillDate}</strong></>
+                                      ) : (
+                                        <>Exchange window closed on <strong className="font-mono">{formattedTillDate}</strong></>
+                                      )
+                                    ) : (
+                                      <>Non-Returnable & Non-Exchangeable Product Policy</>
+                                    )}
+                                  </span>
+                                </div>
+                                {isReturnWindowValid && orderAvail.actionLabel && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setReturnModalOrder(order);
+                                      setIsReturnModalOpen(true);
+                                    }}
+                                    className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
+                                  >
+                                    <ArrowRightLeft size={12} />
+                                    <span>{orderAvail.actionLabel}</span>
+                                  </button>
+                                )}
                               </div>
-                              {isReturnWindowValid && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setReturnModalOrder(order);
-                                    setIsReturnModalOpen(true);
-                                  }}
-                                  className="text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg transition-all cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
-                                >
-                                  <ArrowRightLeft size={12} />
-                                  <span>Return or Exchange</span>
-                                </button>
-                              )}
-                            </div>
-                          )}
+                            );
+                          })()}
 
                           {/* Order Footer */}
                           <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 flex-wrap gap-2">
@@ -1990,7 +2148,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 title="Open Live Tracking Status Modal"
                               >
                                 <StatusIcon size={13} className="text-brand-yellow" />
-                                <span>Track Live Courier</span>
+                                <span>Track Live Delivery</span>
                               </button>
                               <button
                                 type="button"
@@ -2982,22 +3140,37 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                   );
                                 }
 
-                                // Scenario 2: Buyer accepted seller quote -> Awaiting seller confirmation & prepayment request
-                                if (!isOrderAdvanced && (order.status === 'buyer_accepted' || winningQuote.status === 'buyer_accepted')) {
-                                  return (
-                                    <div className="bg-blue-50 border border-blue-300 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs font-bold text-blue-950">
-                                      <span className="flex items-center gap-1.5">
-                                        <Clock size={15} className="text-blue-600 shrink-0" />
-                                        <span>Quotation accepted! Awaiting vendor's confirmation & prepayment request.</span>
-                                      </span>
-                                      <span className="px-2.5 py-0.5 bg-blue-200 text-blue-900 rounded-md text-[10px] uppercase font-black">
-                                        Awaiting Seller Confirmation
-                                      </span>
-                                    </div>
-                                  );
-                                }
+                                // Scenario 2: Buyer accepted seller quote -> Order ready for online prepayment
+                                 if (!isOrderAdvanced && (order.status === 'buyer_accepted' || winningQuote.status === 'buyer_accepted' || order.status === 'accepted' || winningQuote.status === 'approved')) {
+                                   return (
+                                     <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+                                       <div className="flex items-center gap-2 text-xs font-bold text-emerald-950">
+                                         <Sparkles size={16} className="text-emerald-700 shrink-0" />
+                                         <div>
+                                           <span className="font-extrabold block">
+                                             🎉 Quotation Approved! Ready for Online Prepayment
+                                           </span>
+                                           <span className="text-emerald-800 text-[11px]">
+                                             Mobilization deposit of <strong>₹{advReq.toLocaleString()} ({advPct}%)</strong> required to lock vendor fulfillment.
+                                           </span>
+                                         </div>
+                                       </div>
+                                       <button
+                                         type="button"
+                                         onClick={() => {
+                                           setSelectedBulkOrder(order);
+                                           setSelectedBulkOrderTab('quotes');
+                                         }}
+                                         className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
+                                       >
+                                         <CreditCard size={14} />
+                                         <span>Pay Prepayment Online (₹{advReq.toLocaleString()})</span>
+                                       </button>
+                                     </div>
+                                   );
+                                 }
 
-                                if (advReq <= 0) return null;
+                                 if (advReq <= 0) return null;
 
                                 if (isPaid) {
                                   return (
@@ -3080,16 +3253,30 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 {order.quotations.length} Vendor Proposal{order.quotations.length > 1 ? 's' : ''} available
                               </span>
                             )}
-                            <button
-                              onClick={() => {
-                                setSelectedBulkOrder(order);
-                                setSelectedBulkOrderTab('specs');
-                              }}
-                              className="text-brand-teal text-xs font-bold hover:underline ml-auto flex items-center gap-1"
-                            >
-                              <span>View Details & Timeline</span>
-                              <ArrowRight size={12} />
-                            </button>
+                            <div className="flex items-center gap-2.5 ml-auto">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTrackingModalOrder(order);
+                                  setIsTrackingModalOpen(true);
+                                }}
+                                className="px-3 py-1.5 bg-gradient-to-r from-teal-800 to-emerald-800 hover:from-teal-900 hover:to-emerald-900 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Truck size={14} className={isProcessedOrder ? "animate-pulse text-amber-300" : "text-teal-200"} />
+                                <span>Track Consignment</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setSelectedBulkOrder(order);
+                                  setSelectedBulkOrderTab('specs');
+                                }}
+                                className="text-brand-teal text-xs font-bold hover:underline flex items-center gap-1"
+                              >
+                                <span>View Details & Timeline</span>
+                                <ArrowRight size={12} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );

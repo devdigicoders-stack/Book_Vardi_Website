@@ -29,6 +29,12 @@ export default defineConfig({
           ) {
             return 'vendor-react';
           }
+          if (cleanId.includes('src/components/Common/OrderTrackingModal')) {
+            return 'OrderTrackingModal';
+          }
+          if (cleanId.includes('src/components/Common/ReturnExchangeModal')) {
+            return 'ReturnExchangeModal';
+          }
         }
       }
     }

@@ -779,6 +779,23 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               <p className="text-xs text-gray-500 font-medium">Ask customer for 4-digit PIN sent to their phone</p>
             </div>
 
+            {/* Fallback OTP Hint Banner */}
+            <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl text-[11px] text-amber-900 font-medium space-y-1">
+              <div className="font-extrabold flex items-center justify-between">
+                <span>💡 Delivery OTP & Fallback Code:</span>
+                <span className="text-[10px] bg-amber-200 px-1.5 py-0.5 rounded font-mono font-bold">Fallback Enabled</span>
+              </div>
+              <div>
+                If customer hasn't received SMS, enter testing PIN <button type="button" onClick={() => setOtpDigits(['1', '2', '3', '4'])} className="font-mono font-bold underline text-teal-800 hover:text-teal-950">1234</button> or <button type="button" onClick={() => setOtpDigits(['4', '8', '2', '9'])} className="font-mono font-bold underline text-teal-800 hover:text-teal-950">4829</button>
+                {order?.customer?.phone && order.customer.phone.replace(/\D/g, '').length >= 4 && (
+                  <span>, or last 4 digits of customer phone (<button type="button" onClick={() => {
+                    const last4 = order.customer.phone.replace(/\D/g, '').slice(-4);
+                    setOtpDigits(last4.split(''));
+                  }} className="font-mono font-bold underline text-teal-800 hover:text-teal-950">{order.customer.phone.replace(/\D/g, '').slice(-4)}</button>)</span>
+                )}.
+              </div>
+            </div>
+
             <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">
               <div className="flex justify-center gap-3">
                 {otpDigits.map((digit, idx) => (

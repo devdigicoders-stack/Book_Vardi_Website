@@ -31,6 +31,7 @@ import {
   Download
 } from 'lucide-react';
 import TaxInvoiceModal from '../Common/TaxInvoiceModal';
+import OrderTrackingModal from '../Common/OrderTrackingModal';
 import NegotiationTimelineDiv from './NegotiationTimelineDiv';
 import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
 import {
@@ -138,6 +139,7 @@ export default function BulkOrderPreviewModal({
   );
   const [quoteNotes, setQuoteNotes] = useState(existingSellerQuote ? (existingSellerQuote.notes || '') : '');
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
 
   // Buyer Quotation Acceptance & Order Size Adjustment Modal State
   const [acceptQuoteModalData, setAcceptQuoteModalData] = useState(null);
@@ -627,7 +629,7 @@ export default function BulkOrderPreviewModal({
   };
 
   const winningQuote = Array.isArray(order?.quotations)
-    ? order.quotations.find(q => q.status === 'approved' || String(q._id) === String(order?.acceptedQuoteId))
+    ? order.quotations.find(q => q.status === 'approved' || q.status === 'buyer_accepted' || q.status === 'seller_accepted' || String(q._id) === String(order?.acceptedQuoteId))
     : null;
 
   // Logistics tracking gating: strictly visible when Out for Delivery & partner decided
@@ -858,6 +860,16 @@ export default function BulkOrderPreviewModal({
             >
               <Sparkles size={14} />
               <span>Vendor Quotations ({order.quotations?.length || 0})</span>
+            </button>
+
+            {/* Live Consignment Tracking Button */}
+            <button
+              type="button"
+              onClick={() => setIsTrackingOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 bg-gradient-to-r from-teal-800 to-emerald-800 hover:from-teal-900 hover:to-emerald-900 text-white font-extrabold shadow-xs"
+            >
+              <Truck size={14} className="text-amber-300 animate-pulse" />
+              <span>Track Live Consignment</span>
             </button>
 
             {/* Seller Proposal Form Tab */}
@@ -1497,12 +1509,12 @@ export default function BulkOrderPreviewModal({
                 <div className="space-y-4">
                   {order.quotations.map(quote => {
                     const qId = quote._id || quote.id;
-                    const isApproved = quote.status === 'approved' || String(order.acceptedQuoteId) === String(qId);
+                    const isApproved = quote.status === 'approved' || quote.status === 'buyer_accepted' || String(order.acceptedQuoteId) === String(qId);
                     const hasItemPrices = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0;
                     const qAdvPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
                     const qAdvAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (qAdvPct > 0 ? Math.round((Number(quote.quoteAmount) * qAdvPct) / 100) : 0);
                     const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= qAdvAmt);
-                    const isSellerAcceptedCounter = quote.negotiationStage === 'seller_accepted_counter';
+                    const isSellerAcceptedCounter = quote.negotiationStage === 'seller_accepted_counter' || quote.status === 'seller_accepted' || order.status === 'seller_accepted_counter';
 
                     return (
                       <div
@@ -1801,7 +1813,7 @@ export default function BulkOrderPreviewModal({
                           const totalPaid = actualAdvPaid + Number(order.remainingPaidAmount || 0);
                           const isRemPaid = order.remainingPaymentStatus === 'paid' || (totalPaid >= Number(quote.quoteAmount) && Number(quote.quoteAmount) > 0);
                           const remainingBal = isRemPaid ? 0 : Math.max(0, Number(quote.quoteAmount) - actualAdvPaid);
-                          const isEligibleForPayment = (isApproved || quote.negotiationStage === 'seller_accepted_counter') && advAmt > 0 && !isPrepaymentPaid;
+                          const isEligibleForPayment = (isApproved || isSellerAcceptedCounter || order.status === 'accepted') && advAmt > 0 && !isPrepaymentPaid;
 
                           if (advPct <= 0 && advAmt <= 0 && !advTerms) return null;
 
@@ -1963,7 +1975,7 @@ export default function BulkOrderPreviewModal({
 
                             {userRole === 'consumer' && (
                               <>
-                                {(isApproved || isSellerAcceptedCounter) ? (
+                                {(isApproved || isSellerAcceptedCounter || order.status === 'accepted') ? (
                                   <>
                                     {isPrepaymentPaid ? (
                                       <div className="flex items-center gap-2">
@@ -2997,6 +3009,15 @@ export default function BulkOrderPreviewModal({
           isOpen={isComparisonOpen}
           onClose={() => setIsComparisonOpen(false)}
           quotation={comparingQuote}
+          order={order}
+        />
+      )}
+
+      {/* Live Consignment Tracking Modal */}
+      {isTrackingOpen && (
+        <OrderTrackingModal
+          isOpen={isTrackingOpen}
+          onClose={() => setIsTrackingOpen(false)}
           order={order}
         />
       )}

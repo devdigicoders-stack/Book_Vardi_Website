@@ -84,11 +84,20 @@ export function getProfileCompleteness(profile) {
   };
 }
 
+export const isUnstitchedItem = (item) => Boolean(
+  item?.isMeterBased === true ||
+  item?.unit === 'meter' ||
+  String(item?.category || '').toLowerCase().includes('unstitched') ||
+  String(item?.subCategory || '').toLowerCase().includes('unstitched') ||
+  String(item?.name || '').toLowerCase().includes('unstitched')
+);
+
 export const getCartItemKey = (item) => {
   if (!item) return '';
   if (item.cartItemId) return String(item.cartItemId);
   const prodId = item.productId !== undefined ? item.productId : (item.id !== undefined ? item.id : item._id);
-  const size = item.selectedSize || item.size || item.selectedVariant?.size || item.selectedVariant?.name || '';
+  const isUnstitched = isUnstitchedItem(item);
+  const size = isUnstitched ? '' : (item.selectedSize || item.size || item.selectedVariant?.size || item.selectedVariant?.name || '');
   const color = item.selectedColor || item.color || item.selectedVariant?.color || '';
   const variantId = item.variantId || item.selectedVariant?.id || item.selectedVariant?._id || '';
   const keyPart = [size, color, variantId].filter(Boolean).join('_');
@@ -788,7 +797,10 @@ export function CartProvider({ children }) {
       }
     }
 
-    const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
+    const isMeter = isUnstitchedItem(product);
+    const qtyToAdd = typeof quantity === 'number' && quantity > 0
+      ? (isMeter ? Math.round(quantity * 100) / 100 : quantity)
+      : (isMeter ? (Number(product.minMeter) > 0 ? Number(product.minMeter) : 0.5) : 1);
     const prodId = product?.id !== undefined ? product.id : product?._id;
     const computedKey = getCartItemKey(product);
     const cartItemId = product?.cartItemId || computedKey;
@@ -810,13 +822,15 @@ export function CartProvider({ children }) {
       id: prodId,
       productId: prodId,
       cartItemId: cartItemId,
-      selectedSize: product?.selectedSize || undefined,
+      selectedSize: isMeter ? undefined : (product?.selectedSize || undefined),
       selectedColor: product?.selectedColor || undefined,
       selectedVariant: product?.selectedVariant || undefined,
-      variantName: product?.variantName || product?.selectedVariant?.name || product?.selectedSize || undefined,
+      variantName: isMeter ? undefined : (product?.variantName || product?.selectedVariant?.name || product?.selectedSize || undefined),
       stock: itemStock,
       stockQuantity: itemStock,
       quantity: qtyToAdd,
+      isMeterBased: isMeter ? true : Boolean(product?.isMeterBased),
+      unit: isMeter ? 'meter' : (product?.unit || 'piece'),
       selected: true
     };
 
@@ -824,8 +838,10 @@ export function CartProvider({ children }) {
     setCartItems((prev) => {
       const existingIndex = prev.findIndex((item) => (item.cartItemId || getCartItemKey(item)) === cartItemId);
       if (existingIndex > -1) {
-        const existingQty = prev[existingIndex].quantity || 0;
-        const newTotalQty = existingQty + qtyToAdd;
+        const existingQty = Number(prev[existingIndex].quantity) || 0;
+        const newTotalQty = isMeter
+          ? Math.round((existingQty + qtyToAdd) * 100) / 100
+          : existingQty + qtyToAdd;
         if (itemStock !== Infinity && newTotalQty > itemStock) {
           reachedMaxStock = true;
           return prev.map((item, idx) =>
@@ -949,12 +965,17 @@ export function CartProvider({ children }) {
           const itemKey = item.cartItemId || getCartItemKey(item);
           if (String(itemKey) === String(id) || String(item.id || item.productId || item._id) === String(id)) {
             const itemStock = Number(item.stock !== undefined ? item.stock : (item.stockQuantity !== undefined ? item.stockQuantity : Infinity));
-            const newQty = item.quantity + delta;
+            const isMeter = isUnstitchedItem(item);
+            const minMeter = isMeter ? (Number(item.minMeter) > 0 ? Number(item.minMeter) : 0.5) : 1;
+            const newQty = Math.round((Number(item.quantity) + delta) * 100) / 100;
             if (delta > 0 && itemStock !== Infinity && newQty > itemStock) {
               showToast(`⚠️ Only ${itemStock} units in stock for ${item.selectedSize ? `size ${item.selectedSize}` : 'this item'}.`);
               return item;
             }
-            return newQty > 0 ? { ...item, quantity: newQty } : null;
+            if (isMeter && newQty < minMeter && delta < 0) {
+              return null;
+            }
+            return newQty > 0 ? { ...item, quantity: newQty, isMeterBased: isMeter ? true : Boolean(item.isMeterBased) } : null;
           }
           return item;
         })
@@ -1127,11 +1148,11 @@ export function CartProvider({ children }) {
   const selectedCartItems = displayedCartItems.filter((item) => item.selected !== false);
   const unselectedCartItems = displayedCartItems.filter((item) => item.selected === false);
 
-  const totalItemsCount = selectedCartItems.reduce((sum, item) => sum + item.quantity, 0);
-  const allCartItemsCount = displayedCartItems.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = selectedCartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const totalItemsCount = Math.round(selectedCartItems.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0) * 100) / 100;
+  const allCartItemsCount = Math.round(displayedCartItems.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0) * 100) / 100;
+  const subtotal = Math.round(selectedCartItems.reduce((sum, item) => sum + Math.round(((Number(item.price) || 0) * (Number(item.quantity) || 1)) * 100) / 100, 0) * 100) / 100;
   const freeShippingProgress = Math.min(100, (subtotal / (freeShippingThreshold || 500)) * 100);
-  const freeShippingRemaining = Math.max(0, (freeShippingThreshold || 500) - subtotal);
+  const freeShippingRemaining = Math.max(0, Math.round(((freeShippingThreshold || 500) - subtotal) * 100) / 100);
 
   const wishlistProducts = (() => {
     if (!isAuthenticated || !displayedWishlist || displayedWishlist.length === 0) return [];
