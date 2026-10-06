@@ -39,6 +39,8 @@ import GrabKitSection from './GrabKitSection';
 
 export { getProductPaymentRestrictions };
 
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
+
 const getProductGallery = (product) => {
   if (!product) return [];
   const list = [];
@@ -828,10 +830,10 @@ export default function ProductDetailPage({ onNavigate }) {
               <div
                 key={rec.id || rec._id || rec.slug || `rec-item-${recIdx}`}
                 onClick={() => openProductDetails(rec)}
-                className="min-w-[160px] sm:min-w-[180px] shrink-0 snap-start p-3 rounded-2xl border border-gray-200 bg-white hover:border-brand-teal/30 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+                className="w-[170px] sm:w-[190px] min-w-[170px] sm:min-w-[190px] max-w-[170px] sm:max-w-[190px] shrink-0 snap-start p-3 rounded-2xl border border-gray-200 bg-white hover:border-brand-teal/30 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
               >
-                <div>
-                  <div className="relative w-full pt-[75%] rounded-xl overflow-hidden bg-gray-50 mb-3">
+                <div className="w-full min-w-0">
+                  <div className="relative w-full pt-[75%] rounded-xl overflow-hidden bg-gray-50 mb-2.5">
                     <img
                       src={recImage || FALLBACK_IMAGE}
                       alt={rec.name}
@@ -842,55 +844,58 @@ export default function ProductDetailPage({ onNavigate }) {
                       }}
                     />
                   </div>
-                <h4 className="font-display font-bold text-xs text-gray-900 group-hover:text-brand-teal line-clamp-1">
-                  {rec.name}
-                </h4>
-                {rec.category === 'kits' && (
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-[9px] font-extrabold uppercase text-brand-teal truncate">{rec.school}</span>
-                    <span className="text-[9px] font-bold text-brand-pink whitespace-nowrap">{rec.className}</span>
+                  <h4 className="font-display font-bold text-xs text-gray-900 group-hover:text-brand-teal line-clamp-2 h-8 leading-snug break-words">
+                    {rec.name}
+                  </h4>
+                  <div className="h-4 flex items-center gap-1.5 mt-1 min-w-0">
+                    {rec.category === 'kits' ? (
+                      <>
+                        <span className="text-[9px] font-extrabold uppercase text-brand-teal truncate">{rec.school}</span>
+                        <span className="text-[9px] font-bold text-brand-pink truncate shrink-0">{rec.className}</span>
+                      </>
+                    ) : (
+                      <span className="text-[9px] font-medium text-gray-400 truncate">
+                        {rec.subtitle || rec.category || ''}
+                      </span>
+                    )}
                   </div>
-                )}
-                <p className="text-[10px] text-gray-500 line-clamp-1 mt-0.5">
-                  {rec.subtitle}
-                </p>
-              </div>
-
-              <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between gap-1">
-                <div className="flex items-baseline gap-1 flex-wrap">
-                  <span className="font-display font-extrabold text-xs text-brand-teal">
-                    ₹{recPrice}
-                  </span>
-                  {showMrp && (
-                    <span className="text-[10px] text-red-500 line-through font-semibold decoration-red-500">
-                      ₹{recMrp}
-                    </span>
-                  )}
                 </div>
-                {(() => {
-                  const recItem = cartItems?.find((item) => Number(item.id) === Number(rec.id));
-                  const recCount = recItem ? recItem.quantity : 0;
-                  return (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addToCart(rec.category === 'kits' ? { ...rec, bundleType: 'kit' } : rec, 1);
-                      }}
-                      className={`px-2 py-1 rounded-lg font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer ${
-                        recCount > 0
-                          ? 'bg-brand-yellow text-brand-teal-dark border border-brand-yellow-hover font-extrabold ring-1 ring-brand-yellow/30'
-                          : 'bg-brand-yellow/30 hover:bg-brand-yellow text-brand-teal'
-                      }`}
-                    >
-                      <ShoppingCart size={10} />
-                      <span>{recCount > 0 ? `Add (${recCount})` : 'Add'}</span>
-                    </button>
-                  );
-                })()}
+
+                <div className="mt-2.5 pt-2 border-t border-gray-100 flex items-center justify-between gap-1 w-full min-w-0">
+                  <div className="flex items-baseline gap-1 min-w-0 overflow-hidden">
+                    <span className="font-display font-extrabold text-xs text-brand-teal shrink-0">
+                      ₹{recPrice}
+                    </span>
+                    {showMrp && (
+                      <span className="text-[10px] text-red-500 line-through font-semibold truncate">
+                        ₹{recMrp}
+                      </span>
+                    )}
+                  </div>
+                  {(() => {
+                    const recItem = cartItems?.find((item) => Number(item.id) === Number(rec.id));
+                    const recCount = recItem ? recItem.quantity : 0;
+                    return (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addToCart(rec.category === 'kits' ? { ...rec, bundleType: 'kit' } : rec, 1);
+                        }}
+                        className={`px-2 py-1 rounded-lg font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          recCount > 0
+                            ? 'bg-brand-yellow text-brand-teal-dark border border-brand-yellow-hover font-extrabold ring-1 ring-brand-yellow/30'
+                            : 'bg-brand-yellow/30 hover:bg-brand-yellow text-brand-teal'
+                        }`}
+                      >
+                        <ShoppingCart size={10} className="shrink-0" />
+                        <span className="whitespace-nowrap">{recCount > 0 ? `Add (${recCount})` : 'Add'}</span>
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
-            </div>
-          );
+            );
         })}
         </div>
       </div>
