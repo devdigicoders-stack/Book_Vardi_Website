@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Trash2, ShoppingBag, ArrowRight, ShieldCheck, Plus, Minus, Loader2, AlertTriangle, CheckSquare, Square, PlusCircle } from 'lucide-react';
-import { useCart, getCartItemKey } from '../../context/CartContext';
+import { useCart, getCartItemKey, isUnstitchedItem } from '../../context/CartContext';
 import { resolveImageUrl, getProductMainImage } from '../../utils/api';
 
 import { getCartPaymentRestrictions } from '../../utils/paymentRestrictions';
@@ -159,6 +159,9 @@ export default function CartDrawer({ onNavigate }) {
               const isItemSelected = item.selected !== false;
               const itemKey = item.cartItemId || getCartItemKey(item);
               const variantText = item.variantName || item.selectedSize || item.selectedColor || '';
+              const isMeter = isUnstitchedItem(item);
+              const meterStep = isMeter ? (Number(item.meterStep) > 0 ? Number(item.meterStep) : 0.5) : 1;
+              const itemTotal = (Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2);
 
               return (
                 <div
@@ -191,7 +194,12 @@ export default function CartDrawer({ onNavigate }) {
                       )}
                     </div>
                     <div className="text-xs font-extrabold text-brand-teal mt-0.5 flex items-center gap-1.5 flex-wrap">
-                      <span>₹{item.price}</span>
+                      <span className="font-mono">₹{Number(item.price).toFixed(2)}{isMeter ? '/m' : ''}</span>
+                      {isMeter && (
+                        <span className="text-[11px] font-mono text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">
+                          Total: ₹{itemTotal}
+                        </span>
+                      )}
                       {variantText && (
                         <span className="text-[10px] font-extrabold text-teal-900 bg-teal-100 px-2 py-0.5 rounded-md border border-teal-300">
                           Variant: {variantText}
@@ -205,23 +213,25 @@ export default function CartDrawer({ onNavigate }) {
                     )}
 
                     <div className="flex items-center justify-between mt-2">
-                      {/* Stepper with count increment and decrement buttons */}
+                      {/* Stepper with count/meter increment and decrement buttons */}
                       <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 overflow-hidden shadow-2xs">
                         <button
                           className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
-                          onClick={() => updateQuantity(itemKey, -1)}
+                          onClick={() => updateQuantity(itemKey, isMeter ? -meterStep : -1)}
                           aria-label="Decrease quantity"
-                          title="Decrease quantity"
+                          title={isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity"}
                         >
                           <Minus size={12} strokeWidth={2.5} />
                         </button>
-                        <span className="w-8 text-center text-xs font-extrabold text-gray-900 bg-white py-1">{item.quantity}</span>
+                        <span className="min-w-10 px-1 text-center text-xs font-extrabold text-gray-900 bg-white py-1 font-mono">
+                          {isMeter ? `${Number(item.quantity).toFixed(2)}m` : item.quantity}
+                        </span>
                         <button
                           disabled={item.stock !== undefined && item.stock !== Infinity && item.quantity >= Number(item.stock)}
                           className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          onClick={() => updateQuantity(itemKey, 1)}
+                          onClick={() => updateQuantity(itemKey, isMeter ? meterStep : 1)}
                           aria-label="Increase quantity"
-                          title={item.stock !== undefined && item.quantity >= Number(item.stock) ? "Max stock reached" : "Increase quantity"}
+                          title={item.stock !== undefined && item.quantity >= Number(item.stock) ? "Max stock reached" : (isMeter ? `Increase by ${Number(meterStep).toFixed(2)}m` : "Increase quantity")}
                         >
                           <Plus size={12} strokeWidth={2.5} />
                         </button>

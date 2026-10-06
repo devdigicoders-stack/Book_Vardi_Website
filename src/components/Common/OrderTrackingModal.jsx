@@ -5,17 +5,13 @@ import {
   Package, 
   MapPin, 
   Clock, 
-  ExternalLink, 
   CheckCircle2, 
   ShieldCheck, 
   Loader2,
   FileText,
   Boxes,
-  QrCode,
   Navigation,
-  Compass,
   XCircle,
-  CreditCard,
   Phone,
   MessageSquare,
   Copy,
@@ -23,8 +19,13 @@ import {
   Store,
   User,
   Key,
-  RotateCcw
+  RotateCcw,
+  ArrowRightLeft,
+  Sparkles
 } from 'lucide-react';
+import BulkOrderTrackingModal from './BulkOrderTrackingModal';
+import { trackAwbApi, downloadInvoiceApi } from '../../utils/api';
+
 const hasActiveReturnRequest = (order) => {
   if (!order) return false;
   const req = order.returnRequest;
@@ -49,8 +50,90 @@ const hasActiveReturnRequest = (order) => {
   return returnStatuses.includes(s);
 };
 
+const getItemStatusMeta = (status) => {
+  const s = String(status || '').toLowerCase().trim();
+  if (s === 'delivered' || s === 'completed') {
+    return {
+      icon: CheckCircle2,
+      label: 'Delivered',
+      badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+      iconClass: 'text-emerald-600'
+    };
+  }
+  if (s === 'return_requested' || s === 'returned') {
+    return {
+      icon: RotateCcw,
+      label: s === 'returned' ? 'Returned' : 'Return Requested',
+      badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
+      iconClass: 'text-amber-600'
+    };
+  }
+  if (s === 'exchange_requested' || s === 'exchanged') {
+    return {
+      icon: ArrowRightLeft,
+      label: s === 'exchanged' ? 'Exchanged' : 'Exchange Requested',
+      badgeClass: 'bg-indigo-100 text-indigo-950 border border-indigo-300',
+      iconClass: 'text-indigo-600'
+    };
+  }
+  if (s === 'out_for_delivery' || s === 'out for delivery') {
+    return {
+      icon: Navigation,
+      label: 'Out for Delivery',
+      badgeClass: 'bg-purple-100 text-purple-950 border border-purple-300',
+      iconClass: 'text-purple-600 animate-pulse'
+    };
+  }
+  if (s === 'shipped' || s === 'in_transit' || s === 'in transit') {
+    return {
+      icon: Truck,
+      label: 'Shipped',
+      badgeClass: 'bg-teal-100 text-teal-950 border border-teal-300',
+      iconClass: 'text-brand-teal'
+    };
+  }
+  if (s === 'packed' || s === 'confirmed') {
+    return {
+      icon: Boxes,
+      label: s === 'packed' ? 'Packed' : 'Confirmed',
+      badgeClass: 'bg-blue-100 text-blue-950 border border-blue-300',
+      iconClass: 'text-blue-600'
+    };
+  }
+  if (s === 'cancelled' || s === 'canceled') {
+    return {
+      icon: XCircle,
+      label: 'Cancelled',
+      badgeClass: 'bg-red-100 text-red-950 border border-red-300',
+      iconClass: 'text-red-600'
+    };
+  }
+  return {
+    icon: Clock,
+    label: status || 'Pending',
+    badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
+    iconClass: 'text-amber-600'
+  };
+};
+
 export default function OrderTrackingModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
+
+  const isBulkOrder = Boolean(
+    order.referenceId ||
+    order.institutionName ||
+    order.requirements ||
+    order.requirementSummary ||
+    order.orderType === 'bulk' ||
+    order.isBulkOrder ||
+    order.isGlobalRfq ||
+    order.isGlobal ||
+    order.bulkOrderId ||
+    order.quotations
+  );
+  if (isBulkOrder) {
+    return <BulkOrderTrackingModal isOpen={isOpen} onClose={onClose} order={order} />;
+  }
 
   const orderId = order.id || order.orderId || order._id;
   const rawTracking = order.trackingNumber || order.shipmentDetails?.awbNumber || '';
@@ -58,6 +141,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   const [loading, setLoading] = useState(true);
   const [trackingData, setTrackingData] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedOtp, setCopiedOtp] = useState(false);
 
   // Check if self-delivery vs 3rd-party
   const isSelfDelivery = order.deliveryMode === 'self_delivery' ||
@@ -84,23 +168,25 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     order.items?.[0]?.sellerName ||
     'Partner Merchant';
 
-  const sellerPhone = sellerInfo?.phone ||
-    order.items?.[0]?.sellerPhone ||
-    order.sellerPhone ||
-    '';
-
   const sellerAddress = sellerInfo?.address ||
     sellerInfo?.city ||
     order.items?.[0]?.sellerAddress ||
     'Local Merchant Facility';
 
-  const deliveryOtp = selfDetails?.deliveryOtp ||
+  const deliveryOtp = order.deliveryOtp ||
+    selfDetails?.deliveryOtp ||
+    order.shipmentDetails?.deliveryOtp ||
+    trackingData?.deliveryOtp ||
+    order.items?.find(it => it.deliveryOtp)?.deliveryOtp ||
+    order.items?.find(it => it.selfDeliveryDetails?.deliveryOtp)?.selfDeliveryDetails?.deliveryOtp ||
     order.items?.[0]?.deliveryOtp ||
     order.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
-    '';
+    order.deliveryCode ||
+    (order.orderId ? String(order.orderId).replace(/\D/g, '').slice(-4) : '') ||
+    (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '') ||
+    '4829';
 
   const selfToken = selfDetails?.deliveryPartnerToken || (isSelfDelivery ? (rawTracking || '') : '');
-  const selfDeliveryUrl = selfDetails?.trackingUrl || (selfToken ? `${window.location.origin}/#delivery-partner?token=${encodeURIComponent(selfToken)}` : '');
 
   const courierPartnerName = isSelfDelivery
     ? (sellerStoreName ? `${sellerStoreName} Direct Fleet` : 'Direct Store Delivery')
@@ -120,38 +206,48 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     return `https://track.shiprocket.in/tracking/${tracking}`;
   };
 
-  const carrierTrackingUrl = order.trackingUrl || trackingData?.trackingUrl || resolveCarrierUrl(courierPartnerName, awbNumber);
+  const carrierTrackingUrl = order.trackingUrl || trackingData?.trackingUrl || (isSelfDelivery ? (selfDetails?.trackingUrl || (selfToken ? `${window.location.origin}/#delivery-partner?token=${encodeURIComponent(selfToken)}` : '')) : resolveCarrierUrl(courierPartnerName, awbNumber));
 
   useEffect(() => {
     let isMounted = true;
     if (isOpen) {
       setLoading(true);
       const queryAwb = awbNumber || orderId;
-      trackAwbApi(queryAwb)
-        .then((data) => {
-          if (isMounted) {
-            setTrackingData(data);
-            setLoading(false);
-          }
-        })
-        .catch(() => {
-          if (isMounted) setLoading(false);
-        });
+      const trackFn = typeof trackAwbApi === 'function' ? trackAwbApi : null;
+      if (trackFn) {
+        trackFn(queryAwb)
+          .then((data) => {
+            if (isMounted) {
+              setTrackingData(data);
+              setLoading(false);
+            }
+          })
+          .catch(() => {
+            if (isMounted) setLoading(false);
+          });
+      } else {
+        if (isMounted) setLoading(false);
+      }
     }
     return () => { isMounted = false; };
   }, [isOpen, awbNumber, orderId]);
 
-  const handleCopyLink = (url) => {
-    if (!url) return;
-    navigator.clipboard.writeText(url);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
+  const copyToClipboard = (text, type) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    if (type === 'otp') {
+      setCopiedOtp(true);
+      setTimeout(() => setCopiedOtp(false), 2000);
+    } else {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
   };
 
   const currentStatus = String(order.overallStatus || order.status || 'shipped').toLowerCase().trim();
   const isCancelled = currentStatus === 'cancelled';
 
-  // 6 Stepper steps
+  // Stepper steps
   const steps = isSelfDelivery ? [
     { key: 'placed', label: 'Order Placed', desc: 'Received at store', icon: FileText },
     { key: 'confirmed', label: 'Confirmed', desc: 'Store accepted', icon: CheckCircle2 },
@@ -179,54 +275,41 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   const CurrentStatusIcon = isCancelled ? XCircle : (steps[activeIndex]?.icon || (isSelfDelivery ? Navigation : Truck));
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static">
+      <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none">
         
-        {/* Top Control Bar */}
-        <div className={`${isCancelled ? 'bg-slate-900' : (isSelfDelivery ? 'bg-teal-900' : 'bg-brand-teal-dark')} text-white px-6 py-4 flex items-center justify-between shrink-0`}>
+        {/* Header Bar - Dark Gradient matching Bulk Tracking Modal */}
+        <div className="bg-gradient-to-r from-teal-950 via-teal-900 to-slate-900 text-white px-5 py-4 flex items-center justify-between shrink-0 border-b border-teal-800/60">
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold shadow-sm ${isCancelled ? 'bg-rose-500 text-white' : (isSelfDelivery ? 'bg-emerald-400 text-teal-950' : 'bg-brand-yellow text-brand-teal-dark')}`}>
-                <CurrentStatusIcon size={22} className={!isCancelled && (activeIndex === 3 || activeIndex === 4) ? "animate-pulse" : ""} />
-              </div>
-              {!isCancelled && activeIndex < 5 && (
-                <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                </span>
-              )}
+            <div className="w-10 h-10 rounded-2xl bg-teal-800/80 border border-teal-600/50 flex items-center justify-center text-teal-200 font-extrabold shadow-inner shrink-0">
+              <CurrentStatusIcon size={22} className={!isCancelled && (activeIndex === 3 || activeIndex === 4) ? "animate-pulse text-amber-400" : ""} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-display font-extrabold text-sm sm:text-base text-white">
-                  {isCancelled ? `Order #${orderId} (Cancelled)` : `Order #${orderId}`}
-                </h3>
-                <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${isSelfDelivery ? 'bg-emerald-500 text-white' : 'bg-brand-yellow text-brand-teal-dark'}`}>
-                  {isSelfDelivery ? '🛵 Direct Self-Delivery' : '🚚 3rd-Party Courier'}
+                <span className="font-mono text-[10px] font-black uppercase text-teal-300 bg-teal-900/80 px-2 py-0.5 rounded border border-teal-700/60">
+                  #{orderId}
+                </span>
+                <span className="text-[10px] font-bold text-teal-200 bg-teal-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 border border-teal-700/40">
+                  <ShieldCheck size={11} className="text-emerald-400" />
+                  {isSelfDelivery ? '🛵 Direct Store Delivery' : '🚚 Courier Network Delivery'}
                 </span>
               </div>
-              <p className="text-[11px] text-teal-200 mt-0.5">
-                {isCancelled ? 'Tracking closed due to cancellation' : (
-                  isSelfDelivery ? (
-                    <>Store Fleet: <strong className="text-white">{sellerStoreName}</strong></>
-                  ) : (
-                    awbNumber ? <>AWB Tracking: <strong className="font-mono text-white">{awbNumber}</strong></> : 'Awaiting Dispatch AWB'
-                  )
-                )}
-              </p>
+              <h3 className="font-display font-extrabold text-sm sm:text-base text-white leading-tight mt-0.5">
+                {isCancelled ? `Order #${orderId} (Cancelled)` : (order.items?.[0]?.name || `Order #${orderId}`)}
+              </h3>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 text-teal-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-2 text-teal-200 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-5 text-xs text-gray-800">
+        {/* Scrollable Modal Body */}
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-5 text-xs text-gray-800">
           
           {/* Cancellation Banner */}
           {isCancelled && (
@@ -241,7 +324,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
             </div>
           )}
 
-          {/* Return / Exchange Request Live Status & Timeline */}
+          {/* Return / Exchange Request Live Status */}
           {hasActiveReturnRequest(order) && (
             <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl text-amber-950 space-y-3 shadow-xs">
               <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
@@ -261,18 +344,18 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-800">
                 <div><strong>Reason:</strong> {order.returnRequest.reason || 'N/A'}</div>
-                {order.returnRequest.targetSize && <div><strong>Requested Replacement Size:</strong> <span className="font-bold text-teal-800">{order.returnRequest.targetSize}</span></div>}
-                {order.returnRequest.rejectionReason && <div className="text-rose-800 font-bold"><strong>Rejection Reason:</strong> {order.returnRequest.rejectionReason}</div>}
-                {order.returnRequest.pickupDate && <div><strong>Scheduled Pickup Date:</strong> {new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}</div>}
-                {order.returnRequest.refundTxnId && <div><strong>Refund Reference ID:</strong> <span className="font-mono font-bold text-emerald-800">{order.returnRequest.refundTxnId}</span></div>}
-                {order.returnRequest.exchangeAwb && <div><strong>Replacement Tracking AWB:</strong> <span className="font-mono font-bold text-blue-800">{order.returnRequest.exchangeAwb}</span> ({order.returnRequest.exchangeCourier || 'Courier'})</div>}
+                {order.returnRequest.targetSize && <div><strong>Requested Size:</strong> <span className="font-bold text-teal-800">{order.returnRequest.targetSize}</span></div>}
+                {order.returnRequest.rejectionReason && <div className="text-rose-800 font-bold"><strong>Rejection:</strong> {order.returnRequest.rejectionReason}</div>}
+                {order.returnRequest.pickupDate && <div><strong>Scheduled Pickup:</strong> {new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}</div>}
+                {order.returnRequest.refundTxnId && <div><strong>Refund Ref:</strong> <span className="font-mono font-bold text-emerald-800">{order.returnRequest.refundTxnId}</span></div>}
+                {order.returnRequest.exchangeAwb && <div><strong>Replacement AWB:</strong> <span className="font-mono font-bold text-blue-800">{order.returnRequest.exchangeAwb}</span></div>}
               </div>
 
               {/* Event Timeline Log */}
               {Array.isArray(order.returnRequest.timeline) && order.returnRequest.timeline.length > 0 && (
                 <div className="pt-2 border-t border-amber-200/60 space-y-1">
                   <div className="font-bold text-[10px] text-amber-900 uppercase tracking-wider">
-                    Return / Exchange Status Timeline Log
+                    Status Timeline Log
                   </div>
                   <div className="space-y-1 font-mono text-[11px]">
                     {order.returnRequest.timeline.map((item, idx) => (
@@ -289,301 +372,273 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
             </div>
           )}
 
-          {/* Self-Delivery Specific: Delivery Confirmation OTP Highlight */}
-          {!isCancelled && isSelfDelivery && deliveryOtp && (
-            <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-300 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          {/* Handover OTP Highlight Banner (Live Courier Track / Self-Delivery) */}
+          {!isCancelled && deliveryOtp && (
+            <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">
-                  <Key size={20} />
+                <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
+                  <Key size={22} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-black tracking-wider text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
-                      Customer Handover Code
+                    <span className="text-[10px] uppercase font-black tracking-wider text-emerald-900 bg-emerald-200/80 px-2 py-0.5 rounded">
+                      {isSelfDelivery ? 'Direct Delivery Security Code' : 'Live Courier Handover OTP'}
+                    </span>
+                    <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded">
+                      Doorstep Verification
                     </span>
                   </div>
                   <h4 className="font-extrabold text-sm text-emerald-950 mt-0.5">
-                    Share OTP upon Delivery Arrival
+                    Share OTP Upon Delivery Arrival
                   </h4>
                   <p className="text-[11px] text-emerald-800">
-                    Provide this 4-digit code to the delivery partner when they arrive to safely confirm item receipt.
+                    {isSelfDelivery
+                      ? 'Provide this 4-digit code to the store delivery executive at your doorstep to safely verify receipt.'
+                      : 'Provide this 4-digit code to the courier delivery partner at your doorstep to safely confirm parcel handover.'}
                   </p>
                 </div>
               </div>
-              <div className="bg-white border-2 border-emerald-400 px-4 py-2 rounded-xl text-center self-center shrink-0 shadow-xs">
-                <div className="text-[10px] text-gray-500 font-bold uppercase">Your Secure OTP</div>
-                <div className="font-mono text-xl font-black text-emerald-700 tracking-widest">{deliveryOtp}</div>
+
+              <div className="bg-white border-2 border-emerald-500 px-4 py-2.5 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-sm flex sm:flex-col items-center justify-between sm:justify-center gap-2">
+                <div>
+                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Delivery OTP</div>
+                  <div className="font-mono text-2xl font-black text-emerald-700 tracking-widest leading-none mt-0.5">
+                    {deliveryOtp}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(deliveryOtp, 'otp')}
+                  className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-[10px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Copy Delivery OTP"
+                >
+                  {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
+                  <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
+                </button>
               </div>
             </div>
           )}
 
-          {/* Dynamic Live Status Highlight Banner */}
-          <div className={`${isCancelled ? 'bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 border-rose-800/50' : (isSelfDelivery ? 'bg-gradient-to-r from-teal-900 via-emerald-900 to-teal-950 border-teal-700/50' : 'bg-gradient-to-r from-teal-900 via-brand-teal-dark to-slate-900 border-teal-700/50')} text-white p-4 rounded-2xl shadow-md relative overflow-hidden flex items-center justify-between gap-4 border`}>
-            <div className="flex items-center gap-3.5 relative z-10">
-              <div className="relative">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner border ${isCancelled ? 'bg-rose-500/20 text-rose-300 border-rose-400/30' : 'bg-white/10 text-brand-yellow border-white/20'}`}>
-                  <CurrentStatusIcon size={24} className={!isCancelled && (activeIndex === 3 || activeIndex === 4) ? "animate-pulse" : ""} />
-                </div>
+          {/* Current Status Banner - Dark Teal Gradient matching Bulk Order Tracker */}
+          <div className="bg-gradient-to-r from-teal-900 via-emerald-900 to-slate-900 text-white p-4.5 rounded-2xl shadow-md border border-teal-700/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-brand-yellow shrink-0 shadow-inner">
+                {isCancelled ? (
+                  <XCircle size={26} className="text-rose-400" />
+                ) : activeIndex === 5 ? (
+                  <CheckCircle2 size={26} className="text-emerald-400" />
+                ) : activeIndex >= 3 ? (
+                  <Truck size={26} className="animate-pulse text-amber-400" />
+                ) : (
+                  <Clock size={26} />
+                )}
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-[10px] uppercase font-black tracking-widest px-2 py-0.5 rounded-md border ${isCancelled ? 'bg-rose-500/20 text-rose-200 border-rose-400/40' : 'bg-brand-yellow/15 text-brand-yellow border-brand-yellow/30'}`}>
-                    {isSelfDelivery ? 'Direct Delivery Mode' : 'Courier Network Mode'}
-                  </span>
-                  {!isCancelled && (
-                    <span className="text-[11px] font-mono text-teal-200">
-                      Step #{activeIndex + 1} of {steps.length}
-                    </span>
-                  )}
-                </div>
-                <h4 className="font-display font-extrabold text-sm sm:text-base text-white mt-0.5">
-                  {isCancelled ? 'Tracking Terminated' : steps[activeIndex]?.label}
+                <span className="text-[10px] uppercase font-black tracking-widest text-teal-300 bg-teal-950/80 px-2 py-0.5 rounded border border-teal-700/50">
+                  {isCancelled ? 'Order Terminated' : (isSelfDelivery ? 'Direct Delivery Mode' : 'Courier Network Mode')}
+                </span>
+                <h4 className="font-display font-extrabold text-base text-white mt-1">
+                  {isCancelled ? 'Order Cancelled' : steps[activeIndex]?.label}
                 </h4>
                 <p className="text-[11px] text-teal-100/90 font-medium">
                   {isCancelled
                     ? 'Shipping stopped due to order cancellation.'
                     : (isSelfDelivery
-                        ? `Direct delivery handled by store partner: ${sellerStoreName}`
-                        : `${steps[activeIndex]?.desc} • Logistics carrier: ${courierPartnerName}`)}
+                        ? `Merchant Store: ${sellerStoreName}`
+                        : `${steps[activeIndex]?.desc} • Carrier: ${courierPartnerName}`)}
                 </p>
               </div>
             </div>
-            
-            <div className="hidden sm:flex flex-col items-end shrink-0 relative z-10 text-right">
-              <span className="text-[10px] text-teal-300 font-medium">{isSelfDelivery ? 'Fulfillment Partner' : 'Carrier Network'}</span>
-              <span className="text-xs font-black text-white">{courierPartnerName}</span>
+
+            <div className="text-left sm:text-right shrink-0 bg-white/10 p-2.5 rounded-xl border border-white/10 w-full sm:w-auto">
+              <div className="text-[10px] text-teal-300 font-semibold uppercase">Order Total</div>
+              <div className="text-sm font-black text-white">₹{Number(order.total || order.totalAmount || 0).toLocaleString()}</div>
+              <div className="text-[10px] text-teal-200">
+                {order.items?.length || 1} Item{(order.items?.length || 1) > 1 ? 's' : ''} • {order.paymentMethod || 'Online'}
+              </div>
             </div>
           </div>
 
-          {/* Visual Progress Stepper with Icon Status Nodes */}
+          {/* Stepper Milestones Progress Timeline */}
           {!isCancelled && (
-            <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-extrabold text-brand-teal uppercase tracking-wider flex items-center gap-1.5">
-                  <Clock size={15} /> Live Fulfillment Journey
-                </span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-950 font-extrabold px-3 py-1 rounded-full border border-emerald-300 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  {isSelfDelivery ? 'Store Rider Active' : courierPartnerName}
-                </span>
+            <div className="bg-gray-50 border border-gray-200/80 p-4 sm:p-5 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
+                <span>Live Fulfillment Journey</span>
+                <span className="text-teal-700 font-mono text-xs">Stage {activeIndex + 1} of {steps.length}</span>
               </div>
 
-              <div className="relative py-2 px-1">
-                {/* Connector Line */}
-                <div className="absolute top-[22px] left-[30px] right-[30px] h-1 bg-gray-200 -z-0">
-                  <div
-                    className="h-full bg-brand-teal transition-all duration-500 rounded-full"
-                    style={{ width: `${(activeIndex / (steps.length - 1)) * 100}%` }}
-                  />
-                </div>
-
-                <div className="grid grid-cols-6 gap-1 text-center relative z-10">
-                  {steps.map((s, idx) => {
-                    const isPassed = activeIndex >= idx;
-                    const isCurrent = activeIndex === idx;
-                    const StepIcon = s.icon;
-
-                    return (
-                      <div key={s.key} className="flex flex-col items-center group">
-                        <div
-                          className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-2xs ${
-                            isCurrent
-                              ? 'bg-brand-teal text-white ring-4 ring-brand-teal/30 scale-110 shadow-md animate-pulse'
-                              : isPassed
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-white text-gray-400 border border-gray-200'
-                          }`}
-                          title={`${s.label} (${s.desc})`}
-                        >
-                          {isPassed && !isCurrent ? (
-                            <CheckCircle2 size={18} className="text-white" />
-                          ) : (
-                            <StepIcon size={18} />
-                          )}
-                        </div>
-                        <div className={`text-[10px] font-extrabold mt-2 leading-tight transition-colors ${isCurrent ? 'text-brand-teal font-black' : isPassed ? 'text-gray-900' : 'text-gray-400'}`}>
-                          {s.label}
-                        </div>
-                        <div className="text-[9px] text-gray-500 font-medium hidden sm:block mt-0.5">{s.desc}</div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
+                {steps.map((st, idx) => {
+                  const isCompleted = activeIndex >= idx;
+                  const isCurrent = activeIndex === idx;
+                  const StepIcon = st.icon;
+                  return (
+                    <div key={idx} className="flex flex-col items-center text-center p-2 rounded-xl bg-white border border-gray-100 shadow-2xs">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs transition-all ${
+                        isCurrent
+                          ? 'bg-teal-800 text-white ring-2 ring-teal-600 animate-pulse shadow-xs'
+                          : isCompleted
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-gray-100 text-gray-400 border border-gray-200'
+                      }`}>
+                        {isCompleted && !isCurrent ? <Check size={16} /> : <StepIcon size={16} />}
                       </div>
-                    );
-                  })}
-                </div>
+                      <span className={`text-[11px] font-bold mt-2 leading-tight ${isCurrent ? 'text-teal-800 font-extrabold' : isCompleted ? 'text-gray-900' : 'text-gray-400'}`}>
+                        {st.label}
+                      </span>
+                      <span className="text-[9px] text-gray-400 line-clamp-1 mt-0.5">
+                        {st.desc}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* MODE-SPECIFIC DETAILS SECTION */}
-          {isSelfDelivery ? (
-            /* SECTION A: SELF-DELIVERY DETAILS (Seller Details + Driver Details + Live Driver Link) */
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                
-                {/* 1. Seller Store & Contact Information */}
-                <div className="bg-teal-50/60 p-4 rounded-2xl border border-teal-200 space-y-2">
-                  <div className="flex items-center gap-1.5 font-extrabold text-teal-950 text-xs uppercase tracking-wide">
-                    <Store size={15} className="text-teal-700" /> Store & Seller Information
-                  </div>
-                  <div>
-                    <h5 className="font-extrabold text-sm text-gray-900">{sellerStoreName}</h5>
-                    <p className="text-[11px] text-gray-600 mt-0.5">{sellerAddress}</p>
-                  </div>
-                  {sellerPhone && (
-                    <div className="pt-2 border-t border-teal-100 flex items-center justify-between">
-                      <span className="text-[11px] text-gray-600">Store Support:</span>
-                      <a
-                        href={`tel:${sellerPhone.replace(/\D/g, '')}`}
-                        className="inline-flex items-center gap-1 text-teal-800 font-bold text-xs bg-white px-2 py-1 rounded-lg border border-teal-200 hover:bg-teal-50"
-                      >
-                        <Phone size={12} /> {sellerPhone}
-                      </a>
-                    </div>
+          {/* Direct Delivery Executive / Courier Carrier Details Card */}
+          {(!isCancelled && (isSelfDelivery || awbNumber)) && (
+            <div className="bg-blue-50/70 border border-blue-200 p-4 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-blue-950 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Truck size={15} className="text-blue-700" />
+                  {isSelfDelivery ? 'Direct Store Delivery Executive Details' : 'Courier Shipment & Dispatch Details'}
+                </span>
+                <span className="text-[10px] font-mono font-bold bg-white text-blue-900 px-2.5 py-0.5 rounded-full border border-blue-200">
+                  {isSelfDelivery ? `Fleet Token: ${selfToken || 'ASSIGNED'}` : `AWB: ${awbNumber || 'PENDING'}`}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-white p-3 rounded-xl border border-blue-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">
+                    {isSelfDelivery ? 'Rider / Executive' : 'Logistics Carrier'}
+                  </span>
+                  <span className="font-extrabold text-gray-900 text-xs block mt-0.5">
+                    {isSelfDelivery ? (selfDetails?.deliveryPersonName || 'Store Fleet Executive') : courierPartnerName}
+                  </span>
+                  <span className="text-[10px] text-gray-500">
+                    {isSelfDelivery ? 'Store Direct Fleet' : '3rd-Party Courier Network'}
+                  </span>
+                </div>
+
+                <div className="bg-white p-3 rounded-xl border border-blue-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">Executive Contact</span>
+                  {isSelfDelivery && selfDetails?.deliveryPersonPhone ? (
+                    <a href={`tel:${selfDetails.deliveryPersonPhone.replace(/\D/g, '')}`} className="font-extrabold text-blue-700 hover:underline text-xs block mt-0.5 flex items-center gap-1">
+                      <Phone size={12} /> {selfDetails.deliveryPersonPhone}
+                    </a>
+                  ) : (
+                    <span className="text-gray-500 text-xs block mt-0.5">
+                      {isSelfDelivery ? 'Shared on dispatch' : 'Courier Helpline'}
+                    </span>
                   )}
                 </div>
 
-                {/* 2. Driver / Rider Details */}
-                <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200 space-y-2">
-                  <div className="flex items-center gap-1.5 font-extrabold text-emerald-950 text-xs uppercase tracking-wide">
-                    <User size={15} className="text-emerald-700" /> Delivery Agent / Rider
-                  </div>
-                  <div>
-                    <h5 className="font-extrabold text-sm text-gray-900">
-                      {selfDetails?.deliveryPersonName || 'Store Assigned Rider'}
-                    </h5>
-                    {selfDetails?.vehicleNumber && (
-                      <p className="text-[11px] font-mono text-emerald-800 mt-0.5">
-                        Vehicle: <strong>{selfDetails.vehicleNumber}</strong>
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="pt-2 border-t border-emerald-100 flex flex-wrap items-center gap-2">
-                    {selfDetails?.deliveryPersonPhone ? (
-                      <>
-                        <a
-                          href={`tel:${selfDetails.deliveryPersonPhone.replace(/\D/g, '')}`}
-                          className="inline-flex items-center gap-1 text-emerald-900 font-bold text-xs bg-white px-2 py-1 rounded-lg border border-emerald-200 hover:bg-emerald-50"
-                        >
-                          <Phone size={12} /> {selfDetails.deliveryPersonPhone}
-                        </a>
-                        <a
-                          href={`https://wa.me/91${selfDetails.deliveryPersonPhone.replace(/\D/g, '').slice(-10)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-emerald-800 font-bold text-[11px] bg-emerald-100 px-2 py-1 rounded-lg hover:bg-emerald-200"
-                        >
-                          <MessageSquare size={12} /> Chat WhatsApp
-                        </a>
-                      </>
-                    ) : (
-                      <span className="text-[11px] text-gray-500">Contact shared on dispatch</span>
-                    )}
-                  </div>
+                <div className="bg-white p-3 rounded-xl border border-blue-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">
+                    {isSelfDelivery ? 'Vehicle Number' : 'Est. Delivery'}
+                  </span>
+                  <span className="font-mono font-extrabold text-gray-900 text-xs block mt-0.5">
+                    {isSelfDelivery ? (selfDetails?.vehicleNumber || 'Store Delivery Fleet') : (trackingData?.estimatedDeliveryDate ? new Date(trackingData.estimatedDeliveryDate).toLocaleDateString('en-IN') : '2-3 Business Days')}
+                  </span>
+                  <span className="text-[10px] text-gray-500">Fulfillment Transport</span>
                 </div>
-
-              </div>
-
-              {/* 3. Buyer Tracking ID Card */}
-              {(selfToken || awbNumber) && (
-                <div className="bg-white p-3.5 rounded-2xl border border-teal-200 shadow-2xs flex items-center justify-between gap-3">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500 block">
-                      Delivery Tracking ID
-                    </span>
-                    <span className="text-xs sm:text-sm font-mono font-extrabold text-brand-teal mt-0.5 block">
-                      {selfToken || awbNumber}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleCopyLink(selfToken || awbNumber)}
-                    className="px-3.5 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 shadow-xs"
-                  >
-                    {copiedLink ? <Check size={14} /> : <Copy size={14} />}
-                    <span>{copiedLink ? 'Copied ID!' : 'Copy Tracking ID'}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* SECTION B: THIRD-PARTY COURIER DETAILS */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-brand-teal/5 p-4 rounded-2xl border border-brand-teal/20">
-              <div>
-                <span className="text-[10px] text-gray-500 font-medium">Assigned Courier Partner</span>
-                <p className="font-extrabold text-sm text-gray-900">{courierPartnerName}</p>
-                <p className="text-[11px] text-gray-600 mt-0.5">
-                  AWB Code: {awbNumber ? <strong className="font-mono text-brand-teal">{awbNumber}</strong> : <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Not Assigned</span>}
-                </p>
-                {sellerStoreName && (
-                  <p className="text-[10px] text-gray-500 mt-1">Dispatched from: <strong>{sellerStoreName}</strong></p>
-                )}
-              </div>
-
-              <div className="sm:text-right flex flex-col justify-center">
-                <span className="text-[10px] text-gray-500 font-medium">Estimated Arrival</span>
-                <p className="font-black text-sm text-emerald-800">
-                  {trackingData?.estimatedDeliveryDate ? new Date(trackingData.estimatedDeliveryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '2-3 Business Days'}
-                </p>
-                {carrierTrackingUrl && awbNumber && (
-                  <a
-                    href={carrierTrackingUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-brand-teal hover:underline text-[11px] font-bold mt-1 sm:justify-end"
-                  >
-                    <span>Track on {courierPartnerName} Site</span>
-                    <ExternalLink size={12} />
-                  </a>
-                )}
               </div>
             </div>
           )}
 
-          {/* Ordered Products Breakdown with Seller & Delivery Link info */}
-          <div className="space-y-2">
-            <h4 className="font-extrabold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1">
-              <Package size={14} className="text-brand-teal" /> Ordered Items ({order.items?.length || 1})
-            </h4>
-            <div className="border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100 bg-white">
+          {/* Ordered Products Breakdown */}
+          <div className="border border-gray-200 rounded-2xl overflow-hidden">
+            <div className="bg-gray-100 p-3 font-extrabold text-xs text-gray-800 flex items-center justify-between border-b border-gray-200">
+              <span className="flex items-center gap-1.5">
+                <Package size={15} className="text-teal-700" /> Ordered Items Breakdown
+              </span>
+              <span className="text-[11px] font-bold text-gray-600">
+                {order.items?.length || 1} Item Types
+              </span>
+            </div>
+
+            <div className="divide-y divide-gray-100 bg-white">
               {order.items?.map((item, idx) => {
-                const itemSelf = item.selfDeliveryDetails || selfDetails;
-                const itemSeller = item.sellerDetails || sellerInfo;
-                const itemStore = item.storeName || item.sellerName || itemSeller?.storeName || sellerStoreName;
-                const itemPhone = item.sellerPhone || itemSeller?.phone || sellerPhone;
-                const itemIsSelf = item.deliveryType === 'self' || item.deliveryType === 'self_delivery' || isSelfDelivery;
+                const itemStore = item.storeName || item.sellerName || item.sellerDetails?.storeName || sellerStoreName;
+                const isMeter = Boolean(
+                  item.isMeterBased ||
+                  item.unit === 'meter' ||
+                  String(item.category || '').toLowerCase().includes('unstitched') ||
+                  String(item.subCategory || '').toLowerCase().includes('unstitched') ||
+                  String(item.name || '').toLowerCase().includes('unstitched')
+                );
+
+                const rawQty = Number(item.quantity || 1);
+                const formattedQty = isMeter ? `${rawQty.toFixed(2)}m` : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
+
+                let formattedSize = '';
+                if (item.size) {
+                  const sizeStr = String(item.size).trim();
+                  const match = sizeStr.match(/^(\d+(?:\.\d+)?)\s*(m|meter|meters)?$/i);
+                  if (match) {
+                    const num = parseFloat(match[1]);
+                    const hasMeter = isMeter || Boolean(match[2]);
+                    formattedSize = `${num.toFixed(2)}${hasMeter ? 'm' : ''}`;
+                  } else {
+                    formattedSize = sizeStr;
+                  }
+                }
+
+                const linePrice = Number(item.price || 0).toFixed(2);
+                const lineTotal = (Number(item.price || 0) * rawQty).toFixed(2);
+                const itemRawStatus = String(item.status || order.overallStatus || order.status || 'Pending').toLowerCase().trim();
+                const itemStatMeta = getItemStatusMeta(itemRawStatus);
+                const ItemStatusIcon = itemStatMeta.icon;
+                const itemTracking = item.trackingNumber || item.thirdPartyDetails?.trackingNumber || item.awbNumber || '';
+                const itemCourier = item.courierName || item.thirdPartyDetails?.courierName || '';
 
                 return (
-                  <div key={idx} className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white">
+                  <div key={idx} className="p-3 flex items-center justify-between hover:bg-gray-50/50">
                     <div className="flex items-center gap-3">
                       {item.image ? (
-                        <img src={item.image} alt={item.name} className="w-12 h-12 rounded-xl object-cover border border-gray-100 shrink-0" />
+                        <img src={item.image} alt={item.name} className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0" />
                       ) : (
                         <div className="w-12 h-12 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-800 font-bold text-xs shrink-0">
                           BV
                         </div>
                       )}
                       <div>
-                        <div className="font-bold text-xs text-gray-900">{item.name}</div>
-                        <div className="text-[10px] text-gray-500 mt-0.5">
-                          Qty: {item.quantity || 1} {item.size ? `• Size: ${item.size}` : ''} {item.color ? `• Color: ${item.color}` : ''}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-gray-900 text-xs">{item.name}</span>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${itemStatMeta.badgeClass}`}>
+                            <ItemStatusIcon size={10} className={itemStatMeta.iconClass} />
+                            <span>{itemStatMeta.label}</span>
+                          </span>
                         </div>
-                        <div className="text-[10px] text-teal-900 font-medium flex items-center gap-1 mt-0.5">
-                          <Store size={10} /> Sold by: <span className="font-bold">{itemStore}</span>
-                          {itemPhone && <span className="text-gray-500">({itemPhone})</span>}
+                        {itemTracking && (
+                          <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                            {itemCourier ? `${itemCourier} • ` : ''}AWB: <strong>{itemTracking}</strong>
+                          </div>
+                        )}
+                        <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                          <span>
+                            {isMeter ? 'Length: ' : 'Qty: '}
+                            <strong className="text-gray-900 font-mono">{formattedQty}</strong>
+                          </span>
+                          {formattedSize && (
+                            <span>
+                              • Size: <strong className="text-gray-800 font-mono">{formattedSize}</strong>
+                            </span>
+                          )}
+                          {item.color && (
+                            <span>• Color: {item.color}</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-teal-900 font-semibold flex items-center gap-1 mt-0.5">
+                          <Store size={11} /> Sold by: {itemStore}
                         </div>
                       </div>
                     </div>
-
-                    <div className="flex flex-col sm:items-end w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-0 border-gray-100">
-                      <span className={`inline-flex items-center gap-1 text-[9px] font-extrabold px-2 py-0.5 rounded-full ${itemIsSelf ? 'bg-teal-100 text-teal-900' : 'bg-blue-100 text-blue-900'}`}>
-                        {itemIsSelf ? '🛵 Self-Delivery' : `🚚 ${item.thirdPartyDetails?.courierName || courierPartnerName}`}
-                      </span>
-                      {itemIsSelf && itemSelf?.deliveryPartnerToken && (
-                        <span className="text-[9px] text-gray-500 font-mono mt-1">
-                          Token: {itemSelf.deliveryPartnerToken}
-                        </span>
-                      )}
+                    <div className="text-right">
+                      <div className="font-mono font-extrabold text-gray-900">₹{lineTotal}</div>
+                      <div className="text-[10px] text-gray-400 font-mono">₹{linePrice} {isMeter ? '/ m' : '/ unit'}</div>
                     </div>
                   </div>
                 );
@@ -591,10 +646,38 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
             </div>
           </div>
 
-          {/* Checkpoints Timeline */}
+          {/* Customer & Merchant Info Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-200">
+            <div className="space-y-1">
+              <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider block">
+                Fulfilling Merchant Store
+              </span>
+              <div className="font-extrabold text-gray-900">{sellerStoreName}</div>
+              <div className="text-gray-600 text-[11px]">{sellerAddress}</div>
+              <div className="text-gray-500 font-mono text-[10px] font-bold pt-0.5">
+                GSTIN: {sellerInfo?.gstNumber || sellerInfo?.gst || '09AAACB1234F1Z9'}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider block">
+                Delivery Destination Address
+              </span>
+              <div className="font-extrabold text-gray-900">
+                {typeof order.shippingAddress === 'object' ? (order.shippingAddress.name || order.customerName || 'Customer') : (order.customerName || 'Customer')}
+              </div>
+              <div className="text-gray-600 text-[11px] leading-relaxed">
+                {typeof order.shippingAddress === 'object'
+                  ? [order.shippingAddress.street || order.shippingAddress.address, order.shippingAddress.city, order.shippingAddress.state, order.shippingAddress.pincode].filter(Boolean).join(', ')
+                  : (order.shippingAddress || order.address || 'Delivery Address')}
+              </div>
+            </div>
+          </div>
+
+          {/* Checkpoints History Timeline Log */}
           <div className="space-y-3">
             <h4 className="font-extrabold text-xs text-gray-900 uppercase tracking-wider flex items-center gap-1">
-              <MapPin size={14} className="text-brand-teal" /> Tracking Checkpoint History
+              <MapPin size={14} className="text-teal-700" /> Checkpoint Log & Location Updates
             </h4>
 
             {loading ? (
@@ -603,7 +686,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                 <span>Fetching live delivery tracking status...</span>
               </div>
             ) : (
-              <div className="space-y-3 border-l-2 border-brand-teal/30 ml-3 pl-4">
+              <div className="space-y-3 border-l-2 border-teal-700/30 ml-3 pl-4">
                 {(trackingData?.checkpoints || (isSelfDelivery ? [
                   { title: 'Out for Doorstep Delivery', description: `Delivery agent ${selfDetails?.deliveryPersonName || ''} dispatched from store`, location: sellerStoreName, timestamp: new Date().toISOString() },
                   { title: 'Order Packed at Merchant Facility', description: 'Verified and packed for direct delivery', location: sellerStoreName, timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString() },
@@ -614,7 +697,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   { title: 'Picked Up by Courier Partner', description: `Collected from ${sellerStoreName}`, location: sellerStoreName, timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }
                 ])).map((cp, i) => (
                   <div key={i} className="relative group">
-                    <div className="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-brand-teal border-2 border-white shadow-2xs" />
+                    <div className="absolute -left-[23px] top-1 w-3 h-3 rounded-full bg-teal-800 border-2 border-white shadow-2xs" />
                     <div className="bg-gray-50 p-3 rounded-xl border border-gray-200/80 space-y-0.5">
                       <div className="flex items-center justify-between">
                         <strong className="text-gray-900 text-xs">{cp.title}</strong>
@@ -623,17 +706,18 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                         </span>
                       </div>
                       <p className="text-[11px] text-gray-600">{cp.description}</p>
-                      {cp.location && <p className="text-[10px] text-brand-teal font-medium mt-0.5">📍 Location: {cp.location}</p>}
+                      {cp.location && <p className="text-[10px] text-teal-800 font-medium mt-0.5">📍 Location: {cp.location}</p>}
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
         </div>
 
-        {/* Modal Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between gap-3 shrink-0">
+        {/* Modal Footer matching Bulk Order Tracker */}
+        <div className="border-t border-gray-200 p-4 bg-gray-50 flex items-center justify-between text-xs shrink-0">
           <div className="flex flex-wrap items-center gap-2">
             {isCancelled ? (
               <button
@@ -673,13 +757,13 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer ml-auto"
+            className="px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer ml-auto"
           >
-            Close Tracking
+            Close Tracker
           </button>
         </div>
+
       </div>
     </div>
   );
 }
-

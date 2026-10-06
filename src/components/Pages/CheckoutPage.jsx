@@ -1057,39 +1057,53 @@ export default function CheckoutPage({ onNavigate }) {
                           )}
                         </div>
 
-                        <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
-                          <span className="text-[11px] font-extrabold text-brand-teal">
-                            ₹{item.price} {variantText ? `• ${variantText}` : ''}
-                          </span>
+                        {(() => {
+                          const isMeter = Boolean(
+                            item.isMeterBased ||
+                            item.unit === 'meter' ||
+                            String(item.category || '').toLowerCase().includes('unstitched') ||
+                            String(item.subCategory || '').toLowerCase().includes('unstitched') ||
+                            String(item.name || '').toLowerCase().includes('unstitched')
+                          );
+                          const meterStep = isMeter ? (Number(item.meterStep) > 0 ? Number(item.meterStep) : 0.5) : 1;
+                          return (
+                            <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
+                              <span className="text-[11px] font-extrabold text-brand-teal font-mono">
+                                ₹{Number(item.price).toFixed(2)}{isMeter ? '/m' : ''} {variantText ? `• ${variantText}` : ''}
+                              </span>
 
-                          {/* Stepper with count increment and decrement buttons */}
-                          <div className="flex items-center border border-gray-200 rounded-md bg-gray-50 overflow-hidden shadow-2xs shrink-0">
-                            <button
-                              type="button"
-                              className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
-                              onClick={() => updateQuantity(itemKey, -1)}
-                              aria-label="Decrease quantity"
-                              title="Decrease quantity"
-                            >
-                              <Minus size={10} strokeWidth={2.5} />
-                            </button>
-                            <span className="w-6 text-center text-xs font-extrabold text-gray-900 bg-white py-0.5">{item.quantity}</span>
-                            <button
-                              type="button"
-                              className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
-                              onClick={() => updateQuantity(itemKey, 1)}
-                              aria-label="Increase quantity"
-                              title="Increase quantity (add more)"
-                            >
-                              <Plus size={10} strokeWidth={2.5} />
-                            </button>
-                          </div>
-                        </div>
+                              {/* Stepper with count increment and decrement buttons */}
+                              <div className="flex items-center border border-gray-200 rounded-md bg-gray-50 overflow-hidden shadow-2xs shrink-0">
+                                <button
+                                  type="button"
+                                  className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
+                                  onClick={() => updateQuantity(itemKey, isMeter ? -meterStep : -1)}
+                                  aria-label="Decrease quantity"
+                                  title={isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity"}
+                                >
+                                  <Minus size={10} strokeWidth={2.5} />
+                                </button>
+                                <span className="min-w-8 px-1 text-center text-xs font-extrabold text-gray-900 bg-white py-0.5 font-mono">
+                                  {isMeter ? `${Number(item.quantity).toFixed(2)}m` : item.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
+                                  onClick={() => updateQuantity(itemKey, isMeter ? meterStep : 1)}
+                                  aria-label="Increase quantity"
+                                  title={isMeter ? `Increase by ${Number(meterStep).toFixed(2)}m` : "Increase quantity (add more)"}
+                                >
+                                  <Plus size={10} strokeWidth={2.5} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="text-right shrink-0">
-                        <span className="text-xs font-extrabold text-gray-900 block">
-                          ₹{item.price * item.quantity}
+                        <span className="text-xs font-extrabold text-gray-900 block font-mono">
+                          ₹{(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}
                         </span>
                         <button
                           type="button"

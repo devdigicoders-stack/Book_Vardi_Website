@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   X,
+  Lock,
   Printer,
   ShieldCheck,
   Building2,
@@ -27,6 +28,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
     (totalBudget > 0 ? Math.round((totalBudget * advPct) / 100) : 0)
   );
   const balanceDue = Math.max(0, totalBudget - advAmount);
+  const isPaid = order.advancePaymentStatus === 'paid' || order.advancePaymentStatus === 'paid_partially' || Boolean(order.advancePaidAmount && Number(order.advancePaidAmount) > 0);
 
   const handlePrint = () => {
     window.print();
@@ -55,7 +57,8 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
+            {isPaid && (
+            <><button
               type="button"
               onClick={handlePrint}
               className="p-2 text-teal-100 hover:text-white hover:bg-white/10 rounded-xl transition-all"
@@ -70,7 +73,8 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
               title="Download PDF"
             >
               <Download size={18} />
-            </button>
+            </button></>
+          )}
             <button
               type="button"
               onClick={onClose}
@@ -80,6 +84,24 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
             </button>
           </div>
         </div>
+
+        {/* Strict Verification Check */}
+        {!isPaid ? (
+          <div className="p-8 text-center space-y-4 my-auto">
+            <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center mx-auto">
+              <Lock size={28} />
+            </div>
+            <div>
+              <h4 className="font-display font-extrabold text-lg text-gray-900">Advance Receipt Locked</h4>
+              <p className="text-xs text-gray-500 max-w-md mx-auto mt-1">
+                Official Advance Payment Receipt can only be generated strictly after mobilization prepayment is completed and verified.
+              </p>
+            </div>
+            <div className="inline-block bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold px-4 py-2 rounded-xl">
+              Current Prepayment Status: <span className="uppercase font-black text-amber-950">{order.advancePaymentStatus || 'Unpaid / Pending Prepayment'}</span>
+            </div>
+          </div>
+        ) : (
 
         {/* Printable Receipt Body */}
         <div id="printableReceiptArea" className="p-6 sm:p-8 overflow-y-auto space-y-6 text-xs text-gray-800 bg-white">
@@ -241,7 +263,7 @@ export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
               <span>Download PDF</span>
             </button>
           </div>
-        </div>
+        </div>)}
       </div>
     </div>
   );

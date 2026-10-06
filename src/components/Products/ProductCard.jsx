@@ -167,83 +167,97 @@ function ProductCard({ product }) {
         )}
 
         <div className="mt-auto flex flex-col gap-1.5 sm:gap-2">
-          {/* Price */}
-          <div className="flex items-baseline gap-1.5 sm:gap-2">
-            {hasPriceRange ? (
-              <span className="text-sm sm:text-base font-extrabold text-brand-teal">
-                ₹{minPrice} - ₹{maxPrice}
-              </span>
-            ) : (
-              <span className="text-sm sm:text-base font-extrabold text-brand-teal">
-                ₹{price}
-              </span>
-            )}
-            {originalPrice && originalPrice > price && (
-              <span className="text-[10px] sm:text-xs text-red-500 line-through font-semibold decoration-red-500">
-                ₹{originalPrice}
-              </span>
-            )}
-          </div>
+          {(() => {
+            const isUnstitched = Boolean(
+              product.isMeterBased === true ||
+              product.unit === 'meter' ||
+              String(product.category || '').toLowerCase().includes('unstitched') ||
+              String(product.subCategory || '').toLowerCase().includes('unstitched') ||
+              String(product.name || '').toLowerCase().includes('unstitched')
+            );
+            return (
+              <>
+                {/* Price */}
+                <div className="flex items-baseline gap-1.5 sm:gap-2">
+                  {hasPriceRange ? (
+                    <span className="text-sm sm:text-base font-extrabold text-brand-teal">
+                      ₹{minPrice} - ₹{maxPrice}
+                    </span>
+                  ) : (
+                    <span className="text-sm sm:text-base font-extrabold text-brand-teal">
+                      ₹{isUnstitched ? Number(price).toFixed(2) : price}{isUnstitched ? '/m' : ''}
+                    </span>
+                  )}
+                  {originalPrice && originalPrice > price && (
+                    <span className="text-[10px] sm:text-xs text-red-500 line-through font-semibold decoration-red-500">
+                      ₹{isUnstitched ? Number(originalPrice).toFixed(2) : originalPrice}
+                    </span>
+                  )}
+                </div>
 
-          {/* Rating */}
-          <div className="flex items-center gap-1 text-[11px] text-gray-600">
-            <div className="flex items-center gap-0.5 text-brand-ochre">
-              {[...Array(5)].map((_, i) => (
-                <Star
-                  key={i}
-                  size={10}
-                  className="sm:w-3 sm:h-3"
-                  fill={i < Math.floor(rating) && rating > 0 ? 'currentColor' : 'none'}
-                  stroke="currentColor"
-                />
-              ))}
-            </div>
-            <span className="font-bold text-gray-700">{rating.toFixed(1)}</span>
-            <span className="text-[10px] sm:text-[11px] text-gray-400 hidden xs:inline">
-              ({reviewsCount.toLocaleString()})
-            </span>
-          </div>
+                {/* Rating */}
+                <div className="flex items-center gap-1 text-[11px] text-gray-600">
+                  <div className="flex items-center gap-0.5 text-brand-ochre">
+                    {[...Array(5)].map((_, i) => (
+                      <Star
+                        key={i}
+                        size={10}
+                        className="sm:w-3 sm:h-3"
+                        fill={i < Math.floor(rating) && rating > 0 ? 'currentColor' : 'none'}
+                        stroke="currentColor"
+                      />
+                    ))}
+                  </div>
+                  <span className="font-bold text-gray-700">{rating.toFixed(1)}</span>
+                  <span className="text-[10px] sm:text-[11px] text-gray-400 hidden xs:inline">
+                    ({reviewsCount.toLocaleString()})
+                  </span>
+                </div>
 
-
-          {/* Add to Cart / Select Size Button with Live Item Count */}
-          <button
-            disabled={paymentRestrictions.allDisabled || isOutOfStock}
-            className={`w-full mt-1.5 sm:mt-2 py-1.5 sm:py-2 px-2 sm:px-3 font-bold rounded-lg text-[11px] sm:text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
-              countInCart > 0
-                ? 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark border border-brand-yellow-hover ring-2 ring-brand-yellow/30 font-extrabold'
-                : isOutOfStock
-                ? 'bg-gray-100 text-gray-400 border border-gray-200'
-                : 'bg-brand-yellow/25 hover:bg-brand-yellow text-brand-teal border border-brand-yellow/60'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (paymentRestrictions.allDisabled) {
-                if (showToast) showToast('⚠️ Payment disabled by seller for this item');
-                return;
-              }
-              if (isOutOfStock) {
-                if (showToast) showToast('⚠️ This product is out of stock');
-                return;
-              }
-              if (sizeVariants.length > 0) {
-                openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount });
-              } else {
-                addToCart(product);
-              }
-            }}
-            aria-label={`Add ${product.name} to cart`}
-          >
-            <ShoppingCart size={13} className="shrink-0" />
-            <span className="truncate">
-              {paymentRestrictions.allDisabled
-                ? 'Payment Disabled'
-                : isOutOfStock
-                ? 'Out of Stock'
-                : sizeVariants.length > 0 
-                  ? (countInCart > 0 ? `Select Size (${countInCart})` : 'Select Size')
-                  : (countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart')}
-            </span>
-          </button>
+                {/* Add to Cart / Select Size Button with Live Item Count */}
+                <button
+                  disabled={paymentRestrictions.allDisabled || isOutOfStock}
+                  className={`w-full mt-1.5 sm:mt-2 py-1.5 sm:py-2 px-2 sm:px-3 font-bold rounded-lg text-[11px] sm:text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    countInCart > 0
+                      ? 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark border border-brand-yellow-hover ring-2 ring-brand-yellow/30 font-extrabold'
+                      : isOutOfStock
+                      ? 'bg-gray-100 text-gray-400 border border-gray-200'
+                      : 'bg-brand-yellow/25 hover:bg-brand-yellow text-brand-teal border border-brand-yellow/60'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (paymentRestrictions.allDisabled) {
+                      if (showToast) showToast('⚠️ Payment disabled by seller for this item');
+                      return;
+                    }
+                    if (isOutOfStock) {
+                      if (showToast) showToast('⚠️ This product is out of stock');
+                      return;
+                    }
+                    if (isUnstitched || sizeVariants.length > 0) {
+                      openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount });
+                    } else {
+                      addToCart(product);
+                    }
+                  }}
+                  aria-label={`Add ${product.name} to cart`}
+                >
+                  <ShoppingCart size={13} className="shrink-0" />
+                  <span className="truncate">
+                    {paymentRestrictions.allDisabled
+                      ? 'Payment Disabled'
+                      : isOutOfStock
+                      ? 'Out of Stock'
+                      : isUnstitched
+                      ? (countInCart > 0 ? `Selected (${Number(countInCart).toFixed(2)}m)` : 'Select Length')
+                      : sizeVariants.length > 0 
+                        ? (countInCart > 0 ? `Select Size (${countInCart})` : 'Select Size')
+                        : (countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart')}
+                  </span>
+                </button>
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

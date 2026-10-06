@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { BookOpen, ChevronDown, Check } from 'lucide-react';
 
 export const ALL_CLASSES = [
+  { value: 'Pre-Nursery', label: 'Pre-Nursery (Playgroup / Pre-Nursery)', group: 'Pre-Primary & Primary' },
   { value: 'Nursery', label: 'Nursery', group: 'Pre-Primary & Primary' },
   { value: 'LKG', label: 'LKG (Lower Kindergarten)', group: 'Pre-Primary & Primary' },
   { value: 'UKG', label: 'UKG (Upper Kindergarten)', group: 'Pre-Primary & Primary' },

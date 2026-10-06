@@ -208,11 +208,34 @@ export default function ProductDetailPage({ onNavigate }) {
     ? [baseVariantOption, ...rawSizeVariants]
     : rawSizeVariants;
 
+  const isMeterProduct = Boolean(
+    selectedProduct?.isMeterBased ||
+    selectedProduct?.unit === 'meter' ||
+    String(selectedProduct?.category || '').toLowerCase().includes('unstitched') ||
+    String(selectedProduct?.subCategory || '').toLowerCase().includes('unstitched') ||
+    String(selectedProduct?.name || '').toLowerCase().includes('unstitched')
+  );
+  const minMeter = isMeterProduct ? (Number(selectedProduct?.minMeter) > 0 ? Number(selectedProduct.minMeter) : 0.5) : 1;
+  const meterStep = isMeterProduct ? (Number(selectedProduct?.meterStep) > 0 ? Number(selectedProduct.meterStep) : 0.5) : 1;
+
+  const presetLengths = isMeterProduct ? Array.from(new Set([
+    minMeter,
+    Math.round((minMeter + meterStep * 2) * 100) / 100,
+    Math.round((minMeter + meterStep * 4) * 100) / 100,
+    Math.round((minMeter + meterStep * 6) * 100) / 100,
+    Math.round((minMeter + meterStep * 10) * 100) / 100
+  ])).filter(val => val > 0) : [];
+
   const [selectedSize, setSelectedSize] = useState(() => sizeVariants[0]?.size || null);
   const [variantImageOverride, setVariantImageOverride] = useState(null);
 
   useEffect(() => {
     setShowAllSizes(false);
+    if (isMeterProduct) {
+      setQuantity(minMeter);
+    } else {
+      setQuantity(1);
+    }
     if (sizeVariants.length > 0) {
       setSelectedSize(sizeVariants[0].size);
       if (sizeVariants[0].image) {
@@ -224,7 +247,7 @@ export default function ProductDetailPage({ onNavigate }) {
       setSelectedSize(null);
       setVariantImageOverride(null);
     }
-  }, [selectedProduct?.id, selectedProduct?._id]);
+  }, [selectedProduct?.id, selectedProduct?._id, isMeterProduct, minMeter]);
 
   const activeVariant = sizeVariants.find(v => String(v.size) === String(selectedSize)) || (sizeVariants.length > 0 ? sizeVariants[0] : null);
 
@@ -278,8 +301,8 @@ export default function ProductDetailPage({ onNavigate }) {
     mrp: currentMrp,
     stock: currentVariantStock,
     stockQuantity: currentVariantStock,
-    selectedSize: selectedSize || undefined,
-    variantName: selectedSize || undefined,
+    selectedSize: isMeterProduct ? undefined : (selectedSize || undefined),
+    variantName: isMeterProduct ? undefined : (selectedSize || undefined),
     image: variantImageOverride || activeVariant?.image || selectedProduct?.image
   };
 
@@ -433,15 +456,15 @@ export default function ProductDetailPage({ onNavigate }) {
   })();
 
   const returnWindow = selectedProduct?.returnWindowDays || selectedProduct?.returnPolicyDays || 7;
-  const isRet = selectedProduct?.isReturnable !== false && selectedProduct?.returnPolicy !== 'non_returnable';
-  const isExc = selectedProduct?.isExchangeable !== false && selectedProduct?.isRefundable !== false;
+  const isRet = selectedProduct?.isReturnable === true || (selectedProduct?.isReturnable !== false && selectedProduct?.returnPolicy !== 'non_returnable' && selectedProduct?.returnPolicy !== 'no_return');
+  const isExc = selectedProduct?.isExchangeable === true || (selectedProduct?.isExchangeable !== false && selectedProduct?.returnPolicy !== 'non_returnable' && selectedProduct?.returnPolicy !== 'no_return');
 
   const returnLabel = (isRet && isExc)
-    ? `${returnWindow}-Day Return & Exchange`
+    ? `${returnWindow}-Day Return & Exchange Available`
     : (isRet && !isExc)
-    ? `${returnWindow}-Day Return Only (Non-Exchangeable)`
+    ? `${returnWindow}-Day Return Available`
     : (!isRet && isExc)
-    ? `${returnWindow}-Day Exchange Only (No Return)`
+    ? `${returnWindow}-Day Exchange Available`
     : 'Non-Returnable & Non-Exchangeable';
 
   const renderConfidenceBadges = (className = '') => (
@@ -919,17 +942,17 @@ export default function ProductDetailPage({ onNavigate }) {
     } else if (p.stock !== undefined && p.stock !== null) {
       specs.push({ label: 'Stock Available', value: p.stock > 0 ? `${p.stock} units` : 'Out of Stock' });
     }
-    const pIsRet = p.isReturnable !== false && p.returnPolicy !== 'non_returnable';
-    const pIsExc = p.isExchangeable !== false && p.isRefundable !== false;
+    const pIsRet = p.isReturnable === true || (p.isReturnable !== false && p.returnPolicy !== 'non_returnable' && p.returnPolicy !== 'no_return');
+    const pIsExc = p.isExchangeable === true || (p.isExchangeable !== false && p.returnPolicy !== 'non_returnable' && p.returnPolicy !== 'no_return');
     specs.push({
       label: 'Return & Exchange Policy',
       value: pIsRet && pIsExc
-        ? `${p.returnWindowDays || 7}-Day Easy Return & Size Exchange`
+        ? `${p.returnWindowDays || 7}-Day Return & Exchange Available`
         : pIsRet && !pIsExc
-        ? `${p.returnWindowDays || 7}-Day Return Only (Non-Exchangeable)`
+        ? `${p.returnWindowDays || 7}-Day Return Available`
         : !pIsRet && pIsExc
-        ? `${p.returnWindowDays || 7}-Day Size Exchange Only (No Return)`
-        : 'Non-Returnable & Non-Exchangeable (Final Sale)'
+        ? `${p.returnWindowDays || 7}-Day Exchange Available`
+        : 'Non-Returnable & Non-Exchangeable'
     });
     if (p.sellerStoreName || p.storeName || p.legalBusinessName || p.sellerName || p.seller) {
       const sName = p.sellerStoreName || p.storeName || p.legalBusinessName || p.sellerName || (typeof p.seller === 'string' ? p.seller : p.seller?.storeName || 'Book Vardi Verified Seller');
@@ -1372,69 +1395,79 @@ export default function ProductDetailPage({ onNavigate }) {
                 )}
 
                 {/* Quantity Stepper & Meter Selector */}
-                {(selectedProduct.isMeterBased || selectedProduct.unit === 'meter') ? (
+                {/* Quantity Stepper & Meter Selector */}
+                {isMeterProduct ? (
                   <div className="p-4 rounded-2xl border border-teal-200 bg-teal-50/60 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-teal-950 flex items-center gap-1.5">
                         <Tag size={14} className="text-teal-700" />
                         <span>Fabric Length (Meters):</span>
                       </span>
-                      <span className="text-xs font-bold text-teal-800">
-                        ₹{currentPrice} / meter
+                      <span className="text-xs font-bold text-teal-800 font-mono">
+                        ₹{Number(currentPrice).toFixed(2)} / meter
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <div className="flex items-center border border-teal-300 rounded-xl bg-white p-1">
                         <button
                           type="button"
-                          onClick={() => setQuantity((q) => Math.max(0.5, Math.round((q - 0.5) * 10) / 10))}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold cursor-pointer"
+                          onClick={() => setQuantity((q) => Math.max(minMeter, Math.round((Number(q) - meterStep) * 100) / 100))}
+                          className="h-8 px-2.5 flex items-center justify-center rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold cursor-pointer text-xs"
+                          title={`Decrease by ${Number(meterStep).toFixed(2)}m`}
                         >
-                          -0.5m
+                          -{Number(meterStep).toFixed(2)}m
                         </button>
                         <input
                           type="number"
-                          step="0.5"
-                          min="0.5"
-                          value={quantity}
-                          onChange={(e) => setQuantity(Math.max(0.5, parseFloat(e.target.value) || 0.5))}
-                          className="w-16 text-center font-extrabold text-sm text-teal-950 focus:outline-hidden bg-transparent"
+                          step="0.01"
+                          min={minMeter}
+                          value={Number(quantity).toFixed(2)}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (isNaN(val)) {
+                              setQuantity(minMeter);
+                            } else {
+                              setQuantity(Math.max(minMeter, Math.round(val * 100) / 100));
+                            }
+                          }}
+                          className="w-20 text-center font-extrabold text-sm text-teal-950 focus:outline-hidden bg-transparent font-mono"
                         />
                         <button
                           type="button"
-                          onClick={() => setQuantity((q) => Math.round((q + 0.5) * 10) / 10)}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold cursor-pointer"
+                          onClick={() => setQuantity((q) => Math.round((Number(q) + meterStep) * 100) / 100)}
+                          className="h-8 px-2.5 flex items-center justify-center rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold cursor-pointer text-xs"
+                          title={`Increase by ${Number(meterStep).toFixed(2)}m`}
                         >
-                          +0.5m
+                          +{Number(meterStep).toFixed(2)}m
                         </button>
                       </div>
 
                       {/* Quick preset length chips */}
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {[1, 2.5, 3.5, 5, 10].map((preset) => (
+                        {presetLengths.map((preset) => (
                           <button
                             key={preset}
                             type="button"
-                            onClick={() => setQuantity(preset)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
-                              quantity === preset
+                            onClick={() => setQuantity(Number(Number(preset).toFixed(2)))}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer font-mono ${
+                              Number(quantity).toFixed(2) === Number(preset).toFixed(2)
                                 ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
                                 : 'bg-white text-teal-900 border-teal-200 hover:border-brand-teal'
                             }`}
                           >
-                            {preset}m
+                            {Number(preset).toFixed(2)}m
                           </button>
                         ))}
                       </div>
                     </div>
 
                     <div className="text-right pt-1 border-t border-teal-200/60 flex items-center justify-between">
-                      <span className="text-xs text-teal-800 font-medium">Selected: <strong>{quantity} Meters</strong></span>
+                      <span className="text-xs text-teal-800 font-medium">Selected: <strong>{Number(quantity).toFixed(2)} Meters</strong></span>
                       <div>
                         <span className="text-[10px] text-gray-500 block">Total Fabric Cost:</span>
-                        <span className="font-display font-extrabold text-xl text-brand-teal">
-                          ₹{Math.round(currentPrice * quantity)}
+                        <span className="font-display font-extrabold text-xl text-brand-teal font-mono">
+                          ₹{(Number(currentPrice) * Number(quantity)).toFixed(2)}
                         </span>
                       </div>
                     </div>
