@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2, AlertCircle } from 'lucide-react';
 import { requestReturnExchangeApi, fetchProductByIdFromBackend, trackAwbApi } from '../../utils/api';
-import { isItemReturnable, isItemExchangeable } from '../../utils/orderReturnPolicy';
+import { isItemReturnable, isItemExchangeable, isItemUnstitched, getCategoryReplacementSizes, formatSizeLabel } from '../../utils/orderReturnPolicy';
 
 export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess }) {
   if (!isOpen || !order) return null;
@@ -20,10 +20,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   }, [order.selectedItem]);
 
   const activeItem = orderItems.find(it => String(it._id || it.id) === String(selectedItemId)) || order.selectedItem || orderItems[0] || {};
+  const [fetchedProduct, setFetchedProduct] = useState(null);
   const isReturnable = isItemReturnable(activeItem);
   const isExchangeable = isItemExchangeable(activeItem);
-
-  const [fetchedProduct, setFetchedProduct] = useState(null);
+  const isUnstitched = isItemUnstitched(activeItem) || isItemUnstitched(fetchedProduct);
 
   useEffect(() => {
     let isMounted = true;
@@ -55,7 +55,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
 
   const [reason, setReason] = useState('Size too small / large');
   const [comment, setComment] = useState('');
-  const [exchangeSize, setExchangeSize] = useState(() => activeItem.size || 'M');
+  const [exchangeSize, setExchangeSize] = useState(() => activeItem.size || '');
   const [refundMethod, setRefundMethod] = useState('UPI / Bank Transfer');
 
   // Refund payout details state for return / partial refund
@@ -98,9 +98,18 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   ];
 
   const productVariants = fetchedProduct?.sizeVariants || fetchedProduct?.variants || activeItem.sizeVariants || activeItem.variants || [];
-  const availableSizes = productVariants.length > 0
-    ? productVariants.map(v => v.size || v.measureValue).filter(Boolean)
-    : (activeItem.size ? [activeItem.size, '24', '26', '28', '30', '32', '34', 'S', 'M', 'L', 'XL', 'XXL'] : ['24', '26', '28', '30', '32', '34', 'S', 'M', 'L', 'XL', 'XXL']);
+  const availableSizes = getCategoryReplacementSizes(activeItem, fetchedProduct);
+
+  useEffect(() => {
+    if (availableSizes.length > 0) {
+      const isCurrentInAvailable = availableSizes.some(s => String(s).trim().toUpperCase() === String(exchangeSize).trim().toUpperCase());
+      if (!exchangeSize || !isCurrentInAvailable) {
+        // Automatically default to the first size that is different from current item size
+        const alt = availableSizes.find(s => String(s).trim().toUpperCase() !== String(activeItem.size || '').trim().toUpperCase());
+        setExchangeSize(alt || availableSizes[0]);
+      }
+    }
+  }, [availableSizes, activeItem.size]);
 
   // Price calculations
   const originalPrice = Number(activeItem.price || activeItem.finalPrice || 0);
@@ -114,9 +123,22 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
       setErrorMsg('This item is not eligible for return/refund.');
       return;
     }
-    if (activeType === 'exchange' && !isExchangeable) {
-      setErrorMsg('This item is not eligible for exchange.');
-      return;
+    if (activeType === 'exchange') {
+      if (!isExchangeable) {
+        setErrorMsg(isUnstitched
+          ? 'Unstitched fabric sold per meter is not eligible for garment size exchange. Please select Return for Refund.'
+          : 'This item is not eligible for exchange.'
+        );
+        return;
+      }
+      if (!exchangeSize) {
+        setErrorMsg('Please select a replacement size.');
+        return;
+      }
+      if (String(exchangeSize).trim().toUpperCase() === String(activeItem.size || '').trim().toUpperCase()) {
+        setErrorMsg('Please select a different replacement size than your currently purchased size.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -258,6 +280,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                   ? 'bg-white text-brand-teal shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
+              title={!isExchangeable ? (isUnstitched ? 'Unstitched fabric sold per meter is not eligible for size exchange' : 'Not eligible for size exchange') : ''}
             >
               <ArrowRightLeft size={14} />
               <span>2. Exchange Size {!isExchangeable && '(Not Eligible)'}</span>
@@ -327,6 +350,19 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
             </div>
           )}
 
+          {/* Unstitched Fabric Policy Banner */}
+          {isUnstitched && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-amber-900 text-xs flex items-center gap-2.5">
+              <span className="text-lg shrink-0">✂️</span>
+              <div>
+                <strong className="font-extrabold text-amber-950">Unstitched Fabric Policy:</strong>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  This product is cut-to-length fabric sold per meter and is not eligible for garment size exchange. You can submit a request for <strong>Return for Refund</strong> below.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Policy Banner */}
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 flex items-center gap-3 text-emerald-950">
             <ShieldCheck size={20} className="text-emerald-600 shrink-0" />
@@ -371,37 +407,62 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
           {activeType === 'exchange' && (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider mb-2">
-                  Select Required Replacement Size
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {availableSizes.map((sz) => {
-                    const v = productVariants.find(item => String(item.size || item.measureValue).toUpperCase() === String(sz).toUpperCase());
-                    const vPrice = v ? Number(v.price || v.mrp || originalPrice) : originalPrice;
-                    const isSelected = exchangeSize === sz;
-                    return (
-                      <button
-                        key={sz}
-                        type="button"
-                        onClick={() => setExchangeSize(sz)}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
-                            : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
-                        }`}
-                      >
-                        <span>Size {sz}</span>
-                        {vPrice !== originalPrice && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
-                            isSelected ? 'bg-white/20 text-white font-mono' : 'bg-gray-100 text-gray-600 font-mono'
-                          }`}>
-                            ₹{vPrice}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider">
+                    Select Required Replacement Size *
+                  </label>
+                  {activeItem.size && (
+                    <span className="text-[11px] text-gray-500 font-medium">
+                      Current Size: <strong className="text-gray-800 font-mono">{formatSizeLabel(activeItem.size)}</strong>
+                    </span>
+                  )}
                 </div>
+
+                {availableSizes.length === 0 ? (
+                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-center text-xs text-gray-600">
+                    No replacement sizes available for this item. Please choose <strong>Return for Refund</strong>.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {availableSizes.map((sz) => {
+                      const v = productVariants.find(item => String(item.size || item.measureValue).toUpperCase() === String(sz).toUpperCase());
+                      const vPrice = v ? Number(v.price || v.mrp || originalPrice) : originalPrice;
+                      const isSelected = String(exchangeSize).toUpperCase() === String(sz).toUpperCase();
+                      const isCurrent = String(activeItem.size || '').toLowerCase().trim() === String(sz).toLowerCase().trim();
+
+                      return (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => setExchangeSize(sz)}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-brand-teal text-white border-brand-teal shadow-xs ring-2 ring-brand-teal/30'
+                              : isCurrent
+                              ? 'bg-amber-50 text-amber-900 border-amber-300 hover:border-brand-teal'
+                              : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
+                          }`}
+                        >
+                          <span>{formatSizeLabel(sz)}</span>
+                          {isCurrent && (
+                            <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${
+                              isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              Current
+                            </span>
+                          )}
+                          {vPrice !== originalPrice && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                              isSelected ? 'bg-white/20 text-white font-mono' : 'bg-gray-100 text-gray-600 font-mono'
+                            }`}>
+                              ₹{vPrice}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Price Breakdown Banner */}
