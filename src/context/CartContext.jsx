@@ -1925,14 +1925,25 @@ export function CartProvider({ children }) {
     return newReview;
   };
 
+  const generateProductOrderId = () => {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let prefix = '';
+    for (let i = 0; i < 3; i++) {
+      prefix += letters.charAt(Math.floor(Math.random() * letters.length));
+    }
+    const num = Math.floor(100000 + Math.random() * 900000);
+    return `${prefix}${num}`;
+  };
+
   const placeOrder = (orderData) => {
-    const randomId = `SC-${Math.floor(1000 + Math.random() * 9000)}`;
+    const randomId = generateProductOrderId();
     const randomTracking = orderData.trackingNumber || `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`;
     const today = new Date();
     const formattedDate = today.toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
-      year: 'numeric'
+      year: 'numeric',
+      timeZone: 'Asia/Kolkata'
     });
 
     const itemsToBuy = cartItems.filter((item) => item.selected !== false);
@@ -1943,6 +1954,7 @@ export function CartProvider({ children }) {
 
     const newOrder = {
       id: randomId,
+      orderId: randomId,
       date: formattedDate,
       status: 'Processing',
       statusColor: 'blue',
@@ -1983,6 +1995,7 @@ export function CartProvider({ children }) {
     // Format new order for Admin and Seller portals
     const platformOrder = {
       id: randomId,
+      orderId: randomId,
       customerName: userProfile?.name || 'Student Customer',
       customerEmail: userProfile?.email || 'customer@bookvardi.in',
       customerPhone: userProfile?.phone || '+91 98765 43210',

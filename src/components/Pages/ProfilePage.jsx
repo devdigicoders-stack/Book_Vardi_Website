@@ -1899,7 +1899,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                             if (match) {
                                               const num = parseFloat(match[1]);
                                               const hasMeter = isMeter || Boolean(match[2]);
-                                              formattedSize = `${num.toFixed(2)}${hasMeter ? 'm' : ''}`;
+                                              formattedSize = hasMeter ? `${num.toFixed(2)}m` : sizeStr;
                                             } else {
                                               formattedSize = sizeStr;
                                             }

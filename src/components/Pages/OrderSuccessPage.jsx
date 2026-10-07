@@ -115,7 +115,8 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   };
 
   const [fallbackOrder] = useState(() => ({
-    id: 'SC-99824',
+    id: 'AAA232345',
+    orderId: 'AAA232345',
     date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
     items: [
       {
