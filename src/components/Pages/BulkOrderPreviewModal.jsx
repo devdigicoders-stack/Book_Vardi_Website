@@ -941,15 +941,31 @@ export default function BulkOrderPreviewModal({
                 const isAcceptedOtherSeller = (order.status === 'quote_accepted' || winningQuote) && assignedId && String(assignedId) !== String(currentSellerId);
 
                 if (isAcceptedToMe && userRole === 'seller') {
+                  const modalAdvAmt = winningQuote?.prepaymentAmount || winningQuote?.sellerAdvanceAmount || order.sellerAdvanceAmount || order.prepaymentAmount || 0;
+                  const modalAdvPct = winningQuote?.prepaymentPercentage || winningQuote?.sellerAdvancePercentage || order.sellerAdvancePercentage || order.prepaymentPercentage || 0;
+                  const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= modalAdvAmt);
+                  const isModalPrepaymentPending = (Number(modalAdvAmt) > 0 || Number(modalAdvPct) > 0) && !isPrepaymentPaid;
+
                   return (
-                    <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-1.5 border border-emerald-500">
-                      <div className="font-black text-sm flex items-center gap-2">
-                        <Sparkles size={18} className="text-amber-300" /> 🎉 Order Received! Your Quotation Was Accepted by Customer
+                    isModalPrepaymentPending ? (
+                      <div className="bg-amber-500 text-amber-950 p-4.5 rounded-2xl shadow-md space-y-1.5 border border-amber-400">
+                        <div className="font-black text-sm flex items-center gap-2">
+                          <Sparkles size={18} className="text-amber-100" /> ⏳ Pitch Selected • Prepayment Pending
+                        </div>
+                        <p className="text-xs text-amber-950 font-medium">
+                          The customer selected your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount).toLocaleString()}</strong>. Fulfillment and packing will unlock once the buyer's online prepayment of <strong>₹{Number(modalAdvAmt).toLocaleString()}{modalAdvPct > 0 ? ` (${modalAdvPct}%)` : ''}</strong> is transferred.
+                        </p>
                       </div>
-                      <p className="text-xs text-emerald-100 font-medium">
-                        Congratulations! The customer accepted your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount).toLocaleString()}</strong>. Admin and Customer have received your fulfillment commitment.
-                      </p>
-                    </div>
+                    ) : (
+                      <div className="bg-emerald-600 text-white p-4.5 rounded-2xl shadow-md space-y-1.5 border border-emerald-500">
+                        <div className="font-black text-sm flex items-center gap-2">
+                          <Sparkles size={18} className="text-amber-300" /> 🎉 Order Received! Customer Accepted & Prepayment Confirmed
+                        </div>
+                        <p className="text-xs text-emerald-100 font-medium">
+                          Congratulations! The customer accepted your quotation pitch of <strong>₹{Number(winningQuote.quoteAmount).toLocaleString()}</strong> and verified online prepayment. Admin and Customer have received your fulfillment commitment.
+                        </p>
+                      </div>
+                    )
                   );
                 }
 
