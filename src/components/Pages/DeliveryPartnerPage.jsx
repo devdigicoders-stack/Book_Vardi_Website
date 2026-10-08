@@ -276,7 +276,18 @@ export default function DeliveryPartnerPage({ onNavigate }) {
   const rawMethod = String(order?.paymentMethod || '').trim().toLowerCase();
   const rawStatus = String(order?.paymentStatus || '').trim().toLowerCase();
 
-  const isCod = Boolean(
+  const isExchangeOrder = Boolean(
+    order?.returnRequest?.type === 'exchange' ||
+    String(order?.overallStatus || order?.status || '').toLowerCase().includes('exchange')
+  );
+  const returnReq = order?.returnRequest || {};
+  const exchangeDiff = Number(returnReq.priceDifference || 0);
+  const exchangeAdjType = returnReq.priceAdjustmentType || (exchangeDiff > 0 ? 'extra_payment' : exchangeDiff < 0 ? 'partial_refund' : 'none');
+  const isExchangeExtraPayment = isExchangeOrder && exchangeAdjType === 'extra_payment' && exchangeDiff > 0;
+  const isExchangeRefund = isExchangeOrder && (exchangeAdjType === 'partial_refund' || exchangeDiff < 0);
+  const isExchangeEqual = isExchangeOrder && (exchangeAdjType === 'none' || exchangeDiff === 0);
+
+  const isCod = !isExchangeOrder && Boolean(
     order?.isCod ||
     rawMethod.includes('cod') ||
     rawMethod.includes('cash')
@@ -294,13 +305,13 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     (order?.overallStatus === 'Delivered' && (rawStatus === 'paid' || rawStatus === 'completed'))
   );
 
-  const isOnlinePaid = !order?.isBulkOrder && !isCod && (
+  const isOnlinePaid = !order?.isBulkOrder && !isCod && !isExchangeOrder && (
     rawStatus === 'paid' || rawStatus === 'completed'
   );
 
-  const isPaymentVerified = order?.isBulkOrder
-    ? isBulkPaid
-    : (isOnlinePaid || isCashCollected);
+  const isPaymentVerified = isExchangeOrder
+    ? (!isExchangeExtraPayment || isCashVerifiedByExecutive || deliverySuccess)
+    : (order?.isBulkOrder ? isBulkPaid : (isOnlinePaid || isCashCollected));
 
   const totalAmountNum = Number(order?.totalAmount ?? order?.total ?? 0);
   const formattedTotalAmount = totalAmountNum % 1 !== 0 ? totalAmountNum.toFixed(2) : totalAmountNum.toLocaleString('en-IN');
@@ -364,8 +375,14 @@ export default function DeliveryPartnerPage({ onNavigate }) {
       const res = await verifyDeliveryOtpApi(token, fullOtp, { isCashCollected: isCashVerifiedByExecutive, isPaymentVerified });
       if (res && res.success) {
         setDeliverySuccess(true);
-        setIsOtpModalOpen(false);
-        setOrder((prev) => (prev ? { ...prev, overallStatus: 'Delivered', status: 'Delivered', paymentStatus: 'paid' } : prev));
+        const finalStatus = isExchangeOrder ? 'exchanged' : 'Delivered';
+        setOrder((prev) => (prev ? {
+          ...prev,
+          overallStatus: finalStatus,
+          status: finalStatus,
+          paymentStatus: 'paid',
+          returnRequest: prev.returnRequest ? { ...prev.returnRequest, status: 'exchanged' } : null
+        } : prev));
         window.dispatchEvent(new CustomEvent('bv_orders_updated'));
         try {
           localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
@@ -504,6 +521,31 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <div className="text-right">
                   <span className="text-[10px] font-extrabold uppercase text-gray-400">Payment</span>
                   {(() => {
+                    if (isExchangeOrder) {
+                      if (isExchangeExtraPayment) {
+                        return isCashVerifiedByExecutive || deliverySuccess ? (
+                          <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-900 border-emerald-200">
+                            ✅ Extra ₹{exchangeDiff} Collected
+                          </div>
+                        ) : (
+                          <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-amber-50 text-amber-950 border-amber-300">
+                            💵 Collect Extra: ₹{exchangeDiff}
+                          </div>
+                        );
+                      }
+                      if (isExchangeRefund) {
+                        return (
+                          <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-blue-50 text-blue-900 border-blue-200">
+                            💸 Refund Processed (Collect ₹0)
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-900 border-emerald-200">
+                          ⚖️ Equal Exchange (Collect ₹0)
+                        </div>
+                      );
+                    }
                     if (order?.isBulkOrder) {
                       return (
                         <div className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
@@ -540,6 +582,74 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                       </div>
                     );
                   })()}
+                </div>
+              </div>
+            )}
+
+            {/* 2-Way Product Exchange Task Card */}
+            {isExchangeOrder && (
+              <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-teal-900 text-white rounded-2xl p-4 shadow-lg space-y-3 border border-purple-400/40 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between border-b border-white/20 pb-2">
+                  <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 text-amber-300">
+                    <span className="text-sm">🔄</span> 2-Way Product Exchange Task
+                  </span>
+                  <span className="text-[10px] font-extrabold bg-amber-400 text-purple-950 px-2.5 py-0.5 rounded-full font-mono uppercase tracking-wide">
+                    Exchange Delivery
+                  </span>
+                </div>
+
+                {/* Step 1: Collect Old Item */}
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10 space-y-1">
+                  <div className="text-[11px] font-extrabold uppercase text-amber-300 flex items-center gap-1">
+                    <span>📦 1. COLLECT FROM CUSTOMER (Old Item):</span>
+                  </div>
+                  <div className="text-xs font-bold text-white">
+                    {returnReq.itemName || order?.items?.[0]?.name || 'Original Delivered Item'}
+                  </div>
+                  <div className="text-[11px] text-purple-200">
+                    Purchased Specification: <strong className="text-white font-mono">{order?.items?.[0]?.size ? `Size: ${order?.items?.[0]?.size}` : (returnReq.isMeterBased ? `Length: ${order?.items?.[0]?.quantity}m` : 'Original piece')}</strong>
+                  </div>
+                  {returnReq.reason && (
+                    <div className="text-[10px] text-purple-300 italic pt-0.5">
+                      Reason: "{returnReq.reason}"
+                    </div>
+                  )}
+                </div>
+
+                {/* Step 2: Hand Over Replacement Item */}
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10 space-y-1">
+                  <div className="text-[11px] font-extrabold uppercase text-emerald-300 flex items-center gap-1">
+                    <span>🎁 2. HAND OVER TO CUSTOMER (Replacement):</span>
+                  </div>
+                  <div className="text-xs font-bold text-white">
+                    {returnReq.itemName || order?.items?.[0]?.name || 'Replacement Item'}
+                  </div>
+                  <div className="text-[11px] text-emerald-200">
+                    Replacement Specification: <strong className="text-white font-mono">{returnReq.exchangeLength ? `${returnReq.exchangeLength} Meter(s)` : (returnReq.exchangeSize || 'Requested Variant')}</strong>
+                  </div>
+                </div>
+
+                {/* Step 3: Payment Collection Instructions */}
+                <div className={`rounded-xl p-3 border ${
+                  isExchangeExtraPayment
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-100'
+                    : 'bg-emerald-500/20 border-emerald-400 text-emerald-100'
+                }`}>
+                  <div className="text-xs font-black uppercase flex items-center justify-between mb-1">
+                    <span>💰 3. Cash / Payment Collection:</span>
+                    <span className="text-sm font-mono font-black text-white">
+                      {isExchangeExtraPayment ? `COLLECT ₹${exchangeDiff}` : 'COLLECT ₹0'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    {isExchangeExtraPayment ? (
+                      <>⚠️ The replacement item has a higher value / longer fabric length. <strong>Collect ₹{exchangeDiff} extra cash or UPI</strong> from customer before completing handover and entering OTP.</>
+                    ) : isExchangeRefund ? (
+                      <>✅ <strong>Do NOT collect any money.</strong> The customer was owed a partial refund of ₹{Math.abs(exchangeDiff)} which is transferred directly to their bank/UPI account.</>
+                    ) : (
+                      <>✅ <strong>Do NOT collect any money.</strong> Equal value exchange (₹0 difference).</>
+                    )}
+                  </p>
                 </div>
               </div>
             )}
@@ -733,6 +843,64 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                       </div>
                       <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md shrink-0">
                         Razorpay Paid
+                      </span>
+                    </div>
+                  )
+                ) : isExchangeOrder ? (
+                  isExchangeExtraPayment ? (
+                    !isCashVerifiedByExecutive ? (
+                      <div className="p-4 bg-gradient-to-r from-amber-600 to-amber-700 text-white rounded-2xl shadow-md space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                            <DollarSign size={18} className="text-amber-200" /> Collect Exchange Price Difference
+                          </span>
+                          <span className="font-mono text-base font-black bg-white/20 px-2.5 py-0.5 rounded-lg">
+                            ₹{exchangeDiff}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-100 font-medium">
+                          ⚠️ The customer is exchanging for a higher value item or longer fabric cut. Please collect exactly <strong className="text-white">₹{exchangeDiff}</strong> in cash or UPI from the customer before completing OTP verification.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCashVerifiedByExecutive(true);
+                            setResendMsg(`💵 Extra payment of ₹${exchangeDiff} marked as collected by executive!`);
+                            setTimeout(() => setResendMsg(''), 4000);
+                          }}
+                          className="w-full py-2.5 bg-white hover:bg-amber-50 text-amber-950 font-black text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <CheckCircle size={16} className="text-emerald-600" />
+                          <span>Confirm Extra Payment of ₹{exchangeDiff} Collected</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 bg-emerald-600 text-white rounded-2xl shadow-md flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-black flex items-center gap-1.5">
+                            <CheckCircle size={18} className="text-amber-300" /> Extra Payment Collected & Verified
+                          </span>
+                          <span className="text-[10px] text-emerald-100 block font-medium">
+                            ₹{exchangeDiff} verified by executive • Ready for OTP verification
+                          </span>
+                        </div>
+                        <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md shrink-0">
+                          ₹{exchangeDiff} Paid
+                        </span>
+                      </div>
+                    )
+                  ) : (
+                    <div className="p-3.5 bg-emerald-600 text-white rounded-2xl shadow-md flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <CheckCircle size={18} className="text-amber-300" /> No Cash Collection Needed (₹0)
+                        </span>
+                        <span className="text-[10px] text-emerald-100 block font-medium">
+                          {isExchangeRefund ? `Refund of ₹${Math.abs(exchangeDiff)} sent directly to customer account` : 'Equal value exchange'} • Ready for OTP verification
+                        </span>
+                      </div>
+                      <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md shrink-0">
+                        ₹0 to Collect
                       </span>
                     </div>
                   )

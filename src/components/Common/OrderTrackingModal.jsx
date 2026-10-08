@@ -343,8 +343,34 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-800">
-                <div><strong>Reason:</strong> {order.returnRequest.reason || 'N/A'}</div>
-                {order.returnRequest.targetSize && <div><strong>Requested Size:</strong> <span className="font-bold text-teal-800">{order.returnRequest.targetSize}</span></div>}
+                {(order.returnRequest.targetSize || order.returnRequest.exchangeSize || order.returnRequest.exchangeLength) && (
+                  <div>
+                    <strong>
+                      {order.returnRequest.exchangeLength || order.returnRequest.isMeterBased
+                        ? 'Requested Length:'
+                        : String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('kids')
+                        ? 'Requested Shoe Size:'
+                        : String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('waist') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').includes('"')
+                        ? 'Requested Waist Size:'
+                        : String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('line') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('pack') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('class') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('replacement')
+                        ? 'Requested Variant:'
+                        : 'Requested Size / Variant:'}
+                    </strong>{' '}
+                    <span className="font-bold text-teal-800">
+                      {order.returnRequest.exchangeLength ? `${order.returnRequest.exchangeLength} Meter(s)` : (order.returnRequest.targetSize || order.returnRequest.exchangeSize)}
+                    </span>
+                    {order.returnRequest.priceAdjustmentType === 'extra_payment' && (
+                      <span className="ml-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                        +₹{order.returnRequest.priceDifference} Extra
+                      </span>
+                    )}
+                    {order.returnRequest.priceAdjustmentType === 'partial_refund' && (
+                      <span className="ml-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                        ₹{Math.abs(order.returnRequest.priceDifference)} Refund
+                      </span>
+                    )}
+                  </div>
+                )}
                 {order.returnRequest.rejectionReason && <div className="text-rose-800 font-bold"><strong>Rejection:</strong> {order.returnRequest.rejectionReason}</div>}
                 {order.returnRequest.pickupDate && <div><strong>Scheduled Pickup:</strong> {new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}</div>}
                 {order.returnRequest.refundTxnId && <div><strong>Refund Ref:</strong> <span className="font-mono font-bold text-emerald-800">{order.returnRequest.refundTxnId}</span></div>}
