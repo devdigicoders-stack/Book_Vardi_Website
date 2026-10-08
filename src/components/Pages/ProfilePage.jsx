@@ -1993,8 +1993,18 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 <span className="flex items-center gap-1.5">
                                   <ArrowRightLeft size={14} className="text-blue-600 shrink-0" />
                                   <span>
-                                    {currentStatus.includes('exchange') ? 'Size Exchange Request' : 'Product Return Request'}
-                                    {order.returnRequest.exchangeSize && ` (Size ${order.returnRequest.exchangeSize})`}
+                                    {currentStatus.includes('exchange')
+                                      ? (order.returnRequest.exchangeLength || order.returnRequest.isMeterBased
+                                          ? 'Fabric Length Exchange Request'
+                                          : String(order.returnRequest.exchangeSize || '').toLowerCase().includes('kids')
+                                          ? 'Shoe Size Exchange Request'
+                                          : String(order.returnRequest.exchangeSize || '').toLowerCase().includes('line') || String(order.returnRequest.exchangeSize || '').toLowerCase().includes('pack') || String(order.returnRequest.exchangeSize || '').toLowerCase().includes('class') || String(order.returnRequest.exchangeSize || '').toLowerCase().includes('replacement')
+                                          ? 'Variant Exchange Request'
+                                          : 'Size Exchange Request')
+                                      : 'Product Return Request'}
+                                    {(order.returnRequest.exchangeLength || order.returnRequest.exchangeSize) && (
+                                      ` (${order.returnRequest.exchangeLength ? `${order.returnRequest.exchangeLength} Meter(s)` : (/^(size|kids|class|pack|unit)/i.test(order.returnRequest.exchangeSize) || order.returnRequest.exchangeSize.includes('"') || order.returnRequest.exchangeSize.includes('Line') || order.returnRequest.exchangeSize.includes('Replacement')) ? order.returnRequest.exchangeSize : `Size ${order.returnRequest.exchangeSize}`})`
+                                    )}
                                   </span>
                                 </span>
                                 {order.returnRequest.priceAdjustmentType === 'extra_payment' && (

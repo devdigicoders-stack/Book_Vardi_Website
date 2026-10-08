@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2, AlertCircle } from 'lucide-react';
-import { requestReturnExchangeApi, fetchProductByIdFromBackend, trackAwbApi } from '../../utils/api';
-import { isItemReturnable, isItemExchangeable, isItemUnstitched, getCategoryReplacementSizes, formatSizeLabel } from '../../utils/orderReturnPolicy';
+import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2, AlertCircle, Sparkles } from 'lucide-react';
+import { requestReturnExchangeApi, fetchProductByIdFromBackend } from '../../utils/api';
+import {
+  isItemReturnable,
+  isItemExchangeable,
+  isItemUnstitched,
+  getCategoryReplacementOptions,
+  getItemCategoryType,
+  formatSizeLabel,
+  DEFECT_REPLACEMENT_VARIANT
+} from '../../utils/orderReturnPolicy';
 
 export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess }) {
   if (!isOpen || !order) return null;
@@ -53,10 +61,36 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
   }, [isReturnable, isExchangeable]);
 
-  const [reason, setReason] = useState('Size too small / large');
+  const isFabricItem = Boolean(isUnstitched);
+  const currentQuantity = Number(activeItem.quantity || 1);
+  const ratePerMeter = Number(activeItem.price || (activeItem.total / (currentQuantity || 1)) || 0);
+
+  // Category Configuration and Tabs
+  const replacementOptionsConfig = getCategoryReplacementOptions(activeItem, fetchedProduct);
+  const catType = replacementOptionsConfig.categoryType;
+  const [activeSubTab, setActiveSubTab] = useState(() => replacementOptionsConfig.primaryTab);
+
+  useEffect(() => {
+    if (replacementOptionsConfig.primaryTab) {
+      setActiveSubTab(replacementOptionsConfig.primaryTab);
+    }
+  }, [replacementOptionsConfig.primaryTab, selectedItemId]);
+
+  const [reason, setReason] = useState(() => isFabricItem ? 'Need longer fabric length' : 'Size too small / large');
   const [comment, setComment] = useState('');
   const [exchangeSize, setExchangeSize] = useState(() => activeItem.size || '');
+  const [exchangeLength, setExchangeLength] = useState(() => currentQuantity);
   const [refundMethod, setRefundMethod] = useState('UPI / Bank Transfer');
+
+  useEffect(() => {
+    if (isFabricItem) {
+      const q = Number(activeItem.quantity || 1);
+      setExchangeLength(q);
+      if (activeType === 'exchange') {
+        setReason('Need longer fabric length');
+      }
+    }
+  }, [activeItem, isFabricItem, activeType]);
 
   // Refund payout details state for return / partial refund
   const [payoutMode, setPayoutMode] = useState('UPI'); // 'UPI' | 'BANK'
@@ -82,6 +116,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
   const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
+  // Reasons per category
   const returnReasons = [
     'Size too small / large',
     'Defective or damaged product received',
@@ -90,32 +125,116 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     'Don\'t need item anymore'
   ];
 
-  const exchangeReasons = [
+  const fabricExchangeReasons = [
+    'Need longer fabric length',
+    'Need shorter fabric length',
+    'Defective or damaged fabric piece received',
+    'Wrong fabric cut delivered',
+    'Prefer different color / print variant'
+  ];
+
+  const footwearExchangeReasons = [
+    'Need larger shoe size',
+    'Need smaller shoe size',
+    'Shoe fitting too tight / narrow',
+    'Shoe fitting too loose',
+    'Damaged / defective pair received',
+    'Wrong shoe size delivered'
+  ];
+
+  const notebookExchangeReasons = [
+    'Wrong notebook ruling delivered (need different line pattern)',
+    'Need different pack size / quantity',
+    'Damaged / torn pages / defective item replacement',
+    'Wrong size / type notebook delivered'
+  ];
+
+  const bookExchangeReasons = [
+    'Wrong class / edition book received',
+    'Damaged / torn / misprinted pages replacement',
+    'Wrong subject / title delivered',
+    'Prefer different syllabus edition'
+  ];
+
+  const stationeryGeneralReasons = [
+    'Defective or broken item received',
+    'Need different pack size / quantity',
+    'Wrong color / variant delivered',
+    'Damaged product replacement'
+  ];
+
+  const apparelExchangeReasons = [
+    'Need larger size (fitting too tight)',
+    'Need smaller size (fitting too loose)',
+    'Sleeve / pant length inappropriate',
+    'Defective stitching / torn garment',
+    'Wrong size delivered'
+  ];
+
+  const standardExchangeReasons = [
     'Need larger size',
     'Need smaller size',
     'Damaged item replacement',
     'Prefer different color / variant'
   ];
 
-  const productVariants = fetchedProduct?.sizeVariants || fetchedProduct?.variants || activeItem.sizeVariants || activeItem.variants || [];
-  const availableSizes = getCategoryReplacementSizes(activeItem, fetchedProduct);
+  const exchangeReasons = (() => {
+    if (catType === 'unstitched') return fabricExchangeReasons;
+    if (catType === 'footwear') return footwearExchangeReasons;
+    if (catType === 'stationery_notebook') return notebookExchangeReasons;
+    if (catType === 'book') return bookExchangeReasons;
+    if (catType === 'stationery_general') return stationeryGeneralReasons;
+    if (catType === 'apparel_bottom' || catType === 'apparel_top') return apparelExchangeReasons;
+    return standardExchangeReasons;
+  })();
 
   useEffect(() => {
-    if (availableSizes.length > 0) {
-      const isCurrentInAvailable = availableSizes.some(s => String(s).trim().toUpperCase() === String(exchangeSize).trim().toUpperCase());
-      if (!exchangeSize || !isCurrentInAvailable) {
-        // Automatically default to the first size that is different from current item size
-        const alt = availableSizes.find(s => String(s).trim().toUpperCase() !== String(activeItem.size || '').trim().toUpperCase());
-        setExchangeSize(alt || availableSizes[0]);
+    if (activeType === 'exchange') {
+      if (catType === 'unstitched') {
+        setReason('Need longer fabric length');
+      } else if (catType === 'footwear') {
+        setReason('Need larger shoe size');
+      } else if (catType === 'stationery_notebook') {
+        setReason('Wrong notebook ruling delivered (need different line pattern)');
+      } else if (catType === 'book') {
+        setReason('Wrong class / edition book received');
+      } else if (catType === 'stationery_general') {
+        setReason('Defective or broken item received');
+      } else if (catType === 'apparel_bottom' || catType === 'apparel_top') {
+        setReason('Need larger size (fitting too tight)');
+      } else {
+        setReason('Need larger size');
       }
     }
-  }, [availableSizes, activeItem.size]);
+  }, [catType, activeType, selectedItemId]);
+
+  const productVariants = replacementOptionsConfig.productVariants || [];
+  const currentTabObj = replacementOptionsConfig.tabs.find(t => t.id === activeSubTab) || replacementOptionsConfig.tabs[0];
+  const activeTabOptions = currentTabObj?.options || [];
+
+  useEffect(() => {
+    if (!isFabricItem && activeTabOptions.length > 0) {
+      const isCurrentInAvailable = activeTabOptions.some(s => String(s).trim().toUpperCase() === String(exchangeSize).trim().toUpperCase());
+      if (!exchangeSize || !isCurrentInAvailable) {
+        // Automatically default to the first size that is different from current item size
+        const alt = activeTabOptions.find(s => String(s).trim().toUpperCase() !== String(activeItem.size || '').trim().toUpperCase());
+        setExchangeSize(alt || activeTabOptions[0]);
+      }
+    }
+  }, [activeTabOptions, activeItem.size, isFabricItem]);
 
   // Price calculations
-  const originalPrice = Number(activeItem.price || activeItem.finalPrice || 0);
+  const originalPrice = isFabricItem
+    ? Math.round(currentQuantity * ratePerMeter * 100) / 100
+    : Number(activeItem.price || activeItem.finalPrice || 0);
+
   const matchingVariant = productVariants.find(v => String(v.size || v.measureValue).toUpperCase() === String(exchangeSize).toUpperCase());
-  const replacementPrice = matchingVariant ? Number(matchingVariant.price || matchingVariant.mrp || originalPrice) : originalPrice;
-  const priceDifference = replacementPrice - originalPrice;
+  
+  const replacementPrice = isFabricItem
+    ? Math.round(Number(exchangeLength || currentQuantity) * ratePerMeter * 100) / 100
+    : (matchingVariant ? Number(matchingVariant.price || matchingVariant.mrp || originalPrice) : originalPrice);
+
+  const priceDifference = Math.round((replacementPrice - originalPrice) * 100) / 100;
   const priceAdjustmentType = priceDifference > 0 ? 'extra_payment' : priceDifference < 0 ? 'partial_refund' : 'none';
 
   const handleSubmit = async () => {
@@ -125,19 +244,29 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
     if (activeType === 'exchange') {
       if (!isExchangeable) {
-        setErrorMsg(isUnstitched
-          ? 'Unstitched fabric sold per meter is not eligible for garment size exchange. Please select Return for Refund.'
-          : 'This item is not eligible for exchange.'
-        );
+        setErrorMsg('This item is not eligible for exchange.');
         return;
       }
-      if (!exchangeSize) {
-        setErrorMsg('Please select a replacement size.');
-        return;
-      }
-      if (String(exchangeSize).trim().toUpperCase() === String(activeItem.size || '').trim().toUpperCase()) {
-        setErrorMsg('Please select a different replacement size than your currently purchased size.');
-        return;
+      if (isFabricItem) {
+        const numLen = Number(exchangeLength);
+        if (isNaN(numLen) || numLen <= 0) {
+          setErrorMsg('Please specify a valid fabric replacement length (minimum 0.5 meters).');
+          return;
+        }
+        if (numLen === currentQuantity && (reason === 'Need longer fabric length' || reason === 'Need shorter fabric length')) {
+          setErrorMsg('Please select a different fabric length than your current purchase cut.');
+          return;
+        }
+      } else {
+        if (!exchangeSize) {
+          setErrorMsg('Please select a replacement size or variant option.');
+          return;
+        }
+        const isDefectChoice = exchangeSize === DEFECT_REPLACEMENT_VARIANT || reason.toLowerCase().includes('damage') || reason.toLowerCase().includes('defect') || reason.toLowerCase().includes('misprint');
+        if (!isDefectChoice && String(exchangeSize).trim().toUpperCase() === String(activeItem.size || '').trim().toUpperCase()) {
+          setErrorMsg('Please select a different replacement option than your current item, or select Damaged Item Replacement.');
+          return;
+        }
       }
     }
 
@@ -176,7 +305,9 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
       type: activeType,
       reason,
       comment,
-      exchangeSize: activeType === 'exchange' ? exchangeSize : '',
+      exchangeSize: activeType === 'exchange' ? (isFabricItem ? `${exchangeLength} Meter(s)` : exchangeSize) : '',
+      exchangeLength: (activeType === 'exchange' && isFabricItem) ? Number(exchangeLength) : undefined,
+      isMeterBased: isFabricItem,
       priceDifference: activeType === 'exchange' ? priceDifference : 0,
       priceAdjustmentType: activeType === 'exchange' ? priceAdjustmentType : 'none',
       originalItemPrice: originalPrice,
@@ -211,6 +342,12 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
   };
 
+  const exchangeTypeTitle = isFabricItem
+    ? 'Exchange Length'
+    : (catType.includes('stationery') || catType === 'book')
+    ? 'Exchange Variant'
+    : 'Exchange Size';
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col my-auto max-h-[90vh]">
@@ -223,7 +360,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
             </div>
             <div>
               <h3 className="font-display font-extrabold text-base text-white">
-                {activeType === 'return' ? 'Return Item' : 'Exchange Item'} — Order #{orderId}
+                {activeType === 'return' ? 'Return Item' : exchangeTypeTitle} — Order #{orderId}
               </h3>
               <p className="text-xs text-teal-200 flex items-center gap-1">
                 <Calendar size={12} />
@@ -271,7 +408,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
               onClick={() => {
                 if (!isExchangeable) return;
                 setActiveType('exchange');
-                setReason('Need larger size');
+                setReason(isFabricItem ? 'Need longer fabric length' : 'Need larger size');
               }}
               className={`py-2 text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 !isExchangeable
@@ -280,10 +417,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                   ? 'bg-white text-brand-teal shadow-xs'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
-              title={!isExchangeable ? (isUnstitched ? 'Unstitched fabric sold per meter is not eligible for size exchange' : 'Not eligible for size exchange') : ''}
+              title={!isExchangeable ? 'Not eligible for exchange' : ''}
             >
               <ArrowRightLeft size={14} />
-              <span>2. Exchange Size {!isExchangeable && '(Not Eligible)'}</span>
+              <span>2. {exchangeTypeTitle} {!isExchangeable && '(Not Eligible)'}</span>
             </button>
           </div>
         )}
@@ -332,7 +469,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                 <div className="min-w-0">
                   <h4 className="font-bold text-gray-900 text-xs truncate">{activeItem.name}</h4>
                   <div className="text-[11px] text-gray-500 font-mono">
-                    Qty: {Number(activeItem.quantity || 1).toFixed(2)} • ₹{Number(activeItem.price || 0).toFixed(2)} each
+                    Qty: {Number(activeItem.quantity || 1).toFixed(isFabricItem ? 2 : 0)}{isFabricItem ? 'm' : ''} {activeItem.size ? `• Size: ${formatSizeLabel(activeItem.size)}` : ''} • ₹{Number(activeItem.price || 0).toFixed(2)} each
                   </div>
                   <div className="text-[10px] text-teal-800 font-semibold mt-0.5">
                     Sold by: {activeItem.storeName || activeItem.sellerName || 'Partner Merchant'}
@@ -351,13 +488,13 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
           )}
 
           {/* Unstitched Fabric Policy Banner */}
-          {isUnstitched && (
+          {isFabricItem && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-amber-900 text-xs flex items-center gap-2.5">
               <span className="text-lg shrink-0">✂️</span>
               <div>
-                <strong className="font-extrabold text-amber-950">Unstitched Fabric Policy:</strong>
+                <strong className="font-extrabold text-amber-950">Unstitched Fabric Exchange Policy:</strong>
                 <p className="text-[11px] text-amber-800 mt-0.5">
-                  This product is cut-to-length fabric sold per meter and is not eligible for garment size exchange. You can submit a request for <strong>Return for Refund</strong> below.
+                  This fabric product is sold per meter. You can request an exchange for a longer or shorter fabric cut length or replace a damaged piece. Any difference in fabric length is automatically calculated.
                 </p>
               </div>
             </div>
@@ -403,67 +540,194 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
             </div>
           </div>
 
-          {/* If Exchange: Select Replacement Size & Price Adjustment */}
+          {/* If Exchange: Select Replacement Size or Fabric Length & Price Adjustment */}
           {activeType === 'exchange' && (
             <div className="space-y-3">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider">
-                    Select Required Replacement Size *
-                  </label>
-                  {activeItem.size && (
+              {isFabricItem ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider">
+                      Select Required Replacement Length (in Meters) *
+                    </label>
                     <span className="text-[11px] text-gray-500 font-medium">
-                      Current Size: <strong className="text-gray-800 font-mono">{formatSizeLabel(activeItem.size)}</strong>
+                      Current Cut: <strong className="text-gray-800 font-mono">{currentQuantity.toFixed(2)}m</strong>
                     </span>
-                  )}
-                </div>
-
-                {availableSizes.length === 0 ? (
-                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-center text-xs text-gray-600">
-                    No replacement sizes available for this item. Please choose <strong>Return for Refund</strong>.
                   </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {availableSizes.map((sz) => {
-                      const v = productVariants.find(item => String(item.size || item.measureValue).toUpperCase() === String(sz).toUpperCase());
-                      const vPrice = v ? Number(v.price || v.mrp || originalPrice) : originalPrice;
-                      const isSelected = String(exchangeSize).toUpperCase() === String(sz).toUpperCase();
-                      const isCurrent = String(activeItem.size || '').toLowerCase().trim() === String(sz).toLowerCase().trim();
 
-                      return (
+                  <div className="bg-gray-50/80 border border-gray-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-700">Fabric Rate:</span>
+                      <span className="text-xs font-mono font-extrabold text-teal-800">₹{ratePerMeter.toFixed(2)} / meter</span>
+                    </div>
+
+                    {/* Stepper + Input */}
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setExchangeLength(prev => Math.max(0.5, Math.round((Number(prev || 1) - 0.5) * 10) / 10))}
+                        className="w-10 h-10 rounded-xl bg-white border border-gray-300 hover:border-brand-teal text-gray-800 font-bold text-lg flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        -
+                      </button>
+                      <div className="flex-1 relative">
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0.5"
+                          max="50"
+                          value={exchangeLength}
+                          onChange={(e) => setExchangeLength(parseFloat(e.target.value) || '')}
+                          className="w-full bg-white border border-gray-300 rounded-xl py-2 px-3 text-center text-sm font-extrabold text-gray-900 font-mono focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20"
+                        />
+                        <span className="absolute right-3 top-2.5 text-xs text-gray-400 font-bold">Meters</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExchangeLength(prev => Math.round((Number(prev || 1) + 0.5) * 10) / 10)}
+                        className="w-10 h-10 rounded-xl bg-white border border-gray-300 hover:border-brand-teal text-gray-800 font-bold text-lg flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Quick Preset Chips */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Quick Presets:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setExchangeLength(preset)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                              Number(exchangeLength) === preset
+                                ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
+                                : Number(currentQuantity) === preset
+                                ? 'bg-amber-50 text-amber-900 border-amber-300 hover:border-brand-teal'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
+                            }`}
+                          >
+                            {preset.toFixed(1)}m {Number(currentQuantity) === preset && '(Current)'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Category-Tailored Replacement Option Selector */
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-extrabold text-gray-900 uppercase tracking-wider">
+                      {catType === 'footwear'
+                        ? 'Select Required Replacement Shoe Size *'
+                        : catType === 'apparel_bottom'
+                        ? 'Select Required Replacement Waist / Size *'
+                        : catType === 'apparel_top'
+                        ? 'Select Required Replacement Garment Size *'
+                        : catType === 'stationery_notebook'
+                        ? 'Select Required Notebook Replacement Option *'
+                        : catType === 'book'
+                        ? 'Select Required Book / Syllabus Class Variant *'
+                        : catType === 'stationery_general'
+                        ? 'Select Required Stationery Pack / Variant *'
+                        : 'Select Required Replacement Size / Variant *'}
+                    </label>
+                    {activeItem.size && (
+                      <span className="text-[11px] text-gray-500 font-medium">
+                        Current: <strong className="text-gray-800 font-mono">{formatSizeLabel(activeItem.size)}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Multi-Tab Selector if Category has segmentation (e.g. Kids vs Adult Footwear, or Ruling vs Pack) */}
+                  {replacementOptionsConfig.tabs.length > 1 && (
+                    <div className="flex gap-1.5 p-1 bg-gray-100 rounded-xl overflow-x-auto mb-3">
+                      {replacementOptionsConfig.tabs.map((t) => (
                         <button
-                          key={sz}
+                          key={t.id}
                           type="button"
-                          onClick={() => setExchangeSize(sz)}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
-                            isSelected
-                              ? 'bg-brand-teal text-white border-brand-teal shadow-xs ring-2 ring-brand-teal/30'
-                              : isCurrent
-                              ? 'bg-amber-50 text-amber-900 border-amber-300 hover:border-brand-teal'
-                              : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
+                          onClick={() => {
+                            setActiveSubTab(t.id);
+                            if (t.options && t.options.length > 0 && !t.options.includes(exchangeSize)) {
+                              const alt = t.options.find(opt => String(opt).toLowerCase() !== String(activeItem.size || '').toLowerCase()) || t.options[0];
+                              setExchangeSize(alt);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                            activeSubTab === t.id
+                              ? 'bg-white text-brand-teal shadow-xs'
+                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
                           }`}
                         >
-                          <span>{formatSizeLabel(sz)}</span>
-                          {isCurrent && (
-                            <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${
-                              isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              Current
-                            </span>
-                          )}
-                          {vPrice !== originalPrice && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
-                              isSelected ? 'bg-white/20 text-white font-mono' : 'bg-gray-100 text-gray-600 font-mono'
-                            }`}>
-                              ₹{vPrice}
-                            </span>
-                          )}
+                          {t.label}
                         </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Option Chips for Active Tab */}
+                  {activeTabOptions.length === 0 ? (
+                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-center text-xs text-gray-600">
+                      No replacement variants available for this item. Please choose <strong>Return for Refund</strong>.
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {activeTabOptions.map((sz) => {
+                        const v = productVariants.find(item => String(item.size || item.measureValue).toUpperCase() === String(sz).toUpperCase());
+                        const vPrice = v ? Number(v.price || v.mrp || originalPrice) : originalPrice;
+                        const isSelected = String(exchangeSize).toUpperCase() === String(sz).toUpperCase();
+                        const isCurrent = String(activeItem.size || '').toLowerCase().trim() === String(sz).toLowerCase().trim();
+                        const isDefect = sz === DEFECT_REPLACEMENT_VARIANT;
+
+                        return (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => {
+                              setExchangeSize(sz);
+                              if (isDefect) {
+                                if (catType === 'stationery_notebook' || catType === 'book') {
+                                  setReason('Damaged / torn pages / defective item replacement');
+                                } else {
+                                  setReason('Damaged item replacement');
+                                }
+                              }
+                            }}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                              isDefect
+                                ? isSelected
+                                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-2 ring-amber-400/40 w-full justify-center'
+                                  : 'bg-amber-50 text-amber-900 border-amber-300 hover:border-amber-500 w-full justify-center'
+                                : isSelected
+                                ? 'bg-brand-teal text-white border-brand-teal shadow-xs ring-2 ring-brand-teal/30'
+                                : isCurrent
+                                ? 'bg-amber-50 text-amber-900 border-amber-300 hover:border-brand-teal'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
+                            }`}
+                          >
+                            <span>{formatSizeLabel(sz)}</span>
+                            {isCurrent && !isDefect && (
+                              <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${
+                                isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                Current
+                              </span>
+                            )}
+                            {vPrice !== originalPrice && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                                isSelected ? 'bg-white/20 text-white font-mono' : 'bg-gray-100 text-gray-600 font-mono'
+                              }`}>
+                                ₹{vPrice}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Price Breakdown Banner */}
               <div className="rounded-2xl border transition-all overflow-hidden">
@@ -477,10 +741,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                       <span className="text-amber-700 font-mono font-bold text-sm">+₹{priceDifference}</span>
                     </div>
                     <p className="text-[11px] text-amber-800">
-                      Original item: <strong>₹{originalPrice}</strong> → Replacement Size ({exchangeSize}): <strong>₹{replacementPrice}</strong>
+                      Original: <strong>₹{originalPrice}</strong> ({isFabricItem ? `${currentQuantity}m` : (activeItem.size || 'Base')}) → Replacement: <strong>₹{replacementPrice}</strong> ({isFabricItem ? `${exchangeLength}m` : exchangeSize})
                     </p>
                     <p className="text-[11px] text-amber-700">
-                      The seller / delivery agent will request the extra ₹{priceDifference} payment upon exchange fulfillment.
+                      The extra ₹{priceDifference} will be requested upon exchange delivery.
                     </p>
                   </div>
                 )}
@@ -495,7 +759,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                       <span className="text-emerald-700 font-mono font-bold text-sm">₹{Math.abs(priceDifference)} Refund</span>
                     </div>
                     <p className="text-[11px] text-emerald-800">
-                      Original item: <strong>₹{originalPrice}</strong> → Replacement Size ({exchangeSize}): <strong>₹{replacementPrice}</strong>
+                      Original: <strong>₹{originalPrice}</strong> ({isFabricItem ? `${currentQuantity}m` : (activeItem.size || 'Base')}) → Replacement: <strong>₹{replacementPrice}</strong> ({isFabricItem ? `${exchangeLength}m` : exchangeSize})
                     </p>
                     <p className="text-[11px] text-emerald-700">
                       ₹{Math.abs(priceDifference)} will be refunded to your account. Please provide your receiving account details below.
@@ -510,7 +774,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                       <span className="font-mono text-blue-700 font-bold">₹0 Price Diff</span>
                     </div>
                     <p className="text-[11px] text-blue-700">
-                      Original item (₹{originalPrice}) and Replacement Size {exchangeSize} (₹{replacementPrice}) have equal pricing. No extra charge or refund needed.
+                      Original ({isFabricItem ? `${currentQuantity}m` : (activeItem.size || 'Base')} - ₹{originalPrice}) and Replacement ({isFabricItem ? `${exchangeLength}m` : exchangeSize} - ₹{replacementPrice}) have equal pricing. No extra charge or refund needed.
                     </p>
                   </div>
                 )}
@@ -675,4 +939,3 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     </div>
   );
 }
-
