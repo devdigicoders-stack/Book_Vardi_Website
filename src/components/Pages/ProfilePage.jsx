@@ -49,7 +49,7 @@ import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi, confirmBuyerAcceptanceApi, API_BASE_URL } from '../../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
-import OrderTrackingModal from '../Common/OrderTrackingModal';
+import OrderTrackingModal, { isOrderRefundedOrReturnOrExchange } from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
 import ReturnExchangeModal from '../Common/ReturnExchangeModal';
 import { isItemReturnable, isItemExchangeable, getReturnExchangeAvailability } from '../../utils/orderReturnPolicy';
@@ -2082,19 +2082,32 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 </button>
                               )}
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTrackingModalOrder(order);
-                                  setIsTrackingModalOpen(true);
-                                }}
-                                className="inline-flex items-center gap-1.5 text-xs font-bold bg-brand-teal hover:bg-brand-teal-light text-white px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer"
-                                title="Open Live Tracking Status Modal"
-                              >
-                                <StatusIcon size={13} className="text-brand-yellow" />
-                                <span>Track Live Delivery</span>
-                              </button>
+                              {(() => {
+                                const isRefundOrExchange = isOrderRefundedOrReturnOrExchange(order);
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setTrackingModalOrder(order);
+                                      setIsTrackingModalOpen(true);
+                                    }}
+                                    className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer ${
+                                      isRefundOrExchange
+                                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                        : 'bg-brand-teal hover:bg-brand-teal-light text-white'
+                                    }`}
+                                    title={isRefundOrExchange ? "Track Return and Exchange Status" : "Open Live Tracking Status Modal"}
+                                  >
+                                    {isRefundOrExchange ? (
+                                      <RotateCcw size={13} className="text-amber-200" />
+                                    ) : (
+                                      <StatusIcon size={13} className="text-brand-yellow" />
+                                    )}
+                                    <span>{isRefundOrExchange ? 'Track Return & Exchange' : 'Track Live Delivery'}</span>
+                                  </button>
+                                );
+                              })()}
                               <button
                                 type="button"
                                 onClick={handleViewOrder}
@@ -2775,7 +2788,33 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 ) : (
                   <div className="space-y-4">
                     {customerBulkOrders.map((order, idx) => {
-                      const winningQuote = order.quotations?.find(q => q.status === 'approved' || String(q._id) === String(order.acceptedQuoteId));
+                      const getCleanId = (val) => {
+                        if (!val) return '';
+                        if (typeof val === 'object') {
+                          if (val._id) return String(val._id);
+                          if (val.id) return String(val.id);
+                          if (typeof val.toString === 'function') {
+                            const str = val.toString();
+                            if (str !== '[object Object]') return str;
+                          }
+                        }
+                        return String(val);
+                      };
+
+                      const ordSellerId = getCleanId(order.sellerId);
+                      const ordAcceptedQuoteId = getCleanId(order.acceptedQuoteId || order.winningQuoteId);
+
+                      const winningQuote = order.quotations?.find(q => {
+                        if (q.status === 'rejected' || q.negotiationStage === 'rejected') return false;
+                        const qId = getCleanId(q._id || q.id);
+                        const qSellerId = getCleanId(q.sellerId);
+                        return (
+                          (ordSellerId && qSellerId && ordSellerId === qSellerId) ||
+                          (ordAcceptedQuoteId && ordAcceptedQuoteId === qId) ||
+                          q.status === 'approved' ||
+                          q.negotiationStage === 'approved'
+                        );
+                      });
                       const statusLower = (order.status || '').toLowerCase().trim();
                       const isProcessedOrder = ['accepted', 'quote_accepted', 'packed', 'out for delivery', 'received'].includes(statusLower);
 
@@ -3157,6 +3196,26 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             </div>
                           )}
 
+                          {/* Notice for other competing outbid proposals when order is awarded */}
+                          {winningQuote && Array.isArray(order.quotations) && order.quotations.filter(q => String(q._id || q.id) !== String(winningQuote._id || winningQuote.id)).length > 0 && (
+                            <div className="bg-slate-50 border border-slate-200/80 px-3.5 py-2 rounded-xl flex items-center justify-between text-xs text-slate-600">
+                              <span className="flex items-center gap-1.5 font-medium">
+                                <XCircle size={14} className="text-slate-400" />
+                                <span>Awarded to <strong>{winningQuote.sellerStoreName || winningQuote.sellerName}</strong> • {order.quotations.filter(q => String(q._id || q.id) !== String(winningQuote._id || winningQuote.id)).length} other quotation proposal(s) outbid & closed.</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedBulkOrder(order);
+                                  setSelectedBulkOrderTab('quotes');
+                                }}
+                                className="text-[11px] font-bold text-teal-700 hover:text-teal-900 underline cursor-pointer"
+                              >
+                                View All Quotes
+                              </button>
+                            </div>
+                          )}
+
                           {/* Received Vendor Quotations Banner */}
                           {!winningQuote && Array.isArray(order.quotations) && order.quotations.length > 0 && (
                             <div className="bg-gradient-to-r from-purple-50 via-teal-50 to-purple-50 border-2 border-purple-300 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
@@ -3272,6 +3331,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
               return {
                 ...q,
                 status: isWin ? 'approved' : 'rejected',
+                negotiationStage: isWin ? 'approved' : 'rejected',
                 ...(isWin && updateData?.quoteAmount ? { quoteAmount: updateData.quoteAmount } : {}),
                 ...(isWin && updateData?.prepaymentAmount !== undefined ? { prepaymentAmount: updateData.prepaymentAmount, sellerAdvanceAmount: updateData.prepaymentAmount } : {}),
                 ...(isWin && updateData?.prepaymentPercentage !== undefined ? { prepaymentPercentage: updateData.prepaymentPercentage, sellerAdvancePercentage: updateData.prepaymentPercentage } : {})

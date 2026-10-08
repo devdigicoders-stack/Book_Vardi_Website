@@ -27,11 +27,12 @@ import {
   Phone,
   Key,
   ChevronRight,
-  User
+  User,
+  Lock
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import TaxInvoiceModal from '../Common/TaxInvoiceModal';
-import OrderTrackingModal from '../Common/OrderTrackingModal';
+import OrderTrackingModal, { getOrderDeliveryOtp, isOrderRefundedOrReturnOrExchange } from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
 import ReturnExchangeModal from '../Common/ReturnExchangeModal';
 import { isItemReturnable, isItemExchangeable, getReturnExchangeAvailability } from '../../utils/orderReturnPolicy';
@@ -184,6 +185,12 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   const orderAvail = getReturnExchangeAvailability(hasReturnable, hasExchangeable, formattedTillDate, daysLeft);
 
   const isCancelled = currentStatus === 'cancelled';
+  const isReturnOrExchangeOrRefund = isOrderRefundedOrReturnOrExchange(order);
+  const isRefunded = currentStatus === 'refunded' || currentStatus === 'refund_completed' || String(order.paymentStatus || '').toLowerCase() === 'refunded' || String(order.refundStatus || '').toLowerCase().includes('completed') || String(order.refundStatus || '').toLowerCase().includes('refund');
+  const hasPendingItems = !currentStatus || ['pending', 'placed', 'unconfirmed'].includes(currentStatus) || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
+    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
+  }));
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
   const isPaidOnline = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
   const isPaymentVerified = isPaidOnline;
@@ -301,21 +308,25 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               {!isCancelled && (
                 <button
                   onClick={() => setIsInvoiceModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark transition-colors cursor-pointer bg-brand-teal/10 hover:bg-brand-teal/20 px-3 py-1 rounded-lg border border-brand-teal/20 shadow-2xs"
-                  title="View & Download Tax Invoice / Bill of Order"
+                  className={`inline-flex items-center gap-1.5 text-xs font-bold transition-colors cursor-pointer px-3 py-1 rounded-lg border shadow-2xs ${
+                    hasPendingItems
+                      ? 'text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-200'
+                      : 'text-brand-teal hover:text-brand-teal-dark bg-brand-teal/10 hover:bg-brand-teal/20 border-brand-teal/20'
+                  }`}
+                  title={hasPendingItems ? "Tax Invoice locked while product status is pending" : "View & Download Tax Invoice / Bill of Order"}
                 >
-                  <FileText size={13} />
-                  <span>Tax Invoice & Bill</span>
+                  {hasPendingItems ? <Lock size={13} /> : <FileText size={13} />}
+                  <span>{hasPendingItems ? 'Tax Invoice (Locked)' : 'Tax Invoice & Bill'}</span>
                 </button>
               )}
 
               <button
                 onClick={() => setIsTrackingModalOpen(true)}
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-brand-teal hover:bg-brand-teal-light transition-colors cursor-pointer px-3 py-1 rounded-lg shadow-2xs"
-                title="Track Live Courier Shipment AWB"
+                title={isReturnOrExchangeOrRefund ? "Track Return and Exchange Status" : "Track Live Courier Shipment AWB"}
               >
-                <Truck size={13} />
-                <span>Track Live Courier Shipment</span>
+                {isReturnOrExchangeOrRefund ? <RotateCcw size={13} /> : <Truck size={13} />}
+                <span>{isReturnOrExchangeOrRefund ? (isRefunded ? 'Track Return & Refund' : 'Track Return & Exchange') : 'Track Live Courier Shipment'}</span>
               </button>
 
               {isCancelEligible && (
@@ -382,11 +393,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             order.items?.[0]?.sellerName ||
             'national cloth house';
 
-          const deliveryOtp = selfDetails?.deliveryOtp ||
-            order.deliveryOtp ||
-            order.items?.[0]?.deliveryOtp ||
-            order.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
-            '';
+          const deliveryOtp = getOrderDeliveryOtp(order);
 
           const riderName = selfDetails?.deliveryBoyName || order.deliveryDetails?.deliveryBoyName || '';
           const riderPhone = selfDetails?.deliveryBoyPhone || order.deliveryDetails?.deliveryBoyPhone || '';
@@ -463,6 +470,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                         <XCircle size={12} className="text-rose-600" />
                         Tracking Closed
                       </span>
+                    ) : isReturnOrExchangeOrRefund ? (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-600" />
+                        </span>
+                        {isRefunded ? 'Refund & Return Active' : 'Return & Exchange Active'}
+                      </span>
                     ) : stepIndex === 4 ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                         <CheckCircle2 size={12} className="text-emerald-600" />
@@ -488,6 +503,13 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                       <>
                         <XCircle className="text-rose-600 shrink-0" size={24} />
                         <span>Tracking Terminated — Order Cancelled</span>
+                      </>
+                    ) : isReturnOrExchangeOrRefund ? (
+                      <>
+                        <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center text-amber-800 shrink-0">
+                          <RotateCcw size={18} className="animate-pulse" />
+                        </div>
+                        <span>{isRefunded ? 'Refund & Return Tracking' : 'Track Return & Exchange'}</span>
                       </>
                     ) : (
                       <>
@@ -556,6 +578,8 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                     className={`w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-5 py-3 rounded-2xl text-xs sm:text-sm font-extrabold uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-md hover:shadow-lg group ${
                       isCancelled
                         ? 'bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100'
+                        : isReturnOrExchangeOrRefund
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white hover:scale-[1.02]'
                         : 'bg-gradient-to-r from-brand-teal to-teal-800 hover:from-teal-800 hover:to-teal-900 text-white hover:scale-[1.02]'
                     }`}
                   >
@@ -563,6 +587,12 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                       <>
                         <XCircle size={16} className="text-rose-600" />
                         <span>View Cancellation Status</span>
+                      </>
+                    ) : isReturnOrExchangeOrRefund ? (
+                      <>
+                        <RotateCcw size={16} className="text-amber-200 group-hover:-rotate-45 transition-transform duration-300" />
+                        <span>{isRefunded ? 'Track Return & Refund' : 'Track Return & Exchange'}</span>
+                        <ChevronRight size={15} className="text-white/80 group-hover:translate-x-1 transition-transform" />
                       </>
                     ) : (
                       <>
@@ -712,7 +742,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                       </div>
 
                       {/* Delivery Security OTP */}
-                      {deliveryOtp ? (
+                      {!isCancelled && !isReturnOrExchangeOrRefund && deliveryOtp ? (
                         <div className="bg-emerald-50/70 rounded-2xl p-3.5 border border-emerald-200 flex items-start justify-between gap-2">
                           <div className="flex items-start gap-2.5 min-w-0">
                             <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
@@ -1068,15 +1098,31 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200">
           <button
             type="button"
-            onClick={() => setIsInvoiceModalOpen(true)}
-            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 font-extrabold text-xs transition-colors cursor-pointer ${
-              isCancelled
-                ? 'border-rose-600 text-rose-600 hover:bg-rose-50'
-                : 'border-brand-teal text-brand-teal hover:bg-brand-teal/5'
+            disabled={hasPendingItems}
+            onClick={() => {
+              if (hasPendingItems) return;
+              setIsInvoiceModalOpen(true);
+            }}
+            title={hasPendingItems ? "Tax invoice locked until order is confirmed by seller" : ""}
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 font-extrabold text-xs transition-colors ${
+              hasPendingItems
+                ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                : isCancelled
+                ? 'border-rose-600 text-rose-600 hover:bg-rose-50 cursor-pointer'
+                : 'border-brand-teal text-brand-teal hover:bg-brand-teal/5 cursor-pointer'
             }`}
           >
-            <Printer size={15} />
-            {isCancelled ? 'Print Credit Note & Refund Voucher' : 'Print Tax Invoice & Bill'}
+            {hasPendingItems ? (
+              <>
+                <Lock size={15} />
+                <span>Invoice Locked (Pending Confirmation)</span>
+              </>
+            ) : (
+              <>
+                <Printer size={15} />
+                <span>{isCancelled ? 'Print Credit Note & Refund Voucher' : 'Print Tax Invoice & Bill'}</span>
+              </>
+            )}
           </button>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">

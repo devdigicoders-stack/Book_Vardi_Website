@@ -1951,26 +1951,32 @@ export function CartProvider({ children }) {
 
     const isCod = /cod|cash\s*on\s*delivery/i.test(String(orderData.paymentMethod || ''));
     const initialPaymentStatus = orderData.paymentStatus || (isCod ? 'Pending' : 'Paid');
+    const sharedDeliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
 
     const newOrder = {
       id: randomId,
       orderId: randomId,
       date: formattedDate,
-      status: 'Processing',
-      statusColor: 'blue',
+      status: 'Pending',
+      statusColor: 'amber',
       trackingNumber: randomTracking,
       courierName: orderData.courierName || 'N/A',
       deliveryMode: orderData.deliveryMode || 'pending_choice',
       paymentStatus: initialPaymentStatus,
+      deliveryOtp: sharedDeliveryOtp,
       customer: {
         name: userProfile?.name || orderData?.shippingAddress?.name || 'Student Customer',
         email: userProfile?.email || orderData?.shippingAddress?.email || '',
         phone: userProfile?.phone || orderData?.shippingAddress?.phone || ''
       },
       sellerDetails: orderData.sellerDetails || null,
-      selfDeliveryDetails: orderData.selfDeliveryDetails || null,
+      selfDeliveryDetails: orderData.selfDeliveryDetails ? { ...orderData.selfDeliveryDetails, deliveryOtp: sharedDeliveryOtp } : { deliveryOtp: sharedDeliveryOtp },
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
-      items: [...itemsToBuy],
+      items: itemsToBuy.map((item) => ({
+        ...item,
+        status: item.status || 'pending',
+        deliveryOtp: sharedDeliveryOtp
+      })),
       subtotal: orderData.subtotal,
       shippingCost: orderData.shippingCost,
       discount: orderData.discount || 0,
@@ -2003,7 +2009,9 @@ export function CartProvider({ children }) {
       date: formattedDate,
       total: orderData.total,
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
-      status: 'Processing',
+      status: 'Pending',
+      deliveryOtp: sharedDeliveryOtp,
+      selfDeliveryDetails: orderData.selfDeliveryDetails ? { ...orderData.selfDeliveryDetails, deliveryOtp: sharedDeliveryOtp } : { deliveryOtp: sharedDeliveryOtp },
       paymentMethod: orderData.paymentMethod || 'UPI',
       paymentStatus: initialPaymentStatus,
       shippingAddress: typeof orderData.shippingAddress === 'object'
@@ -2028,7 +2036,9 @@ export function CartProvider({ children }) {
         size: item.selectedSize || item.size || '',
         age: item.age || '',
         image: item.image,
-        category: item.category || 'Stationery'
+        category: item.category || 'Stationery',
+        status: item.status || 'pending',
+        deliveryOtp: sharedDeliveryOtp
       }))
     };
 
