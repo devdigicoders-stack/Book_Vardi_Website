@@ -28,7 +28,8 @@ import {
   Printer,
   SlidersHorizontal,
   CreditCard,
-  Download
+  Download,
+  XCircle
 } from 'lucide-react';
 import TaxInvoiceModal from '../Common/TaxInvoiceModal';
 import OrderTrackingModal from '../Common/OrderTrackingModal';
@@ -342,7 +343,8 @@ export default function BulkOrderPreviewModal({
       }
 
       const targetId = order._id || order.id || order.referenceId;
-      const rzpRes = await createSchoolBulkPrepaymentOrderApi(targetId);
+      const quoteTargetId = quote?._id || quote?.id;
+      const rzpRes = await createSchoolBulkPrepaymentOrderApi(targetId, { quoteId: quoteTargetId });
 
       if (!rzpRes?.success && !rzpRes?.razorpayOrderId) {
         alert(rzpRes?.message || 'Failed to initialize online prepayment order.');
@@ -375,7 +377,8 @@ export default function BulkOrderPreviewModal({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
-              paidAmount: rzpRes.advanceAmountRupees || advAmount
+              paidAmount: rzpRes.advanceAmountRupees || advAmount,
+              quoteId: quoteTargetId
             });
 
             if (verifyRes?.success && verifyRes.order) {
@@ -1523,88 +1526,148 @@ export default function BulkOrderPreviewModal({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {order.quotations.map(quote => {
-                    const qId = quote._id || quote.id;
-                    const isApproved = quote.status === 'approved' || quote.status === 'buyer_accepted' || String(order.acceptedQuoteId) === String(qId);
-                    const hasItemPrices = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0;
-                    const qAdvPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
-                    const qAdvAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (qAdvPct > 0 ? Math.round((Number(quote.quoteAmount) * qAdvPct) / 100) : 0);
-                    const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= qAdvAmt);
-                    const isSellerAcceptedCounter = quote.negotiationStage === 'seller_accepted_counter' || quote.status === 'seller_accepted' || order.status === 'seller_accepted_counter';
+                  {(() => {
+                    const getCleanId = (val) => {
+                      if (!val) return '';
+                      if (typeof val === 'object') {
+                        if (val._id) return String(val._id);
+                        if (val.id) return String(val.id);
+                        if (typeof val.toString === 'function') {
+                          const str = val.toString();
+                          if (str !== '[object Object]') return str;
+                        }
+                      }
+                      return String(val);
+                    };
 
-                    return (
-                      <div
-                        key={qId}
-                        className={`p-4 sm:p-5 rounded-2xl border transition-all space-y-3.5 ${
-                          isApproved ? 'bg-emerald-50/80 border-emerald-300 shadow-xs' : 'bg-white border-gray-200 hover:border-purple-300'
-                        }`}
-                      >
-                        {/* Header Row: Vendor Info & Total Quote */}
-                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 pb-2 border-b border-gray-100">
-                          <div>
-                            <div className="font-extrabold text-sm text-gray-900 flex items-center gap-2">
-                              <span>{quote.sellerStoreName || quote.sellerName}</span>
-                              {isApproved && (
-                                <span className="bg-emerald-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-                                  Winning Proposal
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-500 flex flex-wrap items-center gap-3 mt-0.5">
-                              {userRole === 'admin' && quote.sellerPhone && <span>Phone: <strong className="text-gray-700">{quote.sellerPhone}</strong></span>}
-                              {userRole === 'admin' && quote.sellerCity && <span>City: <strong className="text-gray-700">{quote.sellerCity}</strong></span>}
-                              <span>Lead Time: <strong className="text-gray-700">{quote.estimatedDeliveryDays || 7} Days</strong></span>
-                            </div>
+                    const orderSellerId = getCleanId(order.sellerId);
+                    const acceptedQuoteId = getCleanId(order.acceptedQuoteId || order.winningQuoteId);
 
-                            {/* Negotiation Version & Stage Pill */}
-                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                              <button
-                                type="button"
-                                onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
-                                className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 shadow-2xs ${
-                                  expandedTimelineQuoteId === qId
-                                    ? 'bg-teal-700 text-white ring-2 ring-teal-500'
-                                    : 'bg-slate-100 hover:bg-teal-50 text-slate-800 hover:text-teal-900 border border-slate-300'
-                                }`}
-                                title="Click to view full negotiation timeline and version history"
-                              >
-                                <Clock size={11} className={expandedTimelineQuoteId === qId ? 'text-white' : 'text-teal-700'} />
-                                <span>Version {quote.currentVersion || 1}</span>
-                                <span className="text-[9px] opacity-80">{expandedTimelineQuoteId === qId ? '▲ Hide' : '▼ Timeline'}</span>
-                              </button>
-                              {quote.negotiationStage === 'buyer_countered' && (
+                    const winningQuote = (order.quotations || []).find(q => {
+                      if (q.status === 'rejected' || q.negotiationStage === 'rejected') return false;
+                      const qId = getCleanId(q._id || q.id);
+                      const qSellerId = getCleanId(q.sellerId);
+                      return (
+                        (orderSellerId && qSellerId && orderSellerId === qSellerId) ||
+                        (acceptedQuoteId && acceptedQuoteId === qId) ||
+                        q.status === 'approved' ||
+                        q.negotiationStage === 'approved'
+                      );
+                    });
+                    const winningSellerName = winningQuote?.sellerStoreName || winningQuote?.sellerName || order.acceptedSellerName || "another vendor";
+
+                    return order.quotations.map(quote => {
+                      const qId = getCleanId(quote._id || quote.id);
+                      const isWinner = Boolean(
+                        winningQuote && (getCleanId(winningQuote._id || winningQuote.id) === qId)
+                      );
+                      const isRejected = (
+                        quote.status === 'rejected' ||
+                        quote.negotiationStage === 'rejected' ||
+                        Boolean(winningQuote && !isWinner)
+                      );
+                      const isApproved = isWinner && !isRejected;
+                      const hasItemPrices = Array.isArray(quote.itemPrices) && quote.itemPrices.length > 0;
+                      const qAdvPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
+                      const qAdvAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (qAdvPct > 0 ? Math.round((Number(quote.quoteAmount) * qAdvPct) / 100) : 0);
+                      const isPrepaymentPaid = isApproved && (order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= qAdvAmt));
+                      const isSellerAcceptedCounter = !isRejected && !isApproved && (quote.negotiationStage === 'seller_accepted_counter' || quote.status === 'seller_accepted');
+
+                      return (
+                        <div
+                          key={qId}
+                          className={`p-4 sm:p-5 rounded-2xl border transition-all space-y-3.5 ${
+                            isApproved ? 'bg-emerald-50/80 border-emerald-300 shadow-xs' :
+                            isRejected ? 'bg-slate-50/70 border-slate-200 text-slate-500 opacity-80' :
+                            'bg-white border-gray-200 hover:border-purple-300'
+                          }`}
+                        >
+                          {/* Header Row: Vendor Info & Total Quote */}
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 pb-2 border-b border-gray-100">
+                            <div>
+                              <div className="font-extrabold text-sm text-gray-900 flex items-center gap-2">
+                                <span>{quote.sellerStoreName || quote.sellerName}</span>
+                                {isApproved && (
+                                  <span className="bg-emerald-600 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                                    Winning Proposal
+                                  </span>
+                                )}
+                                {isRejected && (
+                                  <span className="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <XCircle size={10} className="text-rose-600" /> Quotation Rejected / Outbid
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-500 flex flex-wrap items-center gap-3 mt-0.5">
+                                {userRole === 'admin' && quote.sellerPhone && <span>Phone: <strong className="text-gray-700">{quote.sellerPhone}</strong></span>}
+                                {userRole === 'admin' && quote.sellerCity && <span>City: <strong className="text-gray-700">{quote.sellerCity}</strong></span>}
+                                <span>Lead Time: <strong className="text-gray-700">{quote.estimatedDeliveryDays || 7} Days</strong></span>
+                              </div>
+
+                              {/* Negotiation Version & Stage Pill */}
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 2)}
-                                  className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer transition-all"
-                                  title="Click to view buyer counter-demand timeline"
+                                  onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 1)}
+                                  className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full transition-all cursor-pointer flex items-center gap-1 shadow-2xs ${
+                                    expandedTimelineQuoteId === qId
+                                      ? 'bg-teal-700 text-white ring-2 ring-teal-500'
+                                      : 'bg-slate-100 hover:bg-teal-50 text-slate-800 hover:text-teal-900 border border-slate-300'
+                                  }`}
+                                  title="Click to view full negotiation timeline and version history"
                                 >
-                                  <Clock size={10} /> 2nd Version Counter-Demand Sent
+                                  <Clock size={11} className={expandedTimelineQuoteId === qId ? 'text-white' : 'text-teal-700'} />
+                                  <span>Version {quote.currentVersion || 1}</span>
+                                  <span className="text-[9px] opacity-80">{expandedTimelineQuoteId === qId ? '▲ Hide' : '▼ Timeline'}</span>
                                 </button>
-                              )}
-                              {quote.negotiationStage === 'seller_accepted_counter' && (
-                                <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
-                                  <CheckCircle2 size={10} /> Vendor Accepted Your Counter-Demand
-                                </span>
-                              )}
-                              {quote.negotiationStage === 'revised_by_seller' && (
-                                <span className="bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
-                                  <Sparkles size={10} /> Vendor Revised Terms
-                                </span>
-                              )}
+                                {quote.negotiationStage === 'buyer_countered' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTimelineForQuote(qId, quote.currentVersion || 2)}
+                                    className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer transition-all"
+                                    title="Click to view buyer counter-demand timeline"
+                                  >
+                                    <Clock size={10} /> 2nd Version Counter-Demand Sent
+                                  </button>
+                                )}
+                                {quote.negotiationStage === 'seller_accepted_counter' && (
+                                  <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <CheckCircle2 size={10} /> Vendor Accepted Your Counter-Demand
+                                  </span>
+                                )}
+                                {quote.negotiationStage === 'revised_by_seller' && (
+                                  <span className="bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Sparkles size={10} /> Vendor Revised Terms
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="sm:text-right bg-teal-50 sm:bg-transparent p-2 sm:p-0 rounded-xl">
+                              <div className="text-[10px] text-gray-400 font-semibold uppercase">Total Pitched Amount</div>
+                              <div className="font-extrabold text-lg text-teal-800 font-mono">
+                                ₹{Number(quote.quoteAmount).toLocaleString()}
+                              </div>
+                              <div className="text-[10px] text-teal-700 font-medium">
+                                ~₹{quote.unitPrice || (totalQtyNum > 0 ? Math.round(quote.quoteAmount / totalQtyNum) : 0)} / unit avg
+                              </div>
                             </div>
                           </div>
 
-                          <div className="sm:text-right bg-teal-50 sm:bg-transparent p-2 sm:p-0 rounded-xl">
-                            <div className="text-[10px] text-gray-400 font-semibold uppercase">Total Pitched Amount</div>
-                            <div className="font-extrabold text-lg text-teal-800 font-mono">
-                              ₹{Number(quote.quoteAmount).toLocaleString()}
+                          {/* Notice Banner: Quotation Rejected / Outbid */}
+                          {isRejected && (
+                            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-rose-900 shadow-2xs">
+                              <XCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                              <div>
+                                <div className="font-extrabold text-[11px] uppercase tracking-wider text-rose-800">
+                                  Quotation Proposal Not Selected
+                                </div>
+                                <p className="mt-0.5 text-rose-900">
+                                  This quotation proposal was not selected for procurement. The requisition has been awarded to <strong>{winningSellerName}</strong>.
+                                </p>
+                              </div>
                             </div>
-                            <div className="text-[10px] text-teal-700 font-medium">
-                              ~₹{quote.unitPrice || (totalQtyNum > 0 ? Math.round(quote.quoteAmount / totalQtyNum) : 0)} / unit avg
-                            </div>
-                          </div>
-                        </div>
+                          )}
 
                         {/* Notice Banner: Vendor Accepted Buyer Counter Terms */}
                         {isSellerAcceptedCounter && (
@@ -1740,7 +1803,7 @@ export default function BulkOrderPreviewModal({
                                     <th className="py-2 px-3">Product Demand</th>
                                     <th className="py-2 px-2 text-center">Qty</th>
                                     <th className="py-2 px-2 text-right">User Budget/Unit</th>
-                                    <th className="py-2 px-2 text-right bg-emerald-50 text-emerald-950">Seller Price/Unit</th>
+                                    <th className={`py-2 px-2 text-right ${isRejected ? 'bg-gray-100 text-gray-700' : 'bg-emerald-50 text-emerald-950'}`}>Seller Price/Unit</th>
                                     <th className="py-2 px-3 text-right">Line Total</th>
                                     <th className="py-2 px-3">Scale / Volume Note</th>
                                   </tr>
@@ -1761,7 +1824,7 @@ export default function BulkOrderPreviewModal({
                                         <td className="py-2 px-2 text-right font-medium text-gray-600">
                                           {custBudget > 0 ? `₹${custBudget.toLocaleString()}` : 'N/A'}
                                         </td>
-                                        <td className="py-2 px-2 text-right font-black bg-emerald-50/70 text-emerald-900 font-mono">
+                                        <td className={`py-2 px-2 text-right font-black font-mono ${isRejected ? 'text-gray-600' : 'bg-emerald-50/70 text-emerald-900'}`}>
                                           ₹{sellerPrice.toLocaleString()}
                                         </td>
                                         <td className="py-2 px-3 text-right font-black text-gray-900 font-mono">
@@ -1824,13 +1887,14 @@ export default function BulkOrderPreviewModal({
                           const advPct = Number(quote.prepaymentPercentage ?? quote.sellerAdvancePercentage ?? 0);
                           const advAmt = Number(quote.prepaymentAmount ?? quote.sellerAdvanceAmount ?? 0) || (advPct > 0 ? Math.round((Number(quote.quoteAmount) * advPct) / 100) : 0);
                           const advTerms = quote.prepaymentTerms || quote.sellerAdvanceTerms || '';
-                          const isPrepaymentPaid = order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= advAmt);
+                          const isPrepaymentPaid = isApproved && (order.advancePaymentStatus === 'paid' || (order.advancePaidAmount && order.advancePaidAmount >= advAmt));
                           const actualAdvPaid = isPrepaymentPaid ? (Number(order.advancePaidAmount) || advAmt) : 0;
                           const totalPaid = actualAdvPaid + Number(order.remainingPaidAmount || 0);
-                          const isRemPaid = order.remainingPaymentStatus === 'paid' || (totalPaid >= Number(quote.quoteAmount) && Number(quote.quoteAmount) > 0);
+                          const isRemPaid = isApproved && (order.remainingPaymentStatus === 'paid' || (totalPaid >= Number(quote.quoteAmount) && Number(quote.quoteAmount) > 0));
                           const remainingBal = isRemPaid ? 0 : Math.max(0, Number(quote.quoteAmount) - actualAdvPaid);
-                          const isEligibleForPayment = (isApproved || isSellerAcceptedCounter || order.status === 'accepted') && advAmt > 0 && !isPrepaymentPaid;
+                          const isEligibleForPayment = isApproved && advAmt > 0 && !isPrepaymentPaid && !isRejected;
 
+                          if (!isApproved || isRejected) return null;
                           if (advPct <= 0 && advAmt <= 0 && !advTerms) return null;
 
                           return (
@@ -1964,6 +2028,10 @@ export default function BulkOrderPreviewModal({
                               <span className="text-xs font-extrabold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full flex items-center gap-1 border border-emerald-200">
                                 <CheckCircle2 size={14} /> Approved & Winning Seller Quote
                               </span>
+                            ) : isRejected ? (
+                              <span className="text-xs font-extrabold text-rose-800 bg-rose-50 px-3 py-1 rounded-full flex items-center gap-1 border border-rose-200">
+                                <XCircle size={14} className="text-rose-600" /> Quotation Rejected / Outbid
+                              </span>
                             ) : (
                               <span className="text-[11px] text-gray-500 font-semibold">
                                 Stage: <strong className="text-gray-800 capitalize">{(quote.negotiationStage || quote.status || 'Active').replace(/_/g, ' ')}</strong>
@@ -1991,7 +2059,7 @@ export default function BulkOrderPreviewModal({
 
                             {userRole === 'consumer' && (
                               <>
-                                {(isApproved || isSellerAcceptedCounter || order.status === 'accepted') ? (
+                                {isApproved ? (
                                   <>
                                     {isPrepaymentPaid ? (
                                       <div className="flex items-center gap-2">
@@ -2023,6 +2091,10 @@ export default function BulkOrderPreviewModal({
                                       </span>
                                     )}
                                   </>
+                                ) : isRejected ? (
+                                  <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-200 flex items-center gap-1">
+                                    <XCircle size={12} className="text-gray-400" /> Proposal Not Selected • Order Awarded to {winningSellerName}
+                                  </span>
                                 ) : (
                                   <>
                                     {onSubmitCounterDemand && (
@@ -2053,8 +2125,9 @@ export default function BulkOrderPreviewModal({
                         </div>
                       </div>
                     );
-                  })}
-                </div>
+                  })
+                })()}
+              </div>
               )}
             </div>
           )}

@@ -21,10 +21,56 @@ import {
   Key,
   RotateCcw,
   ArrowRightLeft,
-  Sparkles
+  Sparkles,
+  Lock
 } from 'lucide-react';
 import BulkOrderTrackingModal from './BulkOrderTrackingModal';
 import { trackAwbApi, downloadInvoiceApi } from '../../utils/api';
+
+export const getOrderDeliveryOtp = (order) => {
+  if (!order) return '';
+  const otp = order.deliveryOtp ||
+    order.selfDeliveryDetails?.deliveryOtp ||
+    order.items?.[0]?.deliveryOtp ||
+    order.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
+    order.shipmentDetails?.deliveryOtp ||
+    order.deliveryCode ||
+    '';
+  if (otp && String(otp).trim()) return String(otp).trim();
+  const rawId = String(order.orderId || order.id || order._id || '');
+  const digits = rawId.replace(/\D/g, '');
+  if (digits.length >= 4) return digits.slice(-4);
+  return '4829';
+};
+
+export const isOrderRefundedOrReturnOrExchange = (order) => {
+  if (!order) return false;
+  const currentStatus = String(order.overallStatus || order.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const retReqStatus = String(order.returnRequest?.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const retReqType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim();
+  const refundStatus = String(order.refundStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const paymentStatus = String(order.paymentStatus || '').toLowerCase().trim();
+
+  const refundOrReturnKeywords = [
+    'refunded', 'refund_requested', 'refund_initiated', 'refund_approved', 'refund_completed', 'partial_refund_requested',
+    'return_requested', 'returned', 'return_approved', 'product_return_received', 'product_received', 'return_completed',
+    'exchange_requested', 'exchanged', 'exchange_dispatched', 'exchange_approved'
+  ];
+
+  if (refundOrReturnKeywords.includes(currentStatus)) return true;
+  if (retReqType === 'return' || retReqType === 'exchange') return true;
+  if (retReqStatus && retReqStatus !== 'no_request' && retReqStatus !== '') return true;
+  if (refundStatus && refundStatus !== 'no_refund' && refundStatus !== '') return true;
+  if (paymentStatus === 'refunded') return true;
+
+  if (Array.isArray(order.items)) {
+    return order.items.some(it => {
+      const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+      return refundOrReturnKeywords.includes(itStatus);
+    });
+  }
+  return false;
+};
 
 const hasActiveReturnRequest = (order) => {
   if (!order) return false;
@@ -173,18 +219,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     order.items?.[0]?.sellerAddress ||
     'Local Merchant Facility';
 
-  const deliveryOtp = order.deliveryOtp ||
-    selfDetails?.deliveryOtp ||
-    order.shipmentDetails?.deliveryOtp ||
-    trackingData?.deliveryOtp ||
-    order.items?.find(it => it.deliveryOtp)?.deliveryOtp ||
-    order.items?.find(it => it.selfDeliveryDetails?.deliveryOtp)?.selfDeliveryDetails?.deliveryOtp ||
-    order.items?.[0]?.deliveryOtp ||
-    order.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
-    order.deliveryCode ||
-    (order.orderId ? String(order.orderId).replace(/\D/g, '').slice(-4) : '') ||
-    (order.id ? String(order.id).replace(/\D/g, '').slice(-4) : '') ||
-    '4829';
+  const deliveryOtp = getOrderDeliveryOtp(order);
 
   const selfToken = selfDetails?.deliveryPartnerToken || (isSelfDelivery ? (rawTracking || '') : '');
 
@@ -244,8 +279,10 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     }
   };
 
-  const currentStatus = String(order.overallStatus || order.status || 'shipped').toLowerCase().trim();
+  const currentStatus = String(order.overallStatus || order.status || 'pending').toLowerCase().trim();
   const isCancelled = currentStatus === 'cancelled';
+  const isReturnOrExchangeOrRefund = isOrderRefundedOrReturnOrExchange(order);
+  const isRefunded = currentStatus === 'refunded' || currentStatus === 'refund_completed' || String(order.paymentStatus || '').toLowerCase() === 'refunded' || String(order.refundStatus || '').toLowerCase().includes('completed') || String(order.refundStatus || '').toLowerCase().includes('refund');
 
   // Stepper steps
   const steps = isSelfDelivery ? [
@@ -272,7 +309,11 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   else if (currentStatus === 'out_for_delivery' || currentStatus === 'out for delivery') activeIndex = 4;
   else if (currentStatus === 'delivered' || currentStatus === 'completed') activeIndex = 5;
 
-  const CurrentStatusIcon = isCancelled ? XCircle : (steps[activeIndex]?.icon || (isSelfDelivery ? Navigation : Truck));
+  const CurrentStatusIcon = isCancelled
+    ? XCircle
+    : isReturnOrExchangeOrRefund
+    ? (isRefunded ? RotateCcw : ArrowRightLeft)
+    : (steps[activeIndex]?.icon || (isSelfDelivery ? Navigation : Truck));
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static">
@@ -282,7 +323,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
         <div className="bg-gradient-to-r from-teal-950 via-teal-900 to-slate-900 text-white px-5 py-4 flex items-center justify-between shrink-0 border-b border-teal-800/60">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-teal-800/80 border border-teal-600/50 flex items-center justify-center text-teal-200 font-extrabold shadow-inner shrink-0">
-              <CurrentStatusIcon size={22} className={!isCancelled && (activeIndex === 3 || activeIndex === 4) ? "animate-pulse text-amber-400" : ""} />
+              <CurrentStatusIcon size={22} className={!isCancelled && (activeIndex === 3 || activeIndex === 4 || isReturnOrExchangeOrRefund) ? "animate-pulse text-amber-400" : ""} />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -291,11 +332,19 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                 </span>
                 <span className="text-[10px] font-bold text-teal-200 bg-teal-800/50 px-2 py-0.5 rounded-full flex items-center gap-1 border border-teal-700/40">
                   <ShieldCheck size={11} className="text-emerald-400" />
-                  {isSelfDelivery ? '🛵 Direct Store Delivery' : '🚚 Courier Network Delivery'}
+                  {isCancelled
+                    ? '❌ Order Cancelled'
+                    : isReturnOrExchangeOrRefund
+                    ? (isRefunded ? '💳 Refund & Return Tracking' : '🔄 Return & Exchange Tracking')
+                    : (isSelfDelivery ? '🛵 Direct Store Delivery' : '🚚 Courier Network Delivery')}
                 </span>
               </div>
               <h3 className="font-display font-extrabold text-sm sm:text-base text-white leading-tight mt-0.5">
-                {isCancelled ? `Order #${orderId} (Cancelled)` : (order.items?.[0]?.name || `Order #${orderId}`)}
+                {isCancelled
+                  ? `Order #${orderId} (Cancelled)`
+                  : isReturnOrExchangeOrRefund
+                  ? (isRefunded ? `Return & Refund: Order #${orderId}` : `Return & Exchange: Order #${orderId}`)
+                  : (order.items?.[0]?.name || `Order #${orderId}`)}
               </h3>
             </div>
           </div>
@@ -399,7 +448,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
           )}
 
           {/* Handover OTP Highlight Banner (Live Courier Track / Self-Delivery) */}
-          {!isCancelled && deliveryOtp && (
+          {!isCancelled && !isReturnOrExchangeOrRefund && deliveryOtp && (
             <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
@@ -756,16 +805,34 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
               </button>
             ) : (
               <>
-                {['confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) && (
-                  <button
-                    type="button"
-                    onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'invoice')}
-                    className="px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl border border-teal-200 transition-colors cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText size={14} />
-                    <span>Download Tax Invoice</span>
-                  </button>
-                )}
+                {(() => {
+                  const hasPendingItems = !currentStatus || ['pending', 'placed', 'unconfirmed'].includes(currentStatus) || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
+                    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                    return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
+                  }));
+
+                  if (hasPendingItems) {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-semibold">
+                        <Lock size={12} /> Invoice locked until order confirmation
+                      </span>
+                    );
+                  }
+
+                  if (['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus)) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'invoice')}
+                        className="px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl border border-teal-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                      >
+                        <FileText size={14} />
+                        <span>Download Tax Invoice</span>
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
                 {(order.returnRequest?.requestType === 'exchange' || order.returnRequest?.type === 'exchange') && ['exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) && (
                   <button
                     type="button"

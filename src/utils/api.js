@@ -978,13 +978,14 @@ export async function confirmSellerAcceptanceApi(orderId) {
   });
 }
 
-export async function createSchoolBulkPrepaymentOrderApi(orderId) {
+export async function createSchoolBulkPrepaymentOrderApi(orderId, payload = {}) {
   const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
   return requestApi(`/schools/bulk-orders/${orderId}/advance-payment/create-order`, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
+    },
+    data: payload
   });
 }
 
