@@ -88,14 +88,15 @@ export const getReturnExchangeAvailability = (isRet, isExc, tillDateStr, daysLef
 // -------------------------------------------------------------
 
 export const KIDS_SHOE_SIZES = [
-  '1 Kids', '2 Kids', '3 Kids', '4 Kids', '5 Kids',
   '6 Kids', '7 Kids', '8 Kids', '9 Kids', '10 Kids',
   '11 Kids', '12 Kids', '13 Kids'
 ];
 
 export const SENIOR_SHOE_SIZES = [
-  'Size 6 (UK/IND)', 'Size 7 (UK/IND)', 'Size 8 (UK/IND)', 'Size 9 (UK/IND)',
-  'Size 10 (UK/IND)', 'Size 11 (UK/IND)', 'Size 12 (UK/IND)', 'Size 13 (UK/IND)'
+  'Size 1 (UK/IND)', 'Size 2 (UK/IND)', 'Size 3 (UK/IND)', 'Size 4 (UK/IND)',
+  'Size 5 (UK/IND)', 'Size 6 (UK/IND)', 'Size 7 (UK/IND)', 'Size 8 (UK/IND)',
+  'Size 9 (UK/IND)', 'Size 10 (UK/IND)', 'Size 11 (UK/IND)', 'Size 12 (UK/IND)',
+  'Size 13 (UK/IND)'
 ];
 
 export const WAIST_SIZES = [
@@ -212,13 +213,13 @@ export const getCategoryReplacementOptions = (activeItem = {}, fetchedProduct = 
       };
 
     case 'footwear': {
-      const isKids = /kids/i.test(currentSize) || (/^\d+$/.test(currentSize) && parseInt(currentSize, 10) <= 5);
+      const isKids = /kids/i.test(currentSize);
       return {
         categoryType: 'footwear',
         primaryTab: isKids ? 'kids' : 'senior',
         tabs: [
-          { id: 'kids', label: '👶 Kids Sizes (1 - 13 Kids)', options: KIDS_SHOE_SIZES },
-          { id: 'senior', label: '👟 Adult / Senior Sizes (UK 6 - 13)', options: SENIOR_SHOE_SIZES }
+          { id: 'kids', label: '👶 Kids Sizes (6 - 13 Kids)', options: KIDS_SHOE_SIZES },
+          { id: 'senior', label: '👟 Adult / Senior Sizes (UK 1 - 13)', options: SENIOR_SHOE_SIZES }
         ],
         productVariants
       };
