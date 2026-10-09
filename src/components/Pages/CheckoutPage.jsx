@@ -46,6 +46,7 @@ export default function CheckoutPage({ onNavigate }) {
     removeFromCart,
     subtotal,
     freeShippingThreshold,
+    shippingFee,
     userProfile,
     profileCompleteness,
     isProfileIncomplete,
@@ -268,10 +269,10 @@ export default function CheckoutPage({ onNavigate }) {
   }
 
   // Calculate pricing breakdown
-  const isFreeShipping = subtotal >= freeShippingThreshold || appliedCoupon?.type === 'freeship';
-  const baseShippingCost = isFreeShipping ? 0 : 49;
-  const expressExtraFee = deliverySpeed === 'express' ? 49 : 0;
-  const totalShippingCost = baseShippingCost + expressExtraFee;
+  const distinctProductsCount = selectedCartItems.length;
+  const isFreeShipping = subtotal >= freeShippingThreshold || appliedCoupon?.type === 'freeship' || shippingFee === 0;
+  const baseShippingCost = isFreeShipping ? 0 : (distinctProductsCount * (shippingFee ?? 49));
+  const totalShippingCost = baseShippingCost;
 
   let couponDiscount = 0;
   let isCouponCapped = false;
@@ -400,8 +401,8 @@ export default function CheckoutPage({ onNavigate }) {
         paymentStatus: paymentMethod === 'cod' ? 'Pending' : 'Paid',
         razorpayPaymentId: razorpayInfo.paymentId || null,
         razorpayOrderId: razorpayInfo.orderId || null,
-        deliverySpeed: deliverySpeed === 'express' ? 'Express Campus Priority (1-2 Days)' : 'Standard Delivery (3-5 Days)',
-        estimatedDelivery: deliverySpeed === 'express' ? 'Tuesday, 08 Sep' : 'Thursday, 10 Sep'
+        deliverySpeed: 'Standard Delivery (3-5 Days)',
+        estimatedDelivery: '3 - 5 Business Days'
       });
       setIsSubmitting(false);
       onNavigate('order-success');
@@ -790,61 +791,39 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
                 <div>
                   <h2 className="font-display text-lg sm:text-xl font-extrabold text-gray-900">
-                    Delivery Speed & Carrier
+                    Delivery Method & Dispatch
                   </h2>
                   <p className="text-xs text-gray-500">
-                    Select your preferred transit speed for school / college dispatch
+                    Fast and verified doorstep dispatch directly to your address
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* Standard */}
+              <div>
+                {/* Standard Doorstep Delivery */}
                 <div
-                  onClick={() => setDeliverySpeed('standard')}
-                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3.5 ${
-                    deliverySpeed === 'standard'
-                      ? 'border-brand-teal bg-brand-teal/5 ring-2 ring-brand-teal/10 shadow-xs'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
+                  className="p-4 rounded-2xl border-2 border-brand-teal bg-brand-teal/5 ring-2 ring-brand-teal/10 shadow-xs flex items-start gap-3.5"
                 >
                   <div className="p-2 bg-brand-teal/10 text-brand-teal rounded-xl shrink-0 mt-0.5">
                     <Truck size={18} />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-gray-900">Standard Delivery</span>
-                      <span className="text-xs font-bold text-emerald-700">
+                      <span className="text-xs font-extrabold text-gray-900">Standard Doorstep Delivery</span>
+                      <span className="text-xs font-extrabold text-emerald-700">
                         {baseShippingCost === 0 ? 'FREE' : `₹${baseShippingCost}`}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">3 - 5 Business Days via BlueDart / Delhivery</p>
-                    <p className="text-[11px] text-emerald-600 font-bold mt-1">
-                      {subtotal >= freeShippingThreshold ? '✓ Eligible for Free Delivery' : 'Standard Parcel Rate'}
+                    <p className="text-xs text-gray-500 mt-1">
+                      3 - 5 Business Days via BlueDart / Delhivery
+                      {!isFreeShipping && distinctProductsCount > 1 && (
+                        <span className="block text-[11px] text-gray-500 font-semibold mt-0.5">
+                          ({distinctProductsCount} products × ₹{shippingFee ?? 49})
+                        </span>
+                      )}
                     </p>
-                  </div>
-                </div>
-
-                {/* Express Campus Priority */}
-                <div
-                  onClick={() => setDeliverySpeed('express')}
-                  className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3.5 ${
-                    deliverySpeed === 'express'
-                      ? 'border-brand-teal bg-brand-teal/5 ring-2 ring-brand-teal/10 shadow-xs'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <div className="p-2 bg-brand-yellow/30 text-brand-teal-dark rounded-xl shrink-0 mt-0.5">
-                    <Clock size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-gray-900">Campus Express</span>
-                      <span className="text-xs font-extrabold text-brand-teal">+₹49</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">1 - 2 Days Priority Air Dispatch</p>
-                    <p className="text-[11px] text-brand-ochre font-extrabold mt-1">
-                      ⚡ Guaranteed Pre-Exam Fast Delivery
+                    <p className="text-[11px] text-emerald-600 font-bold mt-1">
+                      {isFreeShipping ? '✓ Eligible for Free Delivery' : `Standard Delivery Rate (Free on orders ₹${freeShippingThreshold}+)`}
                     </p>
                   </div>
                 </div>
@@ -1220,7 +1199,14 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
 
                 <div className="flex justify-between">
-                  <span>Delivery Speed</span>
+                  <span>
+                    Delivery Speed
+                    {!isFreeShipping && distinctProductsCount > 1 && (
+                      <span className="text-[11px] text-gray-400 block sm:inline sm:ml-1">
+                        ({distinctProductsCount} items × ₹{shippingFee ?? 49})
+                      </span>
+                    )}
+                  </span>
                   <span className="font-semibold text-gray-900">
                     {totalShippingCost === 0 ? (
                       <span className="text-emerald-700 font-bold">FREE</span>
@@ -1252,7 +1238,7 @@ export default function CheckoutPage({ onNavigate }) {
                 )}
 
                 <div className="flex justify-between text-gray-400">
-                  <span>GST / Campus Tax</span>
+                  <span>Estimated GST / Tax</span>
                   <span className="font-medium text-emerald-700">Included</span>
                 </div>
 
@@ -1312,7 +1298,7 @@ export default function CheckoutPage({ onNavigate }) {
                 </div>
                 <div className="flex items-center justify-center gap-1">
                   <Truck size={13} className="text-brand-teal" />
-                  <span>Safe Campus Delivery</span>
+                  <span>Safe Doorstep Delivery</span>
                 </div>
               </div>
             </div>

@@ -653,7 +653,7 @@ export function CartProvider({ children }) {
     }
   }, [promotions, setLocalStorageAsync]);
 
-  // Dynamic Free Shipping Threshold state (initialized from localStorage with fallback to 99)
+  // Dynamic Free Shipping Threshold state (initialized from localStorage with fallback to 999)
   const [freeShippingThreshold, setFreeShippingThreshold] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_free_shipping_threshold');
@@ -665,9 +665,27 @@ export function CartProvider({ children }) {
           return Number(parsed.minOrderFreeShipping || parsed.freeShippingThreshold);
         }
       }
-      return 500;
+      return 999;
     } catch {
-      return 500;
+      return 999;
+    }
+  });
+
+  // Dynamic Universal Delivery Charge state (initialized from localStorage with fallback to 49)
+  const [shippingFee, setShippingFee] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_shipping_fee');
+      if (saved) return Number(JSON.parse(saved));
+      const savedSettings = localStorage.getItem('admin_settings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        if (parsed.shippingFee !== undefined && parsed.shippingFee !== null) {
+          return Number(parsed.shippingFee);
+        }
+      }
+      return 49;
+    } catch {
+      return 49;
     }
   });
 
@@ -675,13 +693,24 @@ export function CartProvider({ children }) {
     if (backendEnabled) {
       fetchPublicSettingsFromBackend()
         .then((res) => {
-          if (res && (res.minOrderFreeShipping !== undefined || res.freeShippingThreshold !== undefined)) {
-            const val = Number(res.minOrderFreeShipping || res.freeShippingThreshold);
-            if (val > 0) {
-              setFreeShippingThreshold(val);
-              try {
-                localStorage.setItem('bv_free_shipping_threshold', JSON.stringify(val));
-              } catch (e) {}
+          if (res) {
+            if (res.minOrderFreeShipping !== undefined || res.freeShippingThreshold !== undefined) {
+              const val = Number(res.minOrderFreeShipping || res.freeShippingThreshold);
+              if (val >= 0) {
+                setFreeShippingThreshold(val);
+                try {
+                  localStorage.setItem('bv_free_shipping_threshold', JSON.stringify(val));
+                } catch (e) {}
+              }
+            }
+            if (res.shippingFee !== undefined && res.shippingFee !== null) {
+              const fee = Number(res.shippingFee);
+              if (!isNaN(fee) && fee >= 0) {
+                setShippingFee(fee);
+                try {
+                  localStorage.setItem('bv_shipping_fee', JSON.stringify(fee));
+                } catch (e) {}
+              }
             }
           }
         })
@@ -691,9 +720,15 @@ export function CartProvider({ children }) {
 
   useEffect(() => {
     const handleSync = (e) => {
-      if (e.detail && (e.detail.minOrderFreeShipping !== undefined || e.detail.freeShippingThreshold !== undefined)) {
-        const val = Number(e.detail.minOrderFreeShipping || e.detail.freeShippingThreshold);
-        if (val > 0) setFreeShippingThreshold(val);
+      if (e.detail) {
+        if (e.detail.minOrderFreeShipping !== undefined || e.detail.freeShippingThreshold !== undefined) {
+          const val = Number(e.detail.minOrderFreeShipping || e.detail.freeShippingThreshold);
+          if (val >= 0) setFreeShippingThreshold(val);
+        }
+        if (e.detail.shippingFee !== undefined && e.detail.shippingFee !== null) {
+          const fee = Number(e.detail.shippingFee);
+          if (!isNaN(fee) && fee >= 0) setShippingFee(fee);
+        }
       }
     };
     window.addEventListener('bv_settings_updated', handleSync);
@@ -1151,8 +1186,8 @@ export function CartProvider({ children }) {
   const totalItemsCount = Math.round(selectedCartItems.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0) * 100) / 100;
   const allCartItemsCount = Math.round(displayedCartItems.reduce((sum, item) => sum + (Number(item.quantity) || 1), 0) * 100) / 100;
   const subtotal = Math.round(selectedCartItems.reduce((sum, item) => sum + Math.round(((Number(item.price) || 0) * (Number(item.quantity) || 1)) * 100) / 100, 0) * 100) / 100;
-  const freeShippingProgress = Math.min(100, (subtotal / (freeShippingThreshold || 500)) * 100);
-  const freeShippingRemaining = Math.max(0, Math.round(((freeShippingThreshold || 500) - subtotal) * 100) / 100);
+  const freeShippingProgress = Math.min(100, (subtotal / (freeShippingThreshold || 999)) * 100);
+  const freeShippingRemaining = Math.max(0, Math.round(((freeShippingThreshold || 999) - subtotal) * 100) / 100);
 
   const wishlistProducts = (() => {
     if (!isAuthenticated || !displayedWishlist || displayedWishlist.length === 0) return [];
@@ -2182,6 +2217,7 @@ export function CartProvider({ children }) {
     totalItemsCount,
     subtotal,
     freeShippingThreshold,
+    shippingFee,
     freeShippingProgress,
     freeShippingRemaining,
     setIsCartOpen,
@@ -2251,6 +2287,7 @@ export function CartProvider({ children }) {
     totalItemsCount,
     subtotal,
     freeShippingThreshold,
+    shippingFee,
     freeShippingProgress,
     freeShippingRemaining,
     isAuthenticated,
@@ -2303,9 +2340,10 @@ export function useCart() {
       toastMessage: null,
       totalItemsCount: 0,
       subtotal: 0,
-      freeShippingThreshold: 500,
+      freeShippingThreshold: 999,
+      shippingFee: 49,
       freeShippingProgress: 0,
-      freeShippingRemaining: 500,
+      freeShippingRemaining: 999,
       setIsCartOpen: () => {},
       setIsWishlistOpen: () => {},
       addToCart: () => {},

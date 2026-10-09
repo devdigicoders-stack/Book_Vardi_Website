@@ -20,6 +20,7 @@ export default function CartDrawer({ onNavigate }) {
     subtotal,
     totalItemsCount,
     freeShippingThreshold,
+    shippingFee,
     freeShippingProgress,
     freeShippingRemaining,
     isAuthenticated,
@@ -33,7 +34,9 @@ export default function CartDrawer({ onNavigate }) {
   // Evaluate payment restrictions for chosen items to buy
   const cartPaymentRestrictions = getCartPaymentRestrictions(selectedCartItems);
 
-  const shippingCost = subtotal >= freeShippingThreshold || subtotal === 0 ? 0 : 49;
+  const distinctProductsCount = selectedCartItems.length;
+  const isFreeShipping = subtotal >= freeShippingThreshold || subtotal === 0 || shippingFee === 0;
+  const shippingCost = isFreeShipping ? 0 : (distinctProductsCount * (shippingFee ?? 49));
   const grandTotal = subtotal + shippingCost;
 
   const handleCheckout = () => {
@@ -313,7 +316,14 @@ export default function CartDrawer({ onNavigate }) {
               <span className="font-semibold text-gray-900">₹{Math.round(subtotal)}</span>
             </div>
             <div className="flex justify-between text-xs text-gray-600">
-              <span>Shipping</span>
+              <span>
+                Shipping
+                {shippingCost > 0 && distinctProductsCount > 1 && (
+                  <span className="text-[10px] text-gray-500 font-medium ml-1">
+                    ({distinctProductsCount} items × ₹{shippingFee ?? 49})
+                  </span>
+                )}
+              </span>
               <span className="font-semibold">
                 {shippingCost === 0 ? (
                   <span className="text-green-600 font-bold">FREE</span>

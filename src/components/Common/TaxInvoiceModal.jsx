@@ -207,46 +207,79 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     const lower = name.trim().toLowerCase();
     return (
       lower === '' ||
+      lower === 'bookvardi verified seller' ||
+      lower === 'bookvardi verified seller hub' ||
       lower === 'bookvardimerchant' ||
       lower === 'bookvardi merchant' ||
       lower === 'book vardi partner merchant' ||
+      lower === 'book vardi partner store' ||
+      lower === 'verified seller' ||
+      lower === 'other verified seller' ||
       lower === 'partner merchant' ||
       lower === 'unknown seller' ||
       lower === 'new merchant' ||
       lower === 'merchant store' ||
       lower === 'direct marketplace' ||
-      lower === 'n/a'
+      lower === 'seller' ||
+      lower === 'merchant' ||
+      lower === 'partner' ||
+      lower === 'n/a' ||
+      lower === 'null' ||
+      lower === 'undefined'
     );
   };
 
   const getItemSellerName = (item) => {
+    // 1. Direct populated seller on item
     if (item?.sellerId && typeof item.sellerId === 'object') {
-      const name = item.sellerId.storeName || item.sellerId.name || item.sellerId.sellerName || item.sellerId.legalName;
+      const name = item.sellerId.storeName || item.sellerId.tradeName || item.sellerId.businessName || item.sellerId.legalBusinessName || item.sellerId.storeDetails?.storeName || item.sellerId.name || item.sellerId.sellerName || item.sellerId.legalName;
       if (name && !isPlaceholderName(name)) return name;
     }
 
+    // 2. Direct seller attributes on item
     const candidateItemNames = [
       item?.sellerStoreName,
       item?.storeName,
-      item?.sellerName,
+      item?.sellerDetails?.storeName,
+      item?.sellerDetails?.tradeName,
+      item?.sellerDetails?.businessName,
+      item?.sellerDetails?.legalBusinessName,
+      item?.sellerDetails?.sellerName,
+      item?.tradeName,
+      item?.businessName,
       item?.legalBusinessName,
-      typeof item?.seller === 'string' ? item.seller : (item?.seller?.storeName || item?.seller?.name)
+      item?.sellerName,
+      typeof item?.seller === 'string' ? item.seller : (item?.seller?.storeName || item?.seller?.tradeName || item?.seller?.businessName || item?.seller?.name)
     ];
 
     for (const c of candidateItemNames) {
       if (c && !isPlaceholderName(c)) return c;
     }
 
+    // 3. Populated productId object on item
+    if (item?.productId && typeof item.productId === 'object') {
+      const pName = item.productId.sellerStoreName || item.productId.storeName || item.productId.tradeName || item.productId.legalBusinessName || item.productId.sellerName || item.productId.vendor || (item.productId.sellerId && typeof item.productId.sellerId === 'object' ? (item.productId.sellerId.storeName || item.productId.sellerId.name) : null);
+      if (pName && !isPlaceholderName(pName)) return pName;
+    }
+
+    // 4. Product catalog lookup by ID or title
     const prodIdStr = String(item?.productId || item?.id || item?._id || '');
-    if (prodIdStr) {
+    const cleanItemName = String(item?.name || item?.productName || item?.itemName || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+
+    const catalogKeys = ['bv_sync_products', 'admin_products', 'bv_seller_products'];
+    for (const catKey of catalogKeys) {
       try {
-        const catalogSaved = localStorage.getItem('bv_sync_products') || localStorage.getItem('admin_products') || localStorage.getItem('bv_seller_products');
+        const catalogSaved = localStorage.getItem(catKey);
         if (catalogSaved) {
           const catalog = JSON.parse(catalogSaved);
           if (Array.isArray(catalog)) {
-            const matchedProd = catalog.find(p => String(p.id || p._id || p.productId) === prodIdStr);
+            const matchedProd = catalog.find(p => {
+              const pId = String(p.id || p._id || p.productId || '');
+              const pName = String(p.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+              return (prodIdStr && pId === prodIdStr) || (cleanItemName && pName && (pName === cleanItemName || cleanItemName.includes(pName) || pName.includes(cleanItemName)));
+            });
             if (matchedProd) {
-              const pSeller = matchedProd.sellerStoreName || matchedProd.storeName || matchedProd.sellerName || matchedProd.legalBusinessName || (typeof matchedProd.seller === 'string' ? matchedProd.seller : matchedProd.seller?.storeName);
+              const pSeller = matchedProd.sellerStoreName || matchedProd.storeName || matchedProd.tradeName || matchedProd.businessName || matchedProd.legalBusinessName || matchedProd.sellerName || matchedProd.vendor || (typeof matchedProd.seller === 'string' ? matchedProd.seller : (matchedProd.seller?.storeName || matchedProd.seller?.name)) || matchedProd.sellerDetails?.storeName;
               if (pSeller && !isPlaceholderName(pSeller)) return pSeller;
             }
           }
@@ -254,45 +287,76 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       } catch (e) {}
     }
 
-    const sellerIdStr = String(item?.sellerId || '');
+    // 5. Seller directory lookup by seller ID or phone
+    const sellerIdStr = String(item?.sellerId || order?.sellerId || '');
     if (sellerIdStr && sellerIdStr !== '[object Object]') {
-      try {
-        const sellersSaved = localStorage.getItem('bv_sync_sellers') || localStorage.getItem('admin_sellers') || localStorage.getItem('bv_registered_users');
-        if (sellersSaved) {
-          const sellersList = JSON.parse(sellersSaved);
-          if (Array.isArray(sellersList)) {
-            const matchedSeller = sellersList.find(s => String(s.id || s._id || s.sellerId || s.phone || '') === sellerIdStr);
-            if (matchedSeller) {
-              const sName = matchedSeller.storeName || matchedSeller.sellerName || matchedSeller.storeDetails?.storeName || matchedSeller.name || matchedSeller.legalName || matchedSeller.ownerFullName;
-              if (sName && !isPlaceholderName(sName)) return sName;
+      const sellerKeys = ['admin_sellers', 'bv_sync_sellers', 'bv_registered_users'];
+      for (const selKey of sellerKeys) {
+        try {
+          const sellersSaved = localStorage.getItem(selKey);
+          if (sellersSaved) {
+            const sellersList = JSON.parse(sellersSaved);
+            if (Array.isArray(sellersList)) {
+              const matchedSeller = sellersList.find(s => {
+                const sId = String(s.id || s._id || s.sellerId || s.phone || '');
+                return sId === sellerIdStr || (sellerIdStr.length >= 8 && sId.endsWith(sellerIdStr.slice(-10)));
+              });
+              if (matchedSeller) {
+                const sName = matchedSeller.storeName || matchedSeller.tradeName || matchedSeller.businessName || matchedSeller.legalBusinessName || matchedSeller.storeDetails?.storeName || matchedSeller.sellerName || matchedSeller.name || matchedSeller.legalName || matchedSeller.ownerFullName;
+                if (sName && !isPlaceholderName(sName)) return sName;
+              }
             }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
     }
 
+    // 6. Order level candidates
     const candidateOrderNames = [
       order?.sellerStoreName,
-      order?.sellerName,
       order?.storeName,
-      order?.sellerId && typeof order.sellerId === 'object' ? (order.sellerId.storeName || order.sellerId.name || order.sellerId.sellerName) : null
+      order?.sellerDetails?.storeName,
+      order?.sellerDetails?.tradeName,
+      order?.sellerDetails?.businessName,
+      order?.sellerDetails?.legalBusinessName,
+      order?.sellerDetails?.sellerName,
+      order?.sellerId && typeof order.sellerId === 'object' ? (order.sellerId.storeName || order.sellerId.tradeName || order.sellerId.businessName || order.sellerId.name || order.sellerId.sellerName) : null,
+      order?.sellerName,
+      typeof order?.seller === 'string' ? order.seller : (order?.seller?.storeName || order?.seller?.name)
     ];
 
     for (const c of candidateOrderNames) {
       if (c && !isPlaceholderName(c)) return c;
     }
 
-    return 'BookVardi Verified Seller';
+    return 'Partner Store';
   };
 
   const resolveSeller = () => {
     const primaryName = getItemSellerName(items[0]);
-    const primaryGst = order.sellerDetails?.gstNumber || order.sellerDetails?.gst || order.sellerGst || order.items?.[0]?.sellerDetails?.gstNumber || items[0]?.sellerDetails?.gstNumber || items[0]?.gstNumber || items[0]?.sellerGst || '';
-    const primaryCity = order.sellerDetails?.city || order.sellerDetails?.address || order.sellerCity || order.items?.[0]?.sellerDetails?.city || items[0]?.sellerDetails?.city || 'Lucknow, Uttar Pradesh';
+    const primaryGst = [
+      order.sellerDetails?.gstNumber,
+      order.sellerDetails?.gst,
+      order.sellerGst,
+      order.gstNumber,
+      order.items?.[0]?.sellerDetails?.gstNumber,
+      items[0]?.sellerDetails?.gstNumber,
+      items[0]?.gstNumber,
+      items[0]?.sellerGst
+    ].find(g => g && g !== '09AAACB1234F1Z9' && g !== 'Exempt / N/A' && String(g).trim() !== '') || 'Exempt / N/A';
+
+    const primaryCity = [
+      order.sellerDetails?.city,
+      order.sellerDetails?.address,
+      order.sellerCity,
+      order.items?.[0]?.sellerDetails?.city,
+      items[0]?.sellerDetails?.city,
+      items[0]?.sellerCity
+    ].find(Boolean) || 'Lucknow, Uttar Pradesh';
     
     return {
-      storeName: primaryName || 'BookVardi Verified Seller',
-      gstNumber: (primaryGst && primaryGst !== '09AAACB1234F1Z9') ? primaryGst : 'Exempt / N/A',
+      storeName: primaryName || 'Partner Store',
+      gstNumber: primaryGst,
       city: primaryCity
     };
   };
@@ -479,11 +543,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-gray-50 p-4 rounded-xl border border-gray-200">
                 <div>
                   <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">
-                    {isCancelled ? 'Issued By (Merchant / Seller)' : 'Sold By (Merchant / Seller)'}
+                    {isCancelled ? 'Issued By (Merchant / Seller Store)' : 'Sold By (Merchant / Seller Store)'}
                   </span>
                   <p className="font-extrabold text-gray-900 text-sm">{primarySellerName}</p>
-                  <p className="text-gray-600 mt-0.5">Location / City: {primarySellerCity}</p>
-                  <p className="text-gray-700 font-mono font-bold mt-1">GSTIN: {primarySellerGst}</p>
+                  <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-sm border border-emerald-200">
+                    <ShieldCheck size={12} className="shrink-0" /> Verified Seller Partner
+                  </span>
+                  <p className="text-gray-600 mt-1">Location / City: {primarySellerCity}</p>
+                  <p className="text-gray-700 font-mono font-bold mt-0.5">GSTIN: {primarySellerGst}</p>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">
@@ -504,7 +571,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                 <tr className="bg-gray-100 text-gray-700 border-b border-gray-200 font-extrabold uppercase text-[10px]">
                   <th className="py-2.5 px-3 w-10 text-center">#</th>
                   <th className="py-2.5 px-3">{isCancelled ? 'Cancelled Item Details' : 'Item Details'}</th>
-                  <th className="py-2.5 px-3">Sold By (Seller)</th>
+                  <th className="py-2.5 px-3">Sold By (Seller Store)</th>
                   <th className="py-2.5 px-3 text-center w-14">Qty</th>
                   <th className="py-2.5 px-3 text-right w-24">Unit Price</th>
                   <th className="py-2.5 px-3 text-right w-28">{isCancelled ? 'Refunded Gross' : 'Total Price'}</th>
@@ -528,7 +595,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                         </div>
                       </td>
                       <td className="py-2.5 px-3">
-                        <span className="font-semibold text-gray-800 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[150px]" title={sellerName}>
+                        <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[150px]" title={sellerName}>
                           {sellerName}
                         </span>
                       </td>

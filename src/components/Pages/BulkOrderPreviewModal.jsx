@@ -1635,6 +1635,11 @@ export default function BulkOrderPreviewModal({
                                     <CheckCircle2 size={10} /> Vendor Accepted Your Counter-Demand
                                   </span>
                                 )}
+                                {(quote.acceptanceMode === 'target_budget' || quote.acceptedAtTargetBudget) && (
+                                  <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 shadow-2xs">
+                                    <CheckCircle2 size={11} className="text-emerald-700" /> Accepted at Target Budget
+                                  </span>
+                                )}
                                 {quote.negotiationStage === 'revised_by_seller' && (
                                   <span className="bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
                                     <Sparkles size={10} /> Vendor Revised Terms

@@ -104,7 +104,8 @@ export default function ProductDetailPage({ onNavigate }) {
     promotions = [],
     applyCoupon,
     appliedCoupon,
-    freeShippingThreshold = 499,
+    freeShippingThreshold = 999,
+    shippingFee = 49,
     isAuthenticated,
     openAuthModal,
     fetchActivePromotions
@@ -474,7 +475,11 @@ export default function ProductDetailPage({ onNavigate }) {
       {/* 1. Dynamic Free Delivery */}
       <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
         <Truck size={16} className="text-brand-teal shrink-0" />
-        <span>Free delivery on ₹{freeShippingThreshold || 499}+</span>
+        <span>
+          {shippingFee === 0
+            ? 'Free Delivery on All Orders'
+            : `Delivery: ₹${shippingFee} per product (Free on orders ₹${freeShippingThreshold || 999}+)`}
+        </span>
       </div>
 
       {/* 2. Dynamic Dispatch Timeline */}
