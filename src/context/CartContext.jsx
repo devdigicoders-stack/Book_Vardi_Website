@@ -1437,7 +1437,9 @@ export function CartProvider({ children }) {
 
     if (backendEnabled && phone && (otp || verifiedUser)) {
       try {
-        const response = otp ? await loginWithPhoneOtpBackend({ phone, otp }) : { user: verifiedUser };
+        const response = (userData?.token && verifiedUser)
+          ? { user: verifiedUser, token: userData.token }
+          : (otp ? await loginWithPhoneOtpBackend({ phone, otp }) : { user: verifiedUser });
         const apiUser = response?.user || verifiedUser || { ...userData, phone };
         const token = response?.token || userData?.token;
         if (token) {
