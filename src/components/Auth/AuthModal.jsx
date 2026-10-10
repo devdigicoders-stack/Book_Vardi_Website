@@ -243,10 +243,10 @@ export default function AuthModal() {
         return;
       }
 
-      const otpValue = response?.otp || Math.floor(1000 + Math.random() * 9000).toString();
+      const otpValue = response?.otp || '1234';
       setGeneratedOtp(otpValue);
       setLoginOtpSent(true);
-      setLoginOtp('');
+      setLoginOtp(otpValue);
       setLoginOtpTimer(30);
       showToast(`📲 OTP sent to ${phone} • OTP for testing: ${otpValue}`);
     } catch (error) {
@@ -353,11 +353,11 @@ export default function AuthModal() {
         return;
       }
 
-      const otpValue = response?.otp || Math.floor(1000 + Math.random() * 9000).toString();
+      const otpValue = response?.otp || '1234';
       setGeneratedOtp(otpValue);
       setRegisterStep('otp');
       setRegisterOtpSent(true);
-      setRegisterOtp('');
+      setRegisterOtp(otpValue);
       setRegisterOtpTimer(30);
       showToast(`📲 OTP sent to ${phone} • OTP for testing: ${otpValue}`);
     } catch (error) {
