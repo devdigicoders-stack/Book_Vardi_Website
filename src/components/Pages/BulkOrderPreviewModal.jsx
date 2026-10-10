@@ -69,6 +69,20 @@ export default function BulkOrderPreviewModal({
     const targetId = propOrder?.referenceId || propOrder?._id || propOrder?.id;
     if (targetId && (userRole === 'consumer' || userRole === 'admin')) {
       fetchSingleBulkOrderApi(targetId).then(res => {
+        if (res?.accessDenied || (res?.success === false && res?.message?.toLowerCase().includes("access denied"))) {
+          alert(res?.message || "Access denied. This bulk order was created by another user.");
+          ['bv_customer_bulk_orders', 'bv_sync_school_orders'].forEach(key => {
+            try {
+              const list = JSON.parse(localStorage.getItem(key) || '[]');
+              const filtered = list.filter(o => String(o.id || o._id) !== String(targetId) && o.referenceId !== targetId);
+              localStorage.setItem(key, JSON.stringify(filtered));
+            } catch (e) {}
+          });
+          window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
+          if (onClose) onClose();
+          return;
+        }
+
         if (res?.success && res.order) {
           setInternalOrder(res.order);
           ['bv_customer_bulk_orders', 'bv_sync_school_orders'].forEach(key => {
@@ -82,7 +96,12 @@ export default function BulkOrderPreviewModal({
             } catch (e) {}
           });
         }
-      }).catch(() => {});
+      }).catch(err => {
+        if (err?.response?.status === 403 || err?.message?.toLowerCase().includes("access denied")) {
+          alert("Access denied. This bulk order was created by another user.");
+          if (onClose) onClose();
+        }
+      });
     }
   }, [propOrder?._id, propOrder?.referenceId, userRole]);
 

@@ -433,9 +433,11 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
       }
     }
 
-    // Always store to local storage backup so inquiry is immediately visible in customer profile
+    // Store to user-scoped local storage backup so inquiry is immediately visible in customer profile
     try {
-      const localOrders = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
+      const userKey = currentUserPhone ? currentUserPhone.replace(/\D/g, '').slice(-10) : (currentUserId || 'guest');
+      const storageKey = `bv_customer_bulk_orders_${userKey}`;
+      const localOrders = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem('bv_customer_bulk_orders') || '[]');
       const savedPayload = {
         ...payload,
         id: finalRefId,
@@ -443,8 +445,21 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
         referenceId: finalRefId,
         createdAt: new Date().toISOString()
       };
-      localOrders.unshift(savedPayload);
-      localStorage.setItem('bv_customer_bulk_orders', JSON.stringify(localOrders));
+      
+      const filtered = localOrders.filter(o => o.referenceId !== finalRefId && o.id !== finalRefId && o._id !== finalRefId);
+      filtered.unshift(savedPayload);
+      localStorage.setItem(storageKey, JSON.stringify(filtered));
+      localStorage.setItem('bv_customer_bulk_orders', JSON.stringify(filtered));
+
+      // Record in current session if guest
+      try {
+        const sessionRefs = JSON.parse(sessionStorage.getItem('bv_guest_bulk_refs') || '[]');
+        if (!sessionRefs.includes(finalRefId)) {
+          sessionRefs.push(finalRefId);
+          sessionStorage.setItem('bv_guest_bulk_refs', JSON.stringify(sessionRefs));
+        }
+      } catch (e) {}
+
       savedSuccessfully = true;
     } catch (e) {
       console.error('Failed to save to local storage:', e);

@@ -181,6 +181,9 @@ export async function requestApi(endpoint, options = {}) {
     const errorDetail = responseData?.error ? `: ${responseData.error}` : '';
     const message = (responseData?.message || error?.message || 'API request failed') + errorDetail;
     if (options.fallback !== undefined) {
+      if (error?.response?.status === 403) {
+        return { success: false, accessDenied: true, message: responseData?.message || 'Access denied' };
+      }
       return options.fallback;
     }
 
@@ -867,24 +870,10 @@ export async function fetchCustomerSchoolBulkOrdersApi(phone = '', userId = '', 
     } catch (e) {}
   }
 
-  // Also gather any local referenceIds stored in the browser
-  const localRefIds = [];
-  try {
-    const list1 = JSON.parse(localStorage.getItem('bv_customer_bulk_orders') || '[]');
-    const list2 = JSON.parse(localStorage.getItem('bv_sync_school_orders') || '[]');
-    [...list1, ...list2].forEach(o => {
-      const r = o.referenceId || o.refId || (typeof o.id === 'string' && o.id.startsWith('BULK-') ? o.id : '');
-      if (r && !localRefIds.includes(r)) {
-        localRefIds.push(r);
-      }
-    });
-  } catch (e) {}
-
   const queryParams = new URLSearchParams();
   if (finalPhone) queryParams.append('phone', finalPhone);
   if (finalUserId) queryParams.append('userId', finalUserId);
   if (finalEmail) queryParams.append('email', finalEmail);
-  if (localRefIds.length > 0) queryParams.append('referenceIds', localRefIds.join(','));
   const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
 
   return requestApi(`/schools/bulk-orders/my-orders${qs}`, {
@@ -893,8 +882,7 @@ export async function fetchCustomerSchoolBulkOrdersApi(phone = '', userId = '', 
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(finalPhone ? { 'x-user-phone': finalPhone } : {}),
       ...(finalUserId ? { 'x-user-id': finalUserId } : {}),
-      ...(finalEmail ? { 'x-user-email': finalEmail } : {}),
-      ...(localRefIds.length > 0 ? { 'x-reference-ids': localRefIds.join(',') } : {})
+      ...(finalEmail ? { 'x-user-email': finalEmail } : {})
     },
     fallback: { orders: [] }
   });

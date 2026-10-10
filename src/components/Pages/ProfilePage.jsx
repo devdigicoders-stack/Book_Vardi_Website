@@ -196,24 +196,22 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
       const belongsToMe = (order) => {
         if (!order) return false;
-        // 1. By Local Reference ID (order was created or viewed locally in this browser)
+
+        const oUserId = String(order.userId?._id || order.userId?.id || order.userId || order.user || order.customerId || '');
+        const oPhone = String(order.userPhone || order.contactPhone || order.phone || '').replace(/\D/g, '').slice(-10);
+        const oEmail = String(order.userEmail || order.contactEmail || order.email || '').trim().toLowerCase();
+
+        // If user is logged in, strictly enforce ownership matching against authenticated user profile
+        if (myId || myPhone || myEmail) {
+          if (myId && oUserId && oUserId === myId) return true;
+          if (myPhone && oPhone && myPhone.length >= 10 && myPhone === oPhone) return true;
+          if (myEmail && oEmail && !myEmail.includes('@bookvardi.local') && myEmail === oEmail) return true;
+          return false;
+        }
+
+        // Guest user: only allow orders created in this local browser session
         const ref = String(order.referenceId || order.id || order._id || '');
         if (ref && localRefIdSet.has(ref)) return true;
-
-        // 2. Verified by authenticated backend response
-        if (order._isFromApi) return true;
-
-        // 3. By User ID
-        const oUserId = String(order.userId || order.user || order.customerId || '');
-        if (myId && oUserId && oUserId === myId) return true;
-
-        // 4. By Phone number (last 10 digits match)
-        const oPhone = String(order.userPhone || order.contactPhone || order.phone || '').replace(/\D/g, '').slice(-10);
-        if (myPhone && oPhone && myPhone.length >= 10 && myPhone === oPhone) return true;
-
-        // 5. By Email (excluding placeholder local emails)
-        const oEmail = String(order.userEmail || order.contactEmail || order.email || '').trim().toLowerCase();
-        if (myEmail && oEmail && !myEmail.includes('@bookvardi.local') && myEmail === oEmail) return true;
 
         return false;
       };
