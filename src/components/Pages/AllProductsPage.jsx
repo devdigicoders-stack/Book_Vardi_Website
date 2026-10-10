@@ -11,10 +11,155 @@ import {
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
-import { fetchProductsFromBackend, fetchCategoriesFromBackend } from '../../utils/api';
+import { fetchProductsFromBackend, fetchCategoriesFromBackend, fetchKitsFromBackend } from '../../utils/api';
 import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 const CHUNK_SIZE = 8;
+
+export function isCategorySelected(selectedCat, cat) {
+  if (!selectedCat || !cat) return false;
+  const clean = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const target = clean(selectedCat);
+  return (
+    target === clean(cat.slug) ||
+    target === clean(cat.name) ||
+    target === clean(cat.id) ||
+    target === clean(cat._id)
+  );
+}
+
+export function isProductInCategory(product, targetCat, allCategories = []) {
+  if (!targetCat || targetCat === 'all') return true;
+  if (!product) return false;
+
+  const clean = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const catObj = (Array.isArray(allCategories) ? allCategories : []).find((c) => {
+    const sId = clean(c?.id);
+    const sSlug = clean(c?.slug);
+    const sName = clean(c?.name);
+    const sTarget = clean(targetCat);
+    return sId === sTarget || sSlug === sTarget || sName === sTarget;
+  });
+
+  const targetClean = clean(targetCat);
+  const targetNameClean = clean(catObj?.name || targetCat);
+  const targetSlugClean = clean(catObj?.slug || targetCat);
+
+  const prodCatClean = clean(product.category);
+  const prodSubCatClean = clean(product.subCategory);
+  const prodNameClean = clean(product.name);
+
+  // 1. Kits & Bundles filter
+  if (targetClean.includes('kit') || targetClean.includes('bundle')) {
+    if (
+      product.isKit ||
+      product.category === 'kits' ||
+      product.bundleType === 'kit' ||
+      (Array.isArray(product.kitItems) && product.kitItems.length > 0) ||
+      prodCatClean.includes('kit') ||
+      prodSubCatClean.includes('kit') ||
+      prodSubCatClean.includes('bundle')
+    ) {
+      return true;
+    }
+  }
+
+  // 2. Uniforms filter
+  if (targetClean.includes('uniform')) {
+    if (
+      prodCatClean.includes('uniform') ||
+      product.isSchoolSpecific ||
+      product.category === 'school_specific' ||
+      prodSubCatClean.includes('wear') ||
+      prodSubCatClean.includes('stitched')
+    ) {
+      return true;
+    }
+  }
+
+  // 3. Books filter
+  if (targetClean.includes('book')) {
+    if (targetClean.includes('ncert')) {
+      return prodSubCatClean.includes('ncert') || prodNameClean.includes('ncert') || prodCatClean.includes('ncert');
+    }
+    if (targetClean.includes('practice') || targetClean.includes('olympiad')) {
+      return (
+        prodSubCatClean.includes('practice') ||
+        prodSubCatClean.includes('olympiad') ||
+        prodNameClean.includes('practice')
+      );
+    }
+    if (targetClean.includes('drawing')) {
+      return prodSubCatClean.includes('drawing') || prodNameClean.includes('drawing') || prodCatClean.includes('drawing');
+    }
+    return prodCatClean.includes('book');
+  }
+
+  // 4. Drawing / Art filter
+  if (targetClean.includes('drawing') || targetClean.includes('art') || targetClean.includes('kid')) {
+    if (
+      prodSubCatClean.includes('drawing') ||
+      prodSubCatClean.includes('art') ||
+      prodCatClean.includes('drawing') ||
+      prodNameClean.includes('drawing') ||
+      prodNameClean.includes('crayon') ||
+      prodNameClean.includes('color') ||
+      prodNameClean.includes('colour') ||
+      prodNameClean.includes('paint')
+    ) {
+      return true;
+    }
+  }
+
+  // 5. Stationery / Notebook filter
+  if (targetClean.includes('station') || targetClean.includes('notebook')) {
+    if (
+      prodCatClean.includes('station') ||
+      prodCatClean.includes('notebook') ||
+      prodSubCatClean.includes('station') ||
+      prodSubCatClean.includes('notebook') ||
+      prodSubCatClean.includes('register')
+    ) {
+      return true;
+    }
+  }
+
+  // 6. Footwear filter
+  if (targetClean.includes('footwear') || targetClean.includes('shoe') || targetClean.includes('sock')) {
+    if (
+      prodCatClean.includes('footwear') ||
+      prodCatClean.includes('shoe') ||
+      prodCatClean.includes('sock') ||
+      prodSubCatClean.includes('shoe') ||
+      prodSubCatClean.includes('sock')
+    ) {
+      return true;
+    }
+  }
+
+  // 7. Direct matches
+  if (
+    (prodCatClean && (prodCatClean === targetClean || prodCatClean === targetNameClean || prodCatClean === targetSlugClean)) ||
+    (prodSubCatClean && (prodSubCatClean === targetClean || prodSubCatClean === targetNameClean || prodSubCatClean === targetSlugClean)) ||
+    (targetNameClean && prodCatClean && (prodCatClean.includes(targetNameClean) || targetNameClean.includes(prodCatClean))) ||
+    (targetNameClean && prodSubCatClean && (prodSubCatClean.includes(targetNameClean) || targetNameClean.includes(prodSubCatClean)))
+  ) {
+    return true;
+  }
+
+  // 8. If category object has subcategories, check if product matches any
+  if (catObj && Array.isArray(catObj.subCategories)) {
+    const matchesSub = catObj.subCategories.some((sub) => {
+      const subName = typeof sub === 'string' ? sub : (sub?.name || sub?.title || '');
+      const subClean = clean(subName);
+      return subClean && (prodSubCatClean.includes(subClean) || prodNameClean.includes(subClean));
+    });
+    if (matchesSub) return true;
+  }
+
+  return false;
+}
 
 export default function AllProductsPage({
   onNavigate,
@@ -59,37 +204,66 @@ export default function AllProductsPage({
       .catch(() => setCategories(CATEGORY_STRUCTURE));
   }, []);
 
-  // Fetch products from backend with smooth background revalidation
+  // Fetch all products and kits from backend
   useEffect(() => {
     let isMounted = true;
     if (products.length === 0) {
       setLoading(true);
     }
 
-    fetchProductsFromBackend({
-      category: selectedCategory || undefined,
-      search: (externalOnSearchChange ? externalSearchQuery : internalSearchQuery) || undefined,
-      limit: 100
-    })
-      .then((res) => {
-        if (!isMounted) return;
-        const list = res?.products || res || [];
-        if (Array.isArray(list) && list.length > 0) {
-          setProducts(list);
-        } else if (products.length === 0) {
-          setProducts([]);
+    Promise.allSettled([
+      fetchProductsFromBackend({ limit: 100 }),
+      fetchKitsFromBackend()
+    ]).then(([prodsRes, kitsRes]) => {
+      if (!isMounted) return;
+      let combined = [];
+
+      if (prodsRes.status === 'fulfilled') {
+        const prodList = prodsRes.value?.products || (Array.isArray(prodsRes.value) ? prodsRes.value : []);
+        if (Array.isArray(prodList)) {
+          combined = [...combined, ...prodList];
         }
-        setLoading(false);
-      })
-      .catch(() => {
-        if (!isMounted) return;
-        setLoading(false);
-      });
+      }
+
+      if (kitsRes.status === 'fulfilled') {
+        const kitList = kitsRes.value?.kits || (Array.isArray(kitsRes.value) ? kitsRes.value : []);
+        if (Array.isArray(kitList)) {
+          const formattedKits = kitList.map((k) => ({
+            _id: k._id || k.id,
+            id: k.id || k._id,
+            name: k.title || k.name,
+            category: 'School Bags And Kit',
+            subCategory: 'Kit and Bundle',
+            bundleType: 'kit',
+            price: k.totalPrice || k.price,
+            mrp: k.mrp || k.originalPrice,
+            image: k.image || (Array.isArray(k.images) ? k.images[0] : ''),
+            images: Array.isArray(k.images) && k.images.length > 0 ? k.images : (k.image ? [k.image] : []),
+            rating: k.rating || 4.5,
+            reviewCount: k.reviewCount || 0,
+            status: 'available',
+            approvalStatus: 'approved',
+            schoolName: k.schoolName,
+            classGrade: k.classGrade,
+            isKit: true
+          }));
+          combined = [...combined, ...formattedKits];
+        }
+      }
+
+      if (combined.length > 0) {
+        setProducts(combined);
+      }
+      setLoading(false);
+    }).catch(() => {
+      if (!isMounted) return;
+      setLoading(false);
+    });
 
     return () => {
       isMounted = false;
     };
-  }, [selectedCategory, externalSearchQuery, internalSearchQuery, externalOnSearchChange]);
+  }, []);
 
   // Sync external search query from navbar if changed
   useEffect(() => {
@@ -107,7 +281,7 @@ export default function AllProductsPage({
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       // Exclude unapproved products & kits from website display
-      const isKit = product.category === 'kits' || product.bundleType === 'kit' || (Array.isArray(product.kitItems) && product.kitItems.length > 0);
+      const isKit = product.isKit || product.category === 'kits' || product.bundleType === 'kit' || (Array.isArray(product.kitItems) && product.kitItems.length > 0);
       const appStat = String(product.approvalStatus || product.approval_status || '').toLowerCase().trim();
       if (isKit) {
         if (appStat !== 'approved') return false;
@@ -118,10 +292,18 @@ export default function AllProductsPage({
       if (product.status === 'deleted' || product.status === 'inactive' || product.isDeleted) return false;
 
       // Category match
-      const catSlug = selectedCategory;
-      const matchesCategory = (catSlug && catSlug !== 'all')
-        ? (product.category === catSlug || product.subCategory === catSlug || (catSlug === 'school_specific' && (product.category === 'uniforms' || product.isSchoolSpecific)))
-        : true;
+      const matchesCategory = isProductInCategory(product, selectedCategory, categories);
+
+      // Search query match
+      let matchesSearch = true;
+      if (activeSearchQuery && activeSearchQuery.trim()) {
+        const q = activeSearchQuery.trim().toLowerCase();
+        const pName = String(product.name || '').toLowerCase();
+        const pCat = String(product.category || '').toLowerCase();
+        const pSub = String(product.subCategory || '').toLowerCase();
+        const pSchool = String(product.schoolName || '').toLowerCase();
+        matchesSearch = pName.includes(q) || pCat.includes(q) || pSub.includes(q) || pSchool.includes(q);
+      }
 
       // Price match
       let matchesPrice = true;
@@ -152,7 +334,7 @@ export default function AllProductsPage({
         ? wishlist.some((id) => String(id) === String(prodId))
         : true;
 
-      return matchesCategory && matchesPrice && matchesRating && matchesAvailability && matchesOffers && matchesWishlist;
+      return matchesCategory && matchesSearch && matchesPrice && matchesRating && matchesAvailability && matchesOffers && matchesWishlist;
     }).sort((a, b) => {
       if (sortBy === 'price-low') return a.price - b.price;
       if (sortBy === 'price-high') return b.price - a.price;
@@ -166,7 +348,7 @@ export default function AllProductsPage({
       }
       return 0; // 'featured' keeps default
     });
-  }, [products, selectedCategory, priceFilter, sortBy, onlyLiked, wishlist, ratingFilter, availabilityFilter, offersFilter]);
+  }, [products, selectedCategory, categories, activeSearchQuery, priceFilter, sortBy, onlyLiked, wishlist, ratingFilter, availabilityFilter, offersFilter]);
 
 
   // Load next chunk callback
@@ -421,14 +603,14 @@ export default function AllProductsPage({
             </button>
 
             {categories.map((cat) => {
-              const catId = cat.slug || cat.id || cat._id || cat.name?.toLowerCase().replace(/\s+/g, '_');
-              const isSelected = selectedCategory === catId;
+              const catIdentifier = cat.slug || cat.name || cat.id;
+              const isSelected = isCategorySelected(selectedCategory, cat);
               const catImg = cat.imageUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=300&auto=format&fit=crop&q=80';
 
               return (
                 <button
-                  key={cat._id || cat.id || catId}
-                  onClick={() => handleCategorySelect(isSelected ? null : catId)}
+                  key={cat._id || cat.id || catIdentifier}
+                  onClick={() => handleCategorySelect(isSelected ? null : catIdentifier)}
                   className={`flex flex-col items-center gap-1.5 shrink-0 snap-start transition-all cursor-pointer group w-[70px] ${
                     isSelected ? 'scale-105' : 'hover:scale-105'
                   }`}
