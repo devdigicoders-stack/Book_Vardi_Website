@@ -53,13 +53,13 @@ export default function TopAnnouncementBar({ onNavigate, onVisibilityChange }) {
   const barBgColor = topItem?.bgColor || null;
   const barTextColor = topItem?.textColor || null;
 
-  // Duplicate items 4x to guarantee a 100% seamless infinite loop without any visual gaps
-  const marqueeItems = [
-    ...activeAnnouncements,
-    ...activeAnnouncements,
-    ...activeAnnouncements,
-    ...activeAnnouncements
-  ];
+  // Calculate repetitions and smooth duration so the ticker scrolls gently and is easy to read
+  const repeatCount = Math.max(4, Math.ceil(8 / Math.max(1, activeAnnouncements.length)));
+  const safeRepeatCount = repeatCount % 2 === 0 ? repeatCount : repeatCount + 1;
+  const marqueeItems = Array.from({ length: safeRepeatCount }, () => activeAnnouncements).flat();
+
+  // Set duration to ~18-20s per item in the 50% loop for a calm, comfortable reading pace (minimum 70s)
+  const scrollDurationSeconds = Math.max(70, Math.round((safeRepeatCount / 2) * activeAnnouncements.length * 18));
 
   return (
     <>
@@ -76,9 +76,10 @@ export default function TopAnnouncementBar({ onNavigate, onVisibilityChange }) {
           display: flex;
           width: max-content;
           will-change: transform;
-          animation: bvSeamlessMarquee 28s linear infinite;
+          animation: bvSeamlessMarquee ${scrollDurationSeconds}s linear infinite;
         }
-        .animate-bv-seamless-marquee:hover {
+        .animate-bv-seamless-marquee:hover,
+        .animate-bv-seamless-marquee:active {
           animation-play-state: paused;
         }
       `}</style>
