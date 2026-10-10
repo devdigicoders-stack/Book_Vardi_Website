@@ -1667,6 +1667,20 @@ export function CartProvider({ children }) {
       localStorage.removeItem('book_vardi_is_authenticated');
       localStorage.removeItem('book_vardi_wishlist_v2');
       localStorage.removeItem('book_vardi_items_v2');
+      localStorage.removeItem('book_vardi_auth_token');
+      localStorage.removeItem('token');
+      localStorage.removeItem('bv_customer_bulk_orders');
+      localStorage.removeItem('bv_sync_school_orders');
+      localStorage.removeItem('admin_school_orders');
+      
+      // Clean up any per-user bulk order caches
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('bv_customer_bulk_orders')) {
+          localStorage.removeItem(k);
+        }
+      });
+      sessionStorage.removeItem('bv_guest_bulk_refs');
+      window.dispatchEvent(new CustomEvent('bv_school_orders_updated'));
     } catch (e) {}
     showToast('Logged out successfully. See you soon! 👋');
   };
@@ -1986,7 +2000,6 @@ export function CartProvider({ children }) {
 
     const isCod = /cod|cash\s*on\s*delivery/i.test(String(orderData.paymentMethod || ''));
     const initialPaymentStatus = orderData.paymentStatus || (isCod ? 'Pending' : 'Paid');
-    const sharedDeliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
 
     const newOrder = {
       id: randomId,
@@ -1998,19 +2011,19 @@ export function CartProvider({ children }) {
       courierName: orderData.courierName || 'N/A',
       deliveryMode: orderData.deliveryMode || 'pending_choice',
       paymentStatus: initialPaymentStatus,
-      deliveryOtp: sharedDeliveryOtp,
+      deliveryOtp: '',
       customer: {
         name: userProfile?.name || orderData?.shippingAddress?.name || 'Student Customer',
         email: userProfile?.email || orderData?.shippingAddress?.email || '',
         phone: userProfile?.phone || orderData?.shippingAddress?.phone || ''
       },
       sellerDetails: orderData.sellerDetails || null,
-      selfDeliveryDetails: orderData.selfDeliveryDetails ? { ...orderData.selfDeliveryDetails, deliveryOtp: sharedDeliveryOtp } : { deliveryOtp: sharedDeliveryOtp },
+      selfDeliveryDetails: orderData.selfDeliveryDetails || null,
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
       items: itemsToBuy.map((item) => ({
         ...item,
         status: item.status || 'pending',
-        deliveryOtp: sharedDeliveryOtp
+        deliveryOtp: ''
       })),
       subtotal: orderData.subtotal,
       shippingCost: orderData.shippingCost,
@@ -2045,8 +2058,8 @@ export function CartProvider({ children }) {
       total: orderData.total,
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
       status: 'Pending',
-      deliveryOtp: sharedDeliveryOtp,
-      selfDeliveryDetails: orderData.selfDeliveryDetails ? { ...orderData.selfDeliveryDetails, deliveryOtp: sharedDeliveryOtp } : { deliveryOtp: sharedDeliveryOtp },
+      deliveryOtp: '',
+      selfDeliveryDetails: orderData.selfDeliveryDetails || null,
       paymentMethod: orderData.paymentMethod || 'UPI',
       paymentStatus: initialPaymentStatus,
       shippingAddress: typeof orderData.shippingAddress === 'object'

@@ -197,19 +197,7 @@ export default function ProductDetailPage({ onNavigate }) {
     ? totalVariantStock
     : Number(selectedProduct?.stock !== undefined ? selectedProduct.stock : (selectedProduct?.stockQuantity !== undefined ? selectedProduct.stockQuantity : 50));
 
-  const baseVariantOption = (basePrice > 0) ? {
-    size: 'Base Product',
-    price: basePrice,
-    mrp: realBaseMrp,
-    image: selectedProduct?.image,
-    isBase: true,
-    stock: totalProductStock,
-    stockQuantity: totalProductStock
-  } : null;
-
-  const sizeVariants = (baseVariantOption && rawSizeVariants.length > 0 && !rawSizeVariants.some(v => String(v.size || '').toLowerCase().includes('base')))
-    ? [baseVariantOption, ...rawSizeVariants]
-    : rawSizeVariants;
+  const sizeVariants = rawSizeVariants.length > 0 ? rawSizeVariants : [];
 
   const isMeterProduct = Boolean(
     selectedProduct?.isMeterBased ||
@@ -1075,6 +1063,23 @@ export default function ProductDetailPage({ onNavigate }) {
                       />
                     </button>
                   ))}
+                </div>
+
+                {/* Selected Size & Available Stock Summary directly under image gallery */}
+                <div className="flex items-center justify-between p-2.5 bg-gray-50/90 rounded-xl border border-gray-200 text-xs">
+                  <span className="text-gray-700 font-bold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-brand-teal"></span>
+                    {selectedSize ? `Size: ${selectedSize}` : 'Current Product Stock:'}
+                  </span>
+                  <span className={`font-bold font-mono px-2.5 py-0.5 rounded-full text-xs border ${
+                    currentVariantStock > 10
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : currentVariantStock > 0
+                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                  }`}>
+                    {currentVariantStock > 0 ? `${currentVariantStock} Available in Stock` : 'Out of Stock'}
+                  </span>
                 </div>
 
                 {/* Student Confidence Badges (Desktop) */}

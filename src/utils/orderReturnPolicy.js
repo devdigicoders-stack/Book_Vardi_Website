@@ -88,15 +88,13 @@ export const getReturnExchangeAvailability = (isRet, isExc, tillDateStr, daysLef
 // -------------------------------------------------------------
 
 export const KIDS_SHOE_SIZES = [
-  '6 Kids', '7 Kids', '8 Kids', '9 Kids', '10 Kids',
-  '11 Kids', '12 Kids', '13 Kids'
+  '6 Kids', '7 Kids', '8 Kids', '9 Kids', '10 Kids'
 ];
 
 export const SENIOR_SHOE_SIZES = [
   'Size 1 (UK/IND)', 'Size 2 (UK/IND)', 'Size 3 (UK/IND)', 'Size 4 (UK/IND)',
   'Size 5 (UK/IND)', 'Size 6 (UK/IND)', 'Size 7 (UK/IND)', 'Size 8 (UK/IND)',
-  'Size 9 (UK/IND)', 'Size 10 (UK/IND)', 'Size 11 (UK/IND)', 'Size 12 (UK/IND)',
-  'Size 13 (UK/IND)'
+  'Size 9 (UK/IND)', 'Size 10 (UK/IND)'
 ];
 
 export const WAIST_SIZES = [
@@ -197,11 +195,16 @@ export const getCategoryReplacementOptions = (activeItem = {}, fetchedProduct = 
   const catType = getItemCategoryType(activeItem, fetchedProduct);
   const currentSize = String(activeItem?.size || '').trim();
 
-  // Collect any direct DB product sizeVariants
+  // Collect direct DB product sizeVariants strictly filtered to in-stock items
   const productVariants = fetchedProduct?.sizeVariants || fetchedProduct?.variants || activeItem?.sizeVariants || activeItem?.variants || [];
-  const dbSizeOptions = (Array.isArray(productVariants) && productVariants.length > 0)
-    ? productVariants.map(v => v.size || v.measureValue).filter(Boolean)
+  const inStockVariants = (Array.isArray(productVariants) && productVariants.length > 0)
+    ? productVariants.filter(v => {
+        const stk = Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 1));
+        return stk > 0;
+      })
     : [];
+
+  const dbSizeOptions = inStockVariants.map(v => v.size || v.measureValue).filter(Boolean);
 
   switch (catType) {
     case 'unstitched':
@@ -209,31 +212,33 @@ export const getCategoryReplacementOptions = (activeItem = {}, fetchedProduct = 
         categoryType: 'unstitched',
         tabs: [],
         primaryTab: 'fabric_length',
-        productVariants
+        productVariants: inStockVariants.length > 0 ? inStockVariants : productVariants
       };
 
     case 'footwear': {
       const isKids = /kids/i.test(currentSize);
       return {
         categoryType: 'footwear',
-        primaryTab: isKids ? 'kids' : 'senior',
+        primaryTab: dbSizeOptions.length > 0 ? 'configured' : (isKids ? 'kids' : 'senior'),
         tabs: [
-          { id: 'kids', label: '👶 Kids Sizes (6 - 13 Kids)', options: KIDS_SHOE_SIZES },
-          { id: 'senior', label: '👟 Adult / Senior Sizes (UK 1 - 13)', options: SENIOR_SHOE_SIZES }
+          ...(dbSizeOptions.length > 0 ? [{ id: 'configured', label: '🏷️ In-Stock Available Sizes', options: dbSizeOptions }] : []),
+          { id: 'kids', label: '👶 Kids Sizes (6 - 10 Kids)', options: KIDS_SHOE_SIZES },
+          { id: 'senior', label: '👟 Adult / Senior Sizes (UK 1 - 10)', options: SENIOR_SHOE_SIZES }
         ],
-        productVariants
+        productVariants: inStockVariants.length > 0 ? inStockVariants : productVariants
       };
     }
 
     case 'apparel_bottom': {
       return {
         categoryType: 'apparel_bottom',
-        primaryTab: 'waist',
+        primaryTab: dbSizeOptions.length > 0 ? 'configured' : 'waist',
         tabs: [
+          ...(dbSizeOptions.length > 0 ? [{ id: 'configured', label: '🏷️ In-Stock Available Sizes', options: dbSizeOptions }] : []),
           { id: 'waist', label: '👖 Waist Sizes (24" - 40")', options: WAIST_SIZES },
           { id: 'standard', label: '👕 Standard Alpha (XS - 3XL)', options: STANDARD_APPAREL_SIZES }
         ],
-        productVariants
+        productVariants: inStockVariants.length > 0 ? inStockVariants : productVariants
       };
     }
 
@@ -242,12 +247,12 @@ export const getCategoryReplacementOptions = (activeItem = {}, fetchedProduct = 
         categoryType: 'apparel_top',
         primaryTab: dbSizeOptions.length > 0 ? 'configured' : 'standard',
         tabs: [
-          ...(dbSizeOptions.length > 0 ? [{ id: 'configured', label: '🏷️ Available Sizes', options: dbSizeOptions }] : []),
+          ...(dbSizeOptions.length > 0 ? [{ id: 'configured', label: '🏷️ In-Stock Available Sizes', options: dbSizeOptions }] : []),
           { id: 'standard', label: '👕 Standard Alpha (XS - 3XL)', options: STANDARD_APPAREL_SIZES },
           { id: 'kids_uniform', label: '🎓 School Uniform Number Sizes (22 - 36)', options: KIDS_UNIFORM_SIZES },
           { id: 'waist', label: '👖 Waist Sizes (24" - 40")', options: WAIST_SIZES }
         ],
-        productVariants
+        productVariants: inStockVariants.length > 0 ? inStockVariants : productVariants
       };
     }
 
