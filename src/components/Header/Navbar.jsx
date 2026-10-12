@@ -5,24 +5,6 @@ import { useLocation } from '../../context/LocationContext';
 import { NAV_LINKS } from '../../constants/navigation';
 import GlobalSearch from './GlobalSearch';
 import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend, resolveImageUrl } from '../../utils/api';
-import { CATEGORY_STRUCTURE } from '../../constants/categories';
-
-
-
-const MEGA_MENU_DATA = {
-  uniforms: ['Boys Summer', 'Boys Winter', 'Girls Summer', 'Girls Winter', 'Sports & PT', 'House T-Shirts'],
-  ncert: ['Class 1-5', 'Class 6-8', 'Class 9-10', 'Class 11-12', 'Science & Math', 'Humanities'],
-  practice_books: ['Olympiad Prep', 'Grammar Books', 'Math Workbooks', 'Cursive Writing', 'Sample Papers'],
-  drawing_books: ['Magic Coloring', 'Sketch Books', 'Water Reveal', 'Art Activity', 'Origami'],
-  school_specific: ['Delhi Public School', 'Kendriya Vidyalaya', 'Ryan International', 'Apeejay School', 'DAV Public'],
-  sports: ['PT T-Shirts', 'Trackpants', 'Sports Shorts', 'House Uniforms'],
-  shoes: ['Black Leather Shoes', 'White Canvas Shoes', 'Sports Shoes', 'Socks'],
-  winter: ['Sweaters & Cardigans', 'School Blazers', 'Thermals', 'Winter Caps'],
-  rain: ['Raincoats', 'Umbrellas', 'Waterproof Covers'],
-  supplies: ['Pens & Pencils', 'Geomtery Boxes', 'Notebooks', 'Lunch Boxes', 'Water Bottles'],
-  bags: ['School Backpacks', 'Trolley Bags', 'Pencil Cases', 'Laptop Bags'],
-  kits: ['Full Academic Kits', 'Exam Revision', 'Art Starter Kit', 'Gift Hampers']
-};
 
 // Extracted from original Navbar DesktopProfileDropdown
 function DesktopProfileDropdown({
@@ -425,13 +407,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
     onNavigate(view);
   };
 
-  const defaultCategoryList = CATEGORY_STRUCTURE.map(c => ({
-    id: c.name,
-    name: c.name,
-    subCategories: c.subCategories.map(sub => ({ name: sub }))
-  }));
-
-  const activeCategoriesTree = categoriesTree && categoriesTree.length > 0 ? categoriesTree : defaultCategoryList;
+  const activeCategoriesTree = Array.isArray(categoriesTree) ? categoriesTree : [];
 
   const renderMegaMenu = (isMobile = false) => {
     return (
@@ -446,9 +422,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
           {activeCategoriesTree.map((category) => {
             const catName = category.name || category.title || 'Category';
             const catId = category.slug || category._id || category.id || catName;
-            const subList = Array.isArray(category.subCategories) && category.subCategories.length > 0
-              ? category.subCategories
-              : (MEGA_MENU_DATA[catId] || []);
+            const subList = Array.isArray(category.subCategories) ? category.subCategories : [];
 
               return (
                 <div key={category._id || category.id || catId} className={isMobile ? 'flex flex-col gap-2' : 'flex flex-col gap-3 min-w-[140px] max-w-[180px]'}>
