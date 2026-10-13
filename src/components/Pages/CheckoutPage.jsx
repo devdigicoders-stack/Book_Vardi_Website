@@ -409,9 +409,9 @@ export default function CheckoutPage({ onNavigate }) {
 
     let paymentLabel = paymentMethod === 'upi' ? 'UPI / Online Payment' : 'Cash on Delivery (COD)';
 
-    const executeDirectOrder = (label, address, razorpayInfo = {}) => {
+    const executeDirectOrder = async (label, address, razorpayInfo = {}) => {
       try {
-        placeOrder({
+        await placeOrder({
           subtotal,
           taxAmount: extraTaxAmount,
           shippingCost: totalShippingCost,
@@ -425,11 +425,12 @@ export default function CheckoutPage({ onNavigate }) {
           deliverySpeed: 'Standard Delivery (3-5 Days)',
           estimatedDelivery: '3 - 5 Business Days'
         });
-      } catch (err) {
-        console.error('Order placement execution caught error:', err);
-      } finally {
         setIsSubmitting(false);
         onNavigate('order-success');
+      } catch (err) {
+        setIsSubmitting(false);
+        console.error('Order placement execution caught error:', err);
+        showToast(err?.message || 'Failed to place order. Please try again.');
       }
     };
 
@@ -527,7 +528,7 @@ export default function CheckoutPage({ onNavigate }) {
                   console.warn('Razorpay signature verification info:', vErr);
                 }
 
-                executeDirectOrder(
+                await executeDirectOrder(
                   `${paymentLabel} (Razorpay ID: ${response.razorpay_payment_id})`,
                   activeShippingAddress,
                   { paymentId: response.razorpay_payment_id, orderId: response.razorpay_order_id }

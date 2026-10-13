@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   User,
   Heart,
@@ -38,7 +38,9 @@ import {
   ArrowRightLeft,
   CreditCard,
   ArrowRight,
-  FileText
+  FileText,
+  Copy,
+  Key
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
@@ -96,6 +98,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const [selectedBulkOrderTab, setSelectedBulkOrderTab] = useState('specs');
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
   const [trackingModalOrder, setTrackingModalOrder] = useState(null);
+  const activeTrackingOrder = useMemo(() => {
+    if (!trackingModalOrder) return null;
+    const targetId = trackingModalOrder.id || trackingModalOrder._id || trackingModalOrder.orderId;
+    return userProfile?.orders?.find(o => (o.id || o._id || o.orderId) === targetId) || trackingModalOrder;
+  }, [userProfile?.orders, trackingModalOrder]);
   const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
   const [cancelModalOrder, setCancelModalOrder] = useState(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -327,6 +334,25 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       }
     }
   }, [activeTab, fetchUserOrders]);
+
+  useEffect(() => {
+    const handleOrderSync = () => {
+      if (fetchUserOrders) {
+        fetchUserOrders();
+      }
+    };
+    window.addEventListener('bv_orders_updated', handleOrderSync);
+    const onStorage = (e) => {
+      if (e.key === 'bv_order_sync_timestamp' || e.key === 'book_vardi_user_profile') {
+        handleOrderSync();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('bv_orders_updated', handleOrderSync);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [fetchUserOrders]);
 
   useEffect(() => {
     const loadBulkOrders = () => {
@@ -2278,6 +2304,53 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 </div>
                               )}
 
+                              {/* Active Return Pickup or Exchange Handover OTP Badge */}
+                              {(() => {
+                                const retOtp = order.deliveryOtp || order.selfDeliveryDetails?.deliveryOtp || order.deliveryDetails?.deliveryOtp || order.returnRequest?.deliveryOtp;
+                                const isEx = order.returnRequest?.type === 'exchange';
+                                const isDone = isEx
+                                  ? (currentStatus === 'exchanged' || order.returnRequest?.status === 'exchanged')
+                                  : (['product_received', 'product_return_received', 'returned', 'refund_completed', 'refunded'].includes(currentStatus) || ['product_received', 'product_return_received', 'returned', 'refund_completed', 'refunded'].includes(order.returnRequest?.status));
+                                if (!retOtp || isDone || currentStatus.includes('reject')) return null;
+
+                                return (
+                                  <div className={`flex items-center justify-between p-2.5 rounded-xl border ${
+                                    isEx ? 'bg-purple-50/90 border-purple-300 text-purple-950' : 'bg-cyan-50/90 border-cyan-300 text-cyan-950'
+                                  }`}>
+                                    <div className="flex items-center gap-2">
+                                      <Key size={15} className={isEx ? 'text-purple-700 shrink-0' : 'text-cyan-700 shrink-0'} />
+                                      <div>
+                                        <span className="text-[10px] font-black uppercase tracking-wider block">
+                                          {isEx ? 'Exchange Handover Security OTP' : 'Return Pickup Security OTP'}
+                                        </span>
+                                        <span className="text-[10px] text-gray-600">
+                                          {isEx ? 'Share with rider upon replacement delivery' : 'Share with rider upon item collection'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`font-mono text-sm font-black px-2 py-0.5 rounded-md border shadow-2xs ${
+                                        isEx ? 'bg-white text-purple-950 border-purple-400' : 'bg-white text-cyan-950 border-cyan-400'
+                                      }`}>
+                                        {retOtp}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard?.writeText(String(retOtp));
+                                          alert(`Copied ${isEx ? 'Exchange' : 'Return'} OTP: ${retOtp}`);
+                                        }}
+                                        className="p-1 rounded bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 cursor-pointer"
+                                        title="Copy OTP"
+                                      >
+                                        <Copy size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
                               {/* Direct Statutory PDF Action Buttons */}
                               <div className="pt-2 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-2">
                                 {(order.returnRequest?.type === 'return' || ['refund_completed', 'refunded', 'product_received', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus)) && (
@@ -3888,7 +3961,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       <OrderTrackingModal
         isOpen={isTrackingModalOpen}
         onClose={() => setIsTrackingModalOpen(false)}
-        order={trackingModalOrder}
+        order={activeTrackingOrder || trackingModalOrder}
       />
 
       <CancelOrderModal

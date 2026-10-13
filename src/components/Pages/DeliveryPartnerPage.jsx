@@ -134,9 +134,41 @@ export default function DeliveryPartnerPage({ onNavigate }) {
         const ord = res.order;
         setOrder(ord);
         setError(null);
-        if (ord.overallStatus?.toLowerCase() === 'delivered') {
-          setDeliverySuccess(true);
+        const statusStr = String(ord.overallStatus || ord.status || '').toLowerCase().trim();
+        const retReqType = String(ord.returnRequest?.type || '').toLowerCase().trim();
+        const retReqStatus = String(ord.returnRequest?.status || '').toLowerCase().trim();
+
+        const isExchange = Boolean(
+          ord.isExchangeTask ||
+          retReqType === 'exchange' ||
+          statusStr.includes('exchange')
+        );
+        const isReturn = Boolean(
+          ord.isReturnTask ||
+          retReqType === 'return' ||
+          (!isExchange && Boolean(retReqType || ord.returnRequest?.reason)) ||
+          statusStr.includes('return')
+        );
+
+        let isCompleted = false;
+        if (isExchange) {
+          // Exchange handover requires customer OTP verification; only 'exchanged' indicates finished task
+          isCompleted = (statusStr === 'exchanged' || retReqStatus === 'exchanged');
+        } else if (isReturn) {
+          // Return pickup is completed once verified by rider with OTP
+          const delStatus = String(ord.deliveryStatus || '').toLowerCase();
+          const selfStatus = String(ord.selfDeliveryDetails?.status || '').toLowerCase();
+          isCompleted = (
+            statusStr === 'returned' ||
+            retReqStatus === 'returned' ||
+            ((statusStr === 'product_received' || retReqStatus === 'product_received') && (delStatus.includes('returned') || selfStatus.includes('completed') || delStatus.includes('completed')))
+          );
+        } else {
+          // Regular forward delivery
+          isCompleted = (statusStr === 'delivered' || statusStr === 'completed');
         }
+
+        setDeliverySuccess(Boolean(isCompleted));
         const isBulkPaid = Boolean(ord.isBulkOrder) && (ord.paymentStatus === 'paid' || ord.remainingPaymentStatus === 'paid');
         const isOnline = !ord.isBulkOrder && (
           !String(ord.paymentMethod || '').toUpperCase().includes('COD') &&
@@ -277,9 +309,18 @@ export default function DeliveryPartnerPage({ onNavigate }) {
   const rawStatus = String(order?.paymentStatus || '').trim().toLowerCase();
 
   const isExchangeOrder = Boolean(
+    order?.isExchangeTask ||
     order?.returnRequest?.type === 'exchange' ||
     String(order?.overallStatus || order?.status || '').toLowerCase().includes('exchange')
   );
+  const isReturnOrder = Boolean(
+    order?.isReturnTask ||
+    order?.returnRequest?.type === 'return' ||
+    (!isExchangeOrder && Boolean(order?.returnRequest?.type || order?.returnRequest?.reason)) ||
+    String(order?.overallStatus || order?.status || '').toLowerCase().includes('return') ||
+    String(order?.overallStatus || order?.status || '').toLowerCase().includes('pickup')
+  );
+
   const returnReq = order?.returnRequest || {};
   const exchangeDiff = Number(returnReq.priceDifference || 0);
   const exchangeAdjType = returnReq.priceAdjustmentType || (exchangeDiff > 0 ? 'extra_payment' : exchangeDiff < 0 ? 'partial_refund' : 'none');
@@ -287,7 +328,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
   const isExchangeRefund = isExchangeOrder && (exchangeAdjType === 'partial_refund' || exchangeDiff < 0);
   const isExchangeEqual = isExchangeOrder && (exchangeAdjType === 'none' || exchangeDiff === 0);
 
-  const isCod = !isExchangeOrder && Boolean(
+  const isCod = !isExchangeOrder && !isReturnOrder && Boolean(
     order?.isCod ||
     rawMethod.includes('cod') ||
     rawMethod.includes('cash')
@@ -305,11 +346,13 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     (order?.overallStatus === 'Delivered' && (rawStatus === 'paid' || rawStatus === 'completed'))
   );
 
-  const isOnlinePaid = !order?.isBulkOrder && !isCod && !isExchangeOrder && (
+  const isOnlinePaid = !order?.isBulkOrder && !isCod && !isExchangeOrder && !isReturnOrder && (
     rawStatus === 'paid' || rawStatus === 'completed'
   );
 
-  const isPaymentVerified = isExchangeOrder
+  const isPaymentVerified = isReturnOrder
+    ? true // Reverse pickup requires no payment collection from customer
+    : isExchangeOrder
     ? (!isExchangeExtraPayment || isCashVerifiedByExecutive || deliverySuccess)
     : (order?.isBulkOrder ? isBulkPaid : (isOnlinePaid || isCashCollected));
 
@@ -378,21 +421,31 @@ export default function DeliveryPartnerPage({ onNavigate }) {
         setDeliverySuccess(true);
         setOtpError('');
         setOtpDigits(['', '', '', '']);
-        setResendMsg(res?.message || '🎉 Delivery OTP verified successfully! Order marked as Delivered.');
-        const finalStatus = isExchangeOrder ? 'exchanged' : 'Delivered';
+        const successMsg = isReturnOrder
+          ? '📦 Return Pickup OTP verified! Item marked as Product Received & Restocked.'
+          : isExchangeOrder
+          ? '🔄 Exchange OTP verified! Order marked as Exchanged.'
+          : '🎉 Delivery OTP verified successfully! Order marked as Delivered.';
+        setResendMsg(res?.message || successMsg);
+        const finalStatus = isReturnOrder ? 'product_received' : isExchangeOrder ? 'exchanged' : 'Delivered';
         setOrder((prev) => (prev ? {
           ...prev,
           overallStatus: finalStatus,
           status: finalStatus,
-          paymentStatus: 'paid',
-          returnRequest: prev.returnRequest ? { ...prev.returnRequest, status: 'exchanged' } : null
+          paymentStatus: isReturnOrder ? prev.paymentStatus : 'paid',
+          returnRequest: prev.returnRequest ? { ...prev.returnRequest, status: finalStatus } : null
         } : prev));
         window.dispatchEvent(new CustomEvent('bv_orders_updated'));
         try {
           localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
         } catch (e) {}
       } else {
-        setOtpError(res?.message || 'Invalid Delivery OTP code. Please ask customer for the correct 4-digit PIN.');
+        const defaultErr = isReturnOrder
+          ? 'Invalid Return Pickup OTP. Please ask customer for correct 4-digit PIN.'
+          : isExchangeOrder
+          ? 'Invalid Exchange OTP. Please ask customer for correct 4-digit PIN.'
+          : 'Invalid Delivery OTP code. Please ask customer for the correct 4-digit PIN.';
+        setOtpError(res?.message || defaultErr);
       }
     } catch (err) {
       setOtpError(err.message || 'Verification failed. Please check OTP code.');
@@ -460,8 +513,16 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               <Truck size={22} className="text-amber-300" />
             </div>
             <div>
-              <h1 className="font-extrabold text-base leading-tight">BookVardi Delivery Executive</h1>
-              <p className="text-[11px] text-teal-200 font-medium">Task #{order?.orderId || token}</p>
+              <h1 className="font-extrabold text-base leading-tight">
+                {isReturnOrder
+                  ? 'BookVardi Reverse Pickup Portal'
+                  : isExchangeOrder
+                  ? 'BookVardi Exchange Portal'
+                  : 'BookVardi Delivery Executive'}
+              </h1>
+              <p className="text-[11px] text-teal-200 font-medium">
+                {isReturnOrder ? 'Return Task' : isExchangeOrder ? 'Exchange Task' : 'Delivery Task'} #{order?.orderId || token}
+              </p>
             </div>
           </div>
           <button
@@ -503,9 +564,19 @@ export default function DeliveryPartnerPage({ onNavigate }) {
             {deliverySuccess ? (
               <div className="bg-emerald-600 text-white p-5 rounded-2xl shadow-lg text-center space-y-2 animate-in zoom-in-95 duration-200">
                 <CheckCircle size={48} className="mx-auto text-amber-300 animate-bounce" />
-                <h2 className="text-xl font-extrabold">Delivery Completed! 🎉</h2>
+                <h2 className="text-xl font-extrabold">
+                  {isReturnOrder
+                    ? 'Return Pickup Completed! 📦'
+                    : isExchangeOrder
+                    ? 'Exchange Handover Completed! 🔄'
+                    : 'Delivery Completed! 🎉'}
+                </h2>
                 <p className="text-xs text-emerald-100">
-                  Customer OTP verified successfully for Order #{order?.orderId}.
+                  {isReturnOrder
+                    ? `Customer Return OTP verified for Order #${order?.orderId}. Item marked as Product Received and restocked.`
+                    : isExchangeOrder
+                    ? `Customer Exchange OTP verified for Order #${order?.orderId}. Handover successfully recorded.`
+                    : `Customer OTP verified successfully for Order #${order?.orderId}.`}
                 </p>
               </div>
             ) : (
@@ -515,9 +586,11 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     <Clock size={22} />
                   </div>
                   <div>
-                    <span className="text-[10px] font-extrabold uppercase text-gray-500 tracking-wider">Order Status</span>
+                    <span className="text-[10px] font-extrabold uppercase text-gray-500 tracking-wider">
+                      {isReturnOrder ? 'Pickup Status' : isExchangeOrder ? 'Exchange Status' : 'Order Status'}
+                    </span>
                     <div className="font-extrabold text-gray-900 text-base flex items-center gap-1.5">
-                      {order?.overallStatus || 'Out for Delivery'}
+                      {order?.overallStatus || (isReturnOrder ? 'Out for Pickup' : 'Out for Delivery')}
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                     </div>
                   </div>
@@ -525,6 +598,13 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <div className="text-right">
                   <span className="text-[10px] font-extrabold uppercase text-gray-400">Payment</span>
                   {(() => {
+                    if (isReturnOrder) {
+                      return (
+                        <div className="text-xs font-extrabold px-2.5 py-1 rounded-lg border bg-blue-50 text-blue-900 border-blue-200">
+                          📦 Return (Collect ₹0)
+                        </div>
+                      );
+                    }
                     if (isExchangeOrder) {
                       if (isExchangeExtraPayment) {
                         return isCashVerifiedByExecutive || deliverySuccess ? (
@@ -586,6 +666,68 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                       </div>
                     );
                   })()}
+                </div>
+              </div>
+            )}
+
+            {/* Reverse Pickup (Product Return Task) Card */}
+            {isReturnOrder && (
+              <div className="bg-gradient-to-r from-cyan-950 via-teal-900 to-slate-900 text-white rounded-2xl p-4 shadow-lg space-y-3 border border-cyan-400/40 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between border-b border-white/20 pb-2">
+                  <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5 text-cyan-300">
+                    <span className="text-sm">📦</span> Reverse Pickup (Product Return Task)
+                  </span>
+                  <span className="text-[10px] font-extrabold bg-cyan-400 text-teal-950 px-2.5 py-0.5 rounded-full font-mono uppercase tracking-wide">
+                    Return Pickup
+                  </span>
+                </div>
+
+                {/* Step 1: Collect Item */}
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10 space-y-1">
+                  <div className="text-[11px] font-extrabold uppercase text-cyan-300 flex items-center gap-1">
+                    <span>📦 1. COLLECT FROM CUSTOMER:</span>
+                  </div>
+                  <div className="text-xs font-bold text-white">
+                    {returnReq.itemName || order?.items?.[0]?.name || 'Purchased Product'}
+                  </div>
+                  <div className="text-[11px] text-cyan-100">
+                    Delivered Specification: <strong className="text-white font-mono">{order?.items?.[0]?.size ? `Size: ${order?.items?.[0]?.size}` : (returnReq.isMeterBased ? `Length: ${order?.items?.[0]?.quantity}m` : 'Delivered piece')}</strong>
+                  </div>
+                  {returnReq.reason && (
+                    <div className="text-[10px] text-cyan-200 italic pt-0.5">
+                      Return Reason: "{returnReq.reason}"
+                    </div>
+                  )}
+                  {returnReq.comment && (
+                    <div className="text-[10px] text-cyan-200/80 italic">
+                      Customer Comment: "{returnReq.comment}"
+                    </div>
+                  )}
+                </div>
+
+                {/* Step 2: Quality Inspection Checklist */}
+                <div className="bg-white/10 rounded-xl p-3 border border-white/10 space-y-1">
+                  <div className="text-[11px] font-extrabold uppercase text-amber-300 flex items-center gap-1">
+                    <span>🔍 2. DOORSTEP QUALITY CHECKLIST:</span>
+                  </div>
+                  <ul className="text-[11px] text-teal-100 space-y-0.5 list-disc list-inside">
+                    <li>Product tags & labels must be intact</li>
+                    <li>Item must be unwashed, unused, and undamaged</li>
+                    <li>Original packaging included if available</li>
+                  </ul>
+                </div>
+
+                {/* Step 3: Payment Notice */}
+                <div className="rounded-xl p-3 border bg-emerald-500/20 border-emerald-400 text-emerald-100">
+                  <div className="text-xs font-black uppercase flex items-center justify-between mb-1">
+                    <span>💰 3. Cash / Payment Collection:</span>
+                    <span className="text-sm font-mono font-black text-white">
+                      COLLECT ₹0
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    ✅ <strong>Do NOT collect any money from customer.</strong> The full refund of ₹{order?.totalAmount || returnReq.refundAmount || 0} is transferred directly to the customer's account after pickup verification.
+                  </p>
                 </div>
               </div>
             )}
@@ -850,6 +992,20 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                       </span>
                     </div>
                   )
+                ) : isReturnOrder ? (
+                  <div className="p-3.5 bg-gradient-to-r from-teal-800 to-cyan-900 text-white rounded-2xl shadow-md flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-black flex items-center gap-1.5">
+                        <CheckCircle size={18} className="text-cyan-300" /> Return Pickup: No Cash Collection (₹0)
+                      </span>
+                      <span className="text-[10px] text-teal-100 block font-medium">
+                        Doorstep return pickup • Refund processed directly to customer account • Ready for OTP verification
+                      </span>
+                    </div>
+                    <span className="font-mono text-xs font-bold bg-white/20 px-2 py-0.5 rounded-md shrink-0">
+                      Collect ₹0
+                    </span>
+                  </div>
                 ) : isExchangeOrder ? (
                   isExchangeExtraPayment ? (
                     !isCashVerifiedByExecutive ? (
@@ -972,7 +1128,21 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-teal-900 text-xs font-semibold flex items-start gap-2">
                   <ShieldCheck size={18} className="text-teal-700 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold">Doorstep OTP & Payment Security:</span> 4-digit PIN is sent directly to customer's phone. Verifying OTP marks payment as <strong className="text-teal-950 uppercase font-bold">PAID</strong> and order as <strong className="text-teal-950 uppercase font-bold">DELIVERED</strong>.
+                    <span className="font-bold">
+                      {isReturnOrder
+                        ? 'Doorstep Return OTP Security:'
+                        : isExchangeOrder
+                        ? 'Doorstep Exchange OTP Security:'
+                        : 'Doorstep OTP & Payment Security:'}
+                    </span>{' '}
+                    4-digit PIN is sent directly to customer's phone.{' '}
+                    {isReturnOrder ? (
+                      <>Verifying OTP marks item as <strong className="text-teal-950 uppercase font-bold">PRODUCT RECEIVED</strong> and auto-restores inventory stock.</>
+                    ) : isExchangeOrder ? (
+                      <>Verifying OTP marks task as <strong className="text-teal-950 uppercase font-bold">EXCHANGED</strong> and confirms 2-way item handover.</>
+                    ) : (
+                      <>Verifying OTP marks payment as <strong className="text-teal-950 uppercase font-bold">PAID</strong> and order as <strong className="text-teal-950 uppercase font-bold">DELIVERED</strong>.</>
+                    )}
                   </div>
                 </div>
 
@@ -991,7 +1161,11 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                     {resending
                       ? 'Resending OTP...'
                       : isPaymentVerified
-                      ? "📲 Resend OTP to Customer's Phone"
+                      ? (isReturnOrder
+                        ? "📲 Resend Return Pickup OTP to Customer"
+                        : isExchangeOrder
+                        ? "📲 Resend Exchange OTP to Customer"
+                        : "📲 Resend OTP to Customer's Phone")
                       : "🔒 Verify Cash Payment First to Send/Resend OTP"}
                   </span>
                 </button>
@@ -1000,7 +1174,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <button
                   onClick={() => {
                     if (!isPaymentVerified) {
-                      alert('Please collect & verify cash payment before proceeding to OTP verification.');
+                      alert('Please collect & verify payment before proceeding to OTP verification.');
                       return;
                     }
                     setIsOtpModalOpen(true);
@@ -1015,7 +1189,11 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                   <Key size={18} className={isPaymentVerified ? 'text-amber-300' : 'text-gray-400'} />
                   <span>
                     {isPaymentVerified
-                      ? 'Complete Delivery & Verify OTP'
+                      ? (isReturnOrder
+                        ? 'Complete Return Pickup & Verify OTP'
+                        : isExchangeOrder
+                        ? 'Complete Exchange & Verify OTP'
+                        : 'Complete Delivery & Verify OTP')
                       : '🔒 Verify Payment to Complete Delivery'}
                   </span>
                 </button>
@@ -1025,7 +1203,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
         )}
       </div>
 
-      {/* Complete Delivery OTP Verification Modal */}
+      {/* Complete Delivery / Return / Exchange OTP Verification Modal */}
       {isOtpModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
@@ -1034,11 +1212,21 @@ export default function DeliveryPartnerPage({ onNavigate }) {
                 <Key size={24} />
               </div>
               <h3 className="text-lg font-black text-gray-900">
-                {String(order?.paymentMethod || '').toUpperCase().includes('COD') || (order?.paymentStatus !== 'paid' && order?.paymentStatus !== 'Paid')
-                  ? `Collect ₹${order?.totalAmount || 0} Cash & Enter OTP`
-                  : 'Enter Customer OTP'}
+                {isReturnOrder
+                  ? 'Enter Customer Return Pickup OTP'
+                  : isExchangeOrder
+                  ? (isExchangeExtraPayment && !isCashVerifiedByExecutive ? `Collect ₹${exchangeDiff} & Enter Exchange OTP` : 'Enter Customer Exchange OTP')
+                  : (isCod && !isCashCollected
+                    ? `Collect ₹${formattedTotalAmount} Cash & Enter OTP`
+                    : 'Enter Customer Delivery OTP')}
               </h3>
-              <p className="text-xs text-gray-500 font-medium">Ask customer for 4-digit PIN sent to their phone</p>
+              <p className="text-xs text-gray-500 font-medium">
+                {isReturnOrder
+                  ? 'Ask customer for 4-digit Return PIN sent to their phone upon pickup'
+                  : isExchangeOrder
+                  ? 'Ask customer for 4-digit Exchange PIN sent to their phone upon handover'
+                  : 'Ask customer for 4-digit PIN sent to their phone'}
+              </p>
             </div>
 
             <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">

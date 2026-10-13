@@ -33,9 +33,12 @@ export const getOrderDeliveryOtp = (order) => {
   if (!order) return '';
   const otp = order.deliveryOtp ||
     order.selfDeliveryDetails?.deliveryOtp ||
+    order.deliveryDetails?.deliveryOtp ||
+    order.returnRequest?.deliveryOtp ||
+    order.shipmentDetails?.deliveryOtp ||
     order.items?.[0]?.deliveryOtp ||
     order.items?.[0]?.selfDeliveryDetails?.deliveryOtp ||
-    order.shipmentDetails?.deliveryOtp ||
+    order.items?.[0]?.deliveryDetails?.deliveryOtp ||
     order.deliveryCode ||
     '';
   if (otp && String(otp).trim()) return String(otp).trim();
@@ -351,10 +354,23 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   const retReqStatus = String(order.returnRequest?.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
   const isExchange = retReqType === 'exchange' || currentStatus.includes('exchange');
 
+  const isExchangeCompleted = retReqStatus === 'exchanged' || currentStatus === 'exchanged' || currentStatus === 'completed';
+  const isExchangeRejected = retReqStatus.includes('reject') || currentStatus.includes('reject');
+  const isExchangeOtpActive = isReturnOrExchangeOrRefund && isExchange && !isExchangeCompleted && !isExchangeRejected && !isCancelled;
+
+  const isReturnCompleted = ['product_received', 'product_return_received', 'returned', 'refund_completed', 'refund_initiated', 'refunded'].includes(retReqStatus) || ['product_received', 'product_return_received', 'returned', 'refunded'].includes(currentStatus);
+  const isReturnRejected = retReqStatus.includes('reject') || currentStatus.includes('reject');
+  const isReturnOtpActive = isReturnOrExchangeOrRefund && !isExchange && !isReturnCompleted && !isReturnRejected && !isCancelled;
+
+  const isRegularDeliveryOtpActive = !isCancelled && !isReturnOrExchangeOrRefund && currentStatus !== 'delivered' && currentStatus !== 'completed';
+
+  const shouldShowOtpBanner = Boolean(deliveryOtp && !isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
+
   const returnSteps = isExchange ? [
     { key: 'exchange_requested', label: 'Exchange Requested', desc: 'Replacement requested', icon: RotateCcw },
     { key: 'exchange_approved', label: 'Exchange Approved', desc: 'Store approved request', icon: CheckCircle2 },
     { key: 'pickup_scheduled', label: 'Pickup Scheduled', desc: 'Pickup date booked', icon: Calendar },
+    { key: 'product_received', label: 'Product Received', desc: 'Item received & verified', icon: Boxes },
     { key: 'exchange_dispatched', label: 'Replacement Dispatched', desc: 'Dispatched via courier', icon: Truck },
     { key: 'exchanged', label: 'Exchange Completed', desc: 'Replacement delivered', icon: ShieldCheck }
   ] : [
@@ -366,18 +382,32 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   ];
 
   let returnActiveIndex = 0;
-  if (isRefunded || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || retReqStatus === 'exchanged' || currentStatus === 'refund_completed' || currentStatus === 'refunded' || currentStatus === 'exchanged') {
-    returnActiveIndex = 4;
-  } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || retReqStatus === 'exchange_dispatched' || currentStatus === 'product_received' || currentStatus === 'exchange_dispatched') {
-    returnActiveIndex = 3;
-  } else if (retReqStatus === 'pickup_scheduled' || currentStatus === 'pickup_scheduled') {
-    returnActiveIndex = 2;
-  } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || currentStatus.endsWith('_approved')) {
-    returnActiveIndex = 1;
-  } else if (retReqStatus.includes('reject') || currentStatus.includes('reject')) {
-    returnActiveIndex = 1;
+  if (isExchange) {
+    if (retReqStatus === 'exchanged' || currentStatus === 'exchanged') {
+      returnActiveIndex = 5;
+    } else if (retReqStatus === 'exchange_dispatched' || currentStatus === 'exchange_dispatched') {
+      returnActiveIndex = 4;
+    } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || currentStatus === 'product_received' || currentStatus === 'product_return_received') {
+      returnActiveIndex = 3;
+    } else if (retReqStatus === 'pickup_scheduled' || currentStatus === 'pickup_scheduled') {
+      returnActiveIndex = 2;
+    } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || currentStatus.endsWith('_approved') || retReqStatus.includes('reject') || currentStatus.includes('reject')) {
+      returnActiveIndex = 1;
+    } else {
+      returnActiveIndex = 0;
+    }
   } else {
-    returnActiveIndex = 0;
+    if (isRefunded || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || currentStatus === 'refund_completed' || currentStatus === 'refunded') {
+      returnActiveIndex = 4;
+    } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || currentStatus === 'product_received' || currentStatus === 'product_return_received' || retReqStatus === 'refund_initiated' || currentStatus === 'refund_initiated') {
+      returnActiveIndex = 3;
+    } else if (retReqStatus === 'pickup_scheduled' || currentStatus === 'pickup_scheduled') {
+      returnActiveIndex = 2;
+    } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || currentStatus.endsWith('_approved') || retReqStatus.includes('reject') || currentStatus.includes('reject')) {
+      returnActiveIndex = 1;
+    } else {
+      returnActiveIndex = 0;
+    }
   }
 
   // Stepper steps for forward order
@@ -543,45 +573,95 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
             </div>
           )}
 
-          {/* Handover OTP Highlight Banner (Live Courier Track / Self-Delivery) */}
-          {!isCancelled && !isReturnOrExchangeOrRefund && deliveryOtp && (
-            <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          {/* Handover OTP Highlight Banner (Live Courier Track / Self-Delivery / Return / Exchange) */}
+          {shouldShowOtpBanner && (
+            <div className={`border-2 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${
+              isReturnOtpActive
+                ? 'bg-gradient-to-r from-cyan-50 via-teal-50 to-cyan-50 border-cyan-400'
+                : isExchangeOtpActive
+                ? 'bg-gradient-to-r from-purple-50 via-indigo-50 to-teal-50 border-purple-400'
+                : 'bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-emerald-400'
+            }`}>
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
+                <div className={`w-11 h-11 rounded-2xl text-white flex items-center justify-center font-black shrink-0 shadow-xs ${
+                  isReturnOtpActive
+                    ? 'bg-cyan-700'
+                    : isExchangeOtpActive
+                    ? 'bg-purple-700'
+                    : 'bg-emerald-600'
+                }`}>
                   <Key size={22} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-black tracking-wider text-emerald-900 bg-emerald-200/80 px-2 py-0.5 rounded">
-                      {isSelfDelivery ? 'Direct Delivery Security Code' : 'Live Courier Handover OTP'}
+                    <span className={`text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded ${
+                      isReturnOtpActive
+                        ? 'text-cyan-900 bg-cyan-200/80'
+                        : isExchangeOtpActive
+                        ? 'text-purple-900 bg-purple-200/80'
+                        : 'text-emerald-900 bg-emerald-200/80'
+                    }`}>
+                      {isReturnOtpActive
+                        ? 'Return Pickup Security Code'
+                        : isExchangeOtpActive
+                        ? 'Exchange Handover Security Code'
+                        : (isSelfDelivery ? 'Direct Delivery Security Code' : 'Live Courier Handover OTP')}
                     </span>
                     <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded">
                       Doorstep Verification
                     </span>
                   </div>
-                  <h4 className="font-extrabold text-sm text-emerald-950 mt-0.5">
-                    Share OTP Upon Delivery Arrival
+                  <h4 className="font-extrabold text-sm text-gray-900 mt-0.5">
+                    {isReturnOtpActive
+                      ? 'Share OTP Upon Return Item Pickup'
+                      : isExchangeOtpActive
+                      ? 'Share OTP Upon Exchange Delivery & Handover'
+                      : 'Share OTP Upon Delivery Arrival'}
                   </h4>
-                  <p className="text-[11px] text-emerald-800">
-                    {isSelfDelivery
-                      ? 'Provide this 4-digit code to the store delivery executive at your doorstep to safely verify receipt.'
-                      : 'Provide this 4-digit code to the courier delivery partner at your doorstep to safely confirm parcel handover.'}
+                  <p className="text-[11px] text-gray-700">
+                    {isReturnOtpActive
+                      ? 'Provide this 4-digit code to the pickup executive at your doorstep when they arrive to inspect and collect the item.'
+                      : isExchangeOtpActive
+                      ? 'Provide this 4-digit code to the delivery executive at your doorstep upon handing over the old item and receiving your replacement.'
+                      : (isSelfDelivery
+                        ? 'Provide this 4-digit code to the store delivery executive at your doorstep to safely verify receipt.'
+                        : 'Provide this 4-digit code to the courier delivery partner at your doorstep to safely confirm parcel handover.')}
                   </p>
                 </div>
               </div>
 
-              <div className="bg-white border-2 border-emerald-500 px-4 py-2.5 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-sm flex sm:flex-col items-center justify-between sm:justify-center gap-2">
+              <div className={`bg-white border-2 px-4 py-2.5 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-sm flex sm:flex-col items-center justify-between sm:justify-center gap-2 ${
+                isReturnOtpActive
+                  ? 'border-cyan-500'
+                  : isExchangeOtpActive
+                  ? 'border-purple-500'
+                  : 'border-emerald-500'
+              }`}>
                 <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Delivery OTP</div>
-                  <div className="font-mono text-2xl font-black text-emerald-700 tracking-widest leading-none mt-0.5">
+                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                    {isReturnOtpActive ? 'Pickup OTP' : isExchangeOtpActive ? 'Exchange OTP' : 'Delivery OTP'}
+                  </div>
+                  <div className={`font-mono text-2xl font-black tracking-widest leading-none mt-0.5 ${
+                    isReturnOtpActive
+                      ? 'text-cyan-800'
+                      : isExchangeOtpActive
+                      ? 'text-purple-800'
+                      : 'text-emerald-700'
+                  }`}>
                     {deliveryOtp}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => copyToClipboard(deliveryOtp, 'otp')}
-                  className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-[10px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                  title="Copy Delivery OTP"
+                  className={`px-2.5 py-1 font-bold text-[10px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
+                    isReturnOtpActive
+                      ? 'bg-cyan-100 hover:bg-cyan-200 text-cyan-900'
+                      : isExchangeOtpActive
+                      ? 'bg-purple-100 hover:bg-purple-200 text-purple-900'
+                      : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                  }`}
+                  title="Copy OTP"
                 >
                   {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
                   <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
@@ -629,15 +709,29 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   {isCancelled
                     ? 'Shipping stopped due to order cancellation.'
                     : isReturnOrExchangeOrRefund
-                    ? (returnActiveIndex === 0
-                        ? (isExchange ? 'Exchange request submitted. Store will review and schedule replacement.' : 'Return request submitted. Awaiting store review and pickup scheduling.')
-                        : returnActiveIndex === 1
-                        ? (order.returnRequest?.rejectionReason ? `Request rejected: ${order.returnRequest.rejectionReason}` : `${isExchange ? 'Exchange' : 'Return'} request approved by store. Pickup will be arranged.`)
-                        : returnActiveIndex === 2
-                        ? (order.returnRequest?.pickupDate ? `Scheduled pickup on ${new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}.` : 'Return pickup scheduled for upcoming business days.')
-                        : returnActiveIndex === 3
-                        ? (isExchange ? (order.returnRequest?.exchangeAwb ? `Replacement dispatched via ${order.returnRequest.exchangeCourier || 'Courier'} (AWB: ${order.returnRequest.exchangeAwb})` : 'Replacement exchange item dispatched.') : 'Returned product received back at store warehouse and verified.')
-                        : (isExchange ? 'Exchange fulfilled and replacement delivered.' : (order.returnRequest?.refundTxnId ? `Refund of ₹${order.total || order.totalAmount} completed (Ref: ${order.returnRequest.refundTxnId}).` : 'Refund processed and completed.')))
+                    ? (isExchange ? (
+                        returnActiveIndex === 0
+                          ? 'Exchange request submitted. Store will review and schedule replacement.'
+                          : returnActiveIndex === 1
+                          ? (order.returnRequest?.rejectionReason ? `Request rejected: ${order.returnRequest.rejectionReason}` : 'Exchange request approved by store. Pickup will be arranged.')
+                          : returnActiveIndex === 2
+                          ? (order.returnRequest?.pickupDate ? `Scheduled pickup on ${new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}.` : 'Exchange pickup scheduled for upcoming business days.')
+                          : returnActiveIndex === 3
+                          ? 'Original product received back at store warehouse and verified.'
+                          : returnActiveIndex === 4
+                          ? (order.returnRequest?.exchangeAwb ? `Replacement dispatched via ${order.returnRequest.exchangeCourier || 'Courier'} (AWB: ${order.returnRequest.exchangeAwb}).` : 'Replacement exchange unit dispatched.')
+                          : 'Exchange fulfilled and replacement delivered to customer.'
+                      ) : (
+                        returnActiveIndex === 0
+                          ? 'Return request submitted. Awaiting store review and pickup scheduling.'
+                          : returnActiveIndex === 1
+                          ? (order.returnRequest?.rejectionReason ? `Request rejected: ${order.returnRequest.rejectionReason}` : 'Return request approved by store. Pickup will be arranged.')
+                          : returnActiveIndex === 2
+                          ? (order.returnRequest?.pickupDate ? `Scheduled pickup on ${new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}.` : 'Return pickup scheduled for upcoming business days.')
+                          : returnActiveIndex === 3
+                          ? 'Returned product received back at store warehouse and verified.'
+                          : (order.returnRequest?.refundTxnId ? `Refund of ₹${order.total || order.totalAmount} completed (Ref: ${order.returnRequest.refundTxnId}).` : 'Refund processed and completed.')
+                      ))
                     : (isSelfDelivery
                         ? `Merchant Store: ${sellerStoreName}`
                         : `${steps[activeIndex]?.desc} • Carrier: ${courierPartnerName}`)}
@@ -664,7 +758,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                 </span>
               </div>
 
-              <div className={`grid gap-2 pt-1 ${isReturnOrExchangeOrRefund ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-3 sm:grid-cols-6'}`}>
+              <div className={`grid gap-2 pt-1 ${isReturnOrExchangeOrRefund ? (isExchange ? 'grid-cols-2 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-5') : 'grid-cols-3 sm:grid-cols-6'}`}>
                 {(isReturnOrExchangeOrRefund ? returnSteps : steps).map((st, idx) => {
                   const currentIdx = isReturnOrExchangeOrRefund ? returnActiveIndex : activeIndex;
                   const isCompleted = currentIdx >= idx;
