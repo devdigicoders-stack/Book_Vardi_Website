@@ -1177,7 +1177,28 @@ export function CartProvider({ children }) {
     );
   };
 
-  const displayedCartItems = isAuthenticated ? cartItems : [];
+  const displayedCartItems = useMemo(() => {
+    if (!isAuthenticated) return [];
+    if (!Array.isArray(cartItems) || cartItems.length === 0) return [];
+    return cartItems.map((item) => {
+      const prodIdStr = String(item.productId || item.id || item._id || '');
+      const catalogMatch = (products || []).find((p) =>
+        (prodIdStr && String(p.id || p._id) === prodIdStr) ||
+        (item.name && p.name && p.name.trim().toLowerCase() === item.name.trim().toLowerCase())
+      );
+      if (!catalogMatch) return item;
+      return {
+        ...item,
+        paymentMethodAllowed: catalogMatch.paymentMethodAllowed || item.paymentMethodAllowed || 'Both',
+        paymentMethodsAllowed: catalogMatch.paymentMethodsAllowed || item.paymentMethodsAllowed,
+        isCodAvailable: catalogMatch.isCodAvailable !== undefined ? catalogMatch.isCodAvailable : item.isCodAvailable,
+        isPrepaidOnly: catalogMatch.isPrepaidOnly !== undefined ? catalogMatch.isPrepaidOnly : item.isPrepaidOnly,
+        isOnlineOnly: catalogMatch.isOnlineOnly !== undefined ? catalogMatch.isOnlineOnly : item.isOnlineOnly,
+        isGstInclusive: catalogMatch.isGstInclusive !== undefined ? catalogMatch.isGstInclusive : item.isGstInclusive,
+        gst: catalogMatch.gst !== undefined ? catalogMatch.gst : item.gst
+      };
+    });
+  }, [isAuthenticated, cartItems, products]);
   const displayedWishlist = isAuthenticated ? wishlist : [];
 
   const selectedCartItems = displayedCartItems.filter((item) => item.selected !== false);
@@ -2023,11 +2044,17 @@ export function CartProvider({ children }) {
       sellerDetails: orderData.sellerDetails || null,
       selfDeliveryDetails: orderData.selfDeliveryDetails ? { ...orderData.selfDeliveryDetails, deliveryOtp: customerDeliveryOtp } : { deliveryOtp: customerDeliveryOtp },
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
-      items: itemsToBuy.map((item) => ({
-        ...item,
-        status: item.status || 'pending',
-        deliveryOtp: customerDeliveryOtp
-      })),
+      items: itemsToBuy.map((item) => {
+        const catProd = (products || []).find((p) => String(p.id || p._id) === String(item.productId || item.id || item._id));
+        return {
+          ...item,
+          isGstInclusive: item.isGstInclusive !== undefined ? item.isGstInclusive : (catProd?.isGstInclusive !== false),
+          gst: item.gst ?? item.gstPercent ?? catProd?.gst ?? 5,
+          status: item.status || 'pending',
+          deliveryOtp: customerDeliveryOtp || ''
+        };
+      }),
+      taxAmount: orderData.taxAmount || 0,
       subtotal: orderData.subtotal,
       shippingCost: orderData.shippingCost,
       discount: orderData.discount || 0,
@@ -2059,6 +2086,7 @@ export function CartProvider({ children }) {
       school: userProfile?.institution || 'General Public',
       date: formattedDate,
       total: orderData.total,
+      taxAmount: orderData.taxAmount || 0,
       itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
       status: 'Pending',
       deliveryOtp: '',
@@ -2070,27 +2098,31 @@ export function CartProvider({ children }) {
         : (orderData.shippingAddress || 'Customer Address'),
       trackingNumber: randomTracking,
       courierName: orderData.courierName || 'N/A',
-      items: itemsToBuy.map((item) => ({
-        ...item,
-        id: item.id || item._id || item.productId,
-        productId: item.productId || item.id || item._id,
-        sellerId: item.sellerId || item.seller?._id || item.seller?.id || item.seller,
-        sellerName: item.sellerName || item.storeName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
-        storeName: item.storeName || item.sellerName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
-        gst: item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? item.taxRate,
-        gstPercent: item.gstPercent ?? item.gst ?? item.gstPercentage ?? item.gstRate ?? item.taxRate,
-        gstPercentage: item.gstPercentage ?? item.gstPercent ?? item.gst ?? item.gstRate ?? item.taxRate,
-        name: item.name,
-        price: item.price,
-        finalPrice: item.finalPrice || item.price,
-        quantity: item.quantity,
-        size: item.selectedSize || item.size || '',
-        age: item.age || '',
-        image: item.image,
-        category: item.category || 'Stationery',
-        status: item.status || 'pending',
-        deliveryOtp: ''
-      }))
+      items: itemsToBuy.map((item) => {
+        const catProd = (products || []).find((p) => String(p.id || p._id) === String(item.productId || item.id || item._id));
+        return {
+          ...item,
+          id: item.id || item._id || item.productId,
+          productId: item.productId || item.id || item._id,
+          sellerId: item.sellerId || item.seller?._id || item.seller?.id || item.seller,
+          sellerName: item.sellerName || item.storeName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
+          storeName: item.storeName || item.sellerName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
+          gst: item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? catProd?.gst ?? 5,
+          gstPercent: item.gstPercent ?? item.gst ?? item.gstPercentage ?? item.gstRate ?? catProd?.gst ?? 5,
+          gstPercentage: item.gstPercentage ?? item.gstPercent ?? item.gst ?? item.gstRate ?? catProd?.gst ?? 5,
+          isGstInclusive: item.isGstInclusive !== undefined ? item.isGstInclusive : (catProd?.isGstInclusive !== false),
+          name: item.name,
+          price: item.price,
+          finalPrice: item.finalPrice || item.price,
+          quantity: item.quantity,
+          size: item.selectedSize || item.size || '',
+          age: item.age || '',
+          image: item.image,
+          category: item.category || 'Stationery',
+          status: item.status || 'pending',
+          deliveryOtp: sharedDeliveryOtp
+        };
+      })
     };
 
     try {

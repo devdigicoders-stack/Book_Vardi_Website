@@ -26,18 +26,40 @@ export default function CartDrawer({ onNavigate }) {
     isAuthenticated,
     isProfileIncomplete,
     profileCompleteness,
+    products = [],
     showToast
   } = useCart();
 
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Evaluate payment restrictions for chosen items to buy
-  const cartPaymentRestrictions = getCartPaymentRestrictions(selectedCartItems);
+  const cartPaymentRestrictions = getCartPaymentRestrictions(selectedCartItems, products);
 
   const distinctProductsCount = selectedCartItems.length;
   const isFreeShipping = subtotal >= freeShippingThreshold || subtotal === 0 || shippingFee === 0;
   const shippingCost = isFreeShipping ? 0 : (distinctProductsCount * (shippingFee ?? 49));
-  const grandTotal = subtotal + shippingCost;
+
+  // Calculate extra GST for items configured as "GST Extra" (isGstInclusive === false)
+  const extraTaxAmount = Math.round(
+    selectedCartItems.reduce((acc, item) => {
+      const catalogProduct = (products || []).find(p => String(p.id || p._id) === String(item.productId || item.id || item._id));
+      const isInclusive = item.isGstInclusive !== undefined
+        ? (item.isGstInclusive !== false)
+        : (catalogProduct?.isGstInclusive !== false);
+
+      if (!isInclusive) {
+        const rate = Number(
+          item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ??
+          catalogProduct?.gst ?? catalogProduct?.gstPercentage ?? 5
+        ) || 0;
+        const itemTotal = (Number(item.price) || 0) * (Number(item.quantity) || 1);
+        return acc + (itemTotal * rate) / 100;
+      }
+      return acc;
+    }, 0) * 100
+  ) / 100;
+
+  const grandTotal = Math.max(0, Math.round((subtotal + extraTaxAmount + shippingCost) * 100) / 100);
 
   const handleCheckout = () => {
     if (isCheckingOut) return;
@@ -333,9 +355,10 @@ export default function CartDrawer({ onNavigate }) {
               </span>
             </div>
 
-            {cartItems.length > selectedCartItems.length && (
-              <div className="text-[11px] text-gray-500 font-semibold italic bg-gray-50 p-1.5 rounded text-center border border-gray-200">
-                ℹ️ {cartItems.length - selectedCartItems.length} unselected item(s) will stay in your cart
+            {extraTaxAmount > 0 && (
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Estimated GST / Tax</span>
+                <span className="font-semibold text-gray-900">+₹{extraTaxAmount}</span>
               </div>
             )}
 

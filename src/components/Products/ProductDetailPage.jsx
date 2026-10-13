@@ -1217,11 +1217,26 @@ export default function ProductDetailPage({ onNavigate }) {
                 <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50/40 via-amber-50/30 to-gray-50 border border-gray-200/80 shadow-xs">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex flex-wrap items-baseline gap-2 sm:gap-3">
-                      <div className="flex items-baseline gap-1.5">
+                      <div className="flex items-baseline gap-1.5 flex-wrap">
                         <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Price:</span>
                         <span className="font-display text-2xl sm:text-3xl font-extrabold text-brand-teal">
                           ₹{effectiveProductPrice}
                         </span>
+                        {selectedProduct.isGstInclusive === false && (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                            + {selectedProduct.gst ?? selectedProduct.gstPercentage ?? 5}% GST Extra
+                          </span>
+                        )}
+                        {(selectedProduct.paymentMethodAllowed === 'Online_Only' || selectedProduct.isPrepaidOnly) && (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                            ⚡ Prepaid Only (No COD)
+                          </span>
+                        )}
+                        {selectedProduct.paymentMethodAllowed === 'COD_Only' && (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-300 flex items-center gap-1 shadow-2xs">
+                            💵 COD Only
+                          </span>
+                        )}
                         {isCustomizedKit && (
                           <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-brand-yellow text-brand-teal-dark border border-brand-yellow-hover shadow-2xs">
                             ⚡ Customized Pack
@@ -1256,7 +1271,11 @@ export default function ProductDetailPage({ onNavigate }) {
 
                   <p className="text-[11px] font-medium text-gray-500 mt-2 flex items-center gap-1">
                     <CheckCircle2 size={13} className="text-emerald-600 inline shrink-0" />
-                    <span>Inclusive of all taxes. Free student doorstep delivery available.</span>
+                    <span>
+                      {selectedProduct.isGstInclusive !== false
+                        ? 'Inclusive of all taxes. Free student doorstep delivery available.'
+                        : `+${selectedProduct.gst ?? selectedProduct.gstPercentage ?? 5}% GST Extra calculated at checkout. Free student doorstep delivery available.`}
+                    </span>
                   </p>
                 </div>
 

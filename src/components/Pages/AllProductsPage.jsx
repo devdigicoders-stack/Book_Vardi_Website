@@ -12,7 +12,6 @@ import {
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
 import { fetchProductsFromBackend, fetchCategoriesFromBackend, fetchKitsFromBackend } from '../../utils/api';
-import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 const CHUNK_SIZE = 8;
 
@@ -169,7 +168,7 @@ export default function AllProductsPage({
 }) {
   const { wishlist, products: contextProducts = [] } = useCart();
   const [products, setProducts] = useState(() => (Array.isArray(contextProducts) && contextProducts.length > 0 ? contextProducts : []));
-  const [categories, setCategories] = useState(() => CATEGORY_STRUCTURE);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(() => !contextProducts || contextProducts.length === 0);
 
   const [onlyLiked, setOnlyLiked] = useState(false);
@@ -195,13 +194,13 @@ export default function AllProductsPage({
   useEffect(() => {
     fetchCategoriesFromBackend()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setCategories(data);
         } else {
-          setCategories(CATEGORY_STRUCTURE);
+          setCategories([]);
         }
       })
-      .catch(() => setCategories(CATEGORY_STRUCTURE));
+      .catch(() => setCategories([]));
   }, []);
 
   // Fetch all products and kits from backend

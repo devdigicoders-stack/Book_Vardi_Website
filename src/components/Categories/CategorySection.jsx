@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { fetchCategoriesFromBackend } from '../../utils/api';
-import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 export default function CategorySection({ activeCategory, onSelectCategory, onNavigate }) {
   const [categories, setCategories] = useState([]);
@@ -11,15 +10,15 @@ export default function CategorySection({ activeCategory, onSelectCategory, onNa
   useEffect(() => {
     fetchCategoriesFromBackend()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setCategories(data);
         } else {
-          setCategories(CATEGORY_STRUCTURE);
+          setCategories([]);
         }
         setLoading(false);
       })
       .catch(() => {
-        setCategories(CATEGORY_STRUCTURE);
+        setCategories([]);
         setLoading(false);
       });
   }, []);
