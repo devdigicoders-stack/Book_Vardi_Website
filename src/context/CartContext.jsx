@@ -25,7 +25,8 @@ import {
   fetchProductsFromBackend,
   fetchActiveCouponsFromBackend,
   fetchPublicSettingsFromBackend,
-  getProductMainImage
+  getProductMainImage,
+  API_BASE_URL
 } from '../utils/api';
 
 export const EMPTY_USER_PROFILE = {
@@ -1733,7 +1734,7 @@ export function CartProvider({ children }) {
     // Try Backend API verification if backend is enabled
     if (backendEnabled) {
       try {
-        const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const SERVER_URL = API_BASE_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
         const res = await fetch(`${SERVER_URL}/coupons/apply`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

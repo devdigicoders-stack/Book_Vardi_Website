@@ -3727,7 +3727,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
           };
 
           try {
-            const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            const apiBase = (API_BASE_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
             const res = await fetch(`${apiBase}/api/schools/bulk-orders/${orderId}/approve-quote`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
