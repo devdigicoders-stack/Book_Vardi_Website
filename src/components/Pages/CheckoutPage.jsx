@@ -49,8 +49,6 @@ export default function CheckoutPage({ onNavigate }) {
     freeShippingThreshold,
     shippingFee,
     userProfile,
-    profileCompleteness,
-    isProfileIncomplete,
     isAuthenticated,
     addAddress,
     editAddress,
@@ -385,19 +383,18 @@ export default function CheckoutPage({ onNavigate }) {
       return;
     }
 
-    if (isAuthenticated && isProfileIncomplete) {
-      const missingLabels = profileCompleteness?.missing?.map((m) => m.label).join(', ') || 'required details';
-      showToast(`⚠️ Please complete your profile (${missingLabels}) before checking out.`);
-      onNavigate('profile', null, 'profile');
-      return;
-    }
-
-    // Validate address
+    // Validate delivery address & contact
     let activeShippingAddress = null;
     if (isAuthenticated) {
       activeShippingAddress = userProfile?.addresses?.find((a) => a.id === selectedAddressId) || userProfile?.addresses?.[0];
       if (!activeShippingAddress) {
-        showToast('Please select or add a delivery address.');
+        showToast('⚠️ Please select or add a delivery address.');
+        setIsAddAddressOpen(true);
+        return;
+      }
+      const activePhone = String(activeShippingAddress?.phone || userProfile?.phone || '').trim().replace(/\D/g, '');
+      if (activePhone.length < 10) {
+        showToast('⚠️ Please provide a valid 10-digit mobile number for delivery updates.');
         return;
       }
     } else {
@@ -598,37 +595,6 @@ export default function CheckoutPage({ onNavigate }) {
       </div>
 
       <div className="container mx-auto px-4 mt-8">
-        {/* PROFILE INCOMPLETE WARNING CARD IN CHECKOUT */}
-        {isAuthenticated && isProfileIncomplete && (
-          <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                <AlertTriangle size={20} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-sm text-amber-950">
-                    Action Required: Complete Your Profile Before Checkout
-                  </h3>
-                  <span className="bg-amber-200 text-amber-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase">
-                    {profileCompleteness?.percentage}% Done
-                  </span>
-                </div>
-                <p className="text-xs text-amber-800 mt-1">
-                  The following required details must be completed before placing an order: <strong className="text-amber-950">{profileCompleteness?.missing?.map((m) => m.label).join(', ')}</strong>.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate('profile', null, 'profile')}
-              className="shrink-0 w-full sm:w-auto bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <Pencil size={14} />
-              <span>Complete Profile Now</span>
-            </button>
-          </div>
-        )}
 
         <div className="flex flex-col lg:flex-row gap-8 items-start relative">
           {/* Left Column: Checkout Steps */}
@@ -664,57 +630,72 @@ export default function CheckoutPage({ onNavigate }) {
 
               {/* Authenticated Saved Address Cards */}
               {isAuthenticated ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {userProfile?.addresses?.map((addr) => {
-                    const isSelected = selectedAddressId === addr.id;
-                    return (
-                      <div
-                        key={addr.id}
-                        onClick={() => setSelectedAddressId(addr.id)}
-                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
-                          isSelected
-                            ? 'border-brand-teal bg-brand-teal/5 shadow-xs ring-2 ring-brand-teal/10'
-                            : 'border-gray-200 bg-white hover:border-gray-300'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-md bg-white border border-gray-200 text-brand-teal">
-                              {addr.type || 'Address'}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenEditAddress(addr);
-                                }}
-                                className="p-1 rounded-md text-gray-400 hover:text-brand-teal hover:bg-white transition-colors cursor-pointer"
-                                title="Edit Address"
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              {isSelected && (
-                                <span className="w-5 h-5 rounded-full bg-brand-teal text-white flex items-center justify-center">
-                                  <Check size={12} strokeWidth={3} />
-                                </span>
-                              )}
+                (!userProfile?.addresses || userProfile.addresses.length === 0) ? (
+                  <div className="p-6 border-2 border-dashed border-brand-teal/30 rounded-2xl bg-brand-teal/5 text-center">
+                    <p className="text-xs font-bold text-gray-700 mb-1">No delivery address saved yet.</p>
+                    <p className="text-[11px] text-gray-500 mb-4">Please add your delivery address below to place your order.</p>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddAddressOpen(true)}
+                      className="inline-flex items-center gap-1.5 text-xs font-extrabold bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark px-4 py-2.5 rounded-xl transition-all shadow-xs cursor-pointer active:scale-95"
+                    >
+                      <Plus size={15} />
+                      <span>+ Add Delivery Address</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {userProfile?.addresses?.map((addr) => {
+                      const isSelected = selectedAddressId === addr.id;
+                      return (
+                        <div
+                          key={addr.id}
+                          onClick={() => setSelectedAddressId(addr.id)}
+                          className={`p-4 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                            isSelected
+                              ? 'border-brand-teal bg-brand-teal/5 shadow-xs ring-2 ring-brand-teal/10'
+                              : 'border-gray-200 bg-white hover:border-gray-300'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-md bg-white border border-gray-200 text-brand-teal">
+                                {addr.type || 'Address'}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditAddress(addr);
+                                  }}
+                                  className="p-1 rounded-md text-gray-400 hover:text-brand-teal hover:bg-white transition-colors cursor-pointer"
+                                  title="Edit Address"
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                {isSelected && (
+                                  <span className="w-5 h-5 rounded-full bg-brand-teal text-white flex items-center justify-center">
+                                    <Check size={12} strokeWidth={3} />
+                                  </span>
+                                )}
+                              </div>
                             </div>
+                            <p className="text-xs font-bold text-gray-900">
+                              {typeof addr.name === 'object' ? (addr.name?.name || 'Customer') : (addr.name || userProfile?.name || 'Customer')}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-1 leading-relaxed line-clamp-2">
+                              {typeof (addr.street || addr.addressLine) === 'object' ? 'Delivery Address' : (addr.street || addr.addressLine)}, {typeof addr.city === 'object' ? 'Lucknow' : (addr.city || 'Lucknow')} - {typeof addr.pincode === 'object' ? '226001' : (addr.pincode || '226001')}
+                            </p>
+                            <p className="text-[11px] text-gray-500 mt-1">
+                              Phone: {typeof addr.phone === 'object' ? (addr.phone?.phone || '') : (addr.phone || userProfile?.phone || '')}
+                            </p>
                           </div>
-                          <p className="text-xs font-bold text-gray-900">
-                            {typeof addr.name === 'object' ? (addr.name?.name || 'Customer') : (addr.name || userProfile?.name || 'Customer')}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-1 leading-relaxed line-clamp-2">
-                            {typeof (addr.street || addr.addressLine) === 'object' ? 'Delivery Address' : (addr.street || addr.addressLine)}, {typeof addr.city === 'object' ? 'Lucknow' : (addr.city || 'Lucknow')} - {typeof addr.pincode === 'object' ? '226001' : (addr.pincode || '226001')}
-                          </p>
-                          <p className="text-[11px] text-gray-500 mt-1">
-                            Phone: {typeof addr.phone === 'object' ? (addr.phone?.phone || '') : (addr.phone || userProfile?.phone || '')}
-                          </p>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )
               ) : (
                 /* Guest Checkout Address Form */
                 <div className="space-y-3.5">

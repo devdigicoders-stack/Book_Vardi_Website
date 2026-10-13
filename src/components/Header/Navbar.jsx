@@ -687,20 +687,13 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
               )}
             </div>
           ) : (
-            <div className="hidden lg:flex items-center gap-1.5 ml-1 shrink-0">
+            <div className="hidden lg:flex items-center ml-1 shrink-0">
               <button
-                onClick={() => openAuthModal('login')}
-                className="px-3.5 py-1.5 text-xs font-bold text-brand-teal hover:text-brand-teal-dark hover:bg-brand-teal/5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shrink-0"
+                onClick={() => openAuthModal()}
+                className="px-4 py-2 text-xs font-extrabold bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark rounded-xl transition-all shadow-xs hover:shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0 active:scale-95"
               >
-                <LogIn size={15} />
-                <span>Log In</span>
-              </button>
-              <button
-                onClick={() => openAuthModal('register')}
-                className="px-3.5 py-1.5 text-xs font-extrabold bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
-              >
-                <UserPlus size={14} />
-                <span>Sign Up</span>
+                <User size={15} />
+                <span>Login / Sign Up</span>
               </button>
             </div>
           )}
@@ -870,29 +863,17 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
                   </button>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      onClick={() => {
-                        openAuthModal('login');
-                        setMobileMenuOpen(false);
-                      }}
-                      className="w-full py-2 text-center text-xs font-bold text-brand-teal border border-brand-teal/30 rounded-xl hover:bg-brand-teal/5 flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <LogIn size={15} />
-                      <span>Sign In</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        openAuthModal('register');
-                        setMobileMenuOpen(false);
-                      }}
-                      className="w-full py-2 text-center text-xs font-extrabold bg-brand-yellow text-brand-teal-dark rounded-xl hover:bg-brand-yellow-hover flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                    >
-                      <UserPlus size={15} />
-                      <span>Sign Up</span>
-                    </button>
-                  </div>
+                <div className="pt-1">
+                  <button
+                    onClick={() => {
+                      openAuthModal();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full py-2.5 text-center text-xs font-extrabold bg-brand-yellow text-brand-teal-dark rounded-xl hover:bg-brand-yellow-hover flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-95 transition-all"
+                  >
+                    <User size={16} />
+                    <span>Login / Sign Up</span>
+                  </button>
                 </div>
               )}
             </div>

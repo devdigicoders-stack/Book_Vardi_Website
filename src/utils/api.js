@@ -237,13 +237,21 @@ export async function verifyOtpWithBackend(phone, otp) {
 }
 
 export async function registerWithBackend(payload = {}) {
-  const { name, email, password, phone } = payload;
-  if (!name || !password || !phone) {
+  const { name, email, password, phone, institution, standard, studentId } = payload;
+  if (!name || !phone) {
     return null;
   }
   return requestApi('/users/register', {
     method: 'POST',
-    data: { name, email, password, phone }
+    data: {
+      name,
+      email: email || '',
+      password: password || 'BookVardi@123',
+      phone,
+      institution: institution || '',
+      standard: standard || '',
+      studentId: studentId || ''
+    }
   });
 }
 

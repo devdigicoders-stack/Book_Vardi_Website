@@ -761,19 +761,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
             <div className="space-y-3">
               <button
-                onClick={() => openAuthModal('login')}
-                className="w-full inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold py-3 px-6 rounded-xl text-sm transition-all shadow-xs cursor-pointer"
+                onClick={() => openAuthModal()}
+                className="w-full inline-flex items-center justify-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold py-3.5 px-6 rounded-2xl text-sm transition-all shadow-xs cursor-pointer active:scale-98"
               >
-                <LogIn size={18} />
-                <span>Sign In with Email</span>
-              </button>
-
-              <button
-                onClick={() => openAuthModal('register')}
-                className="w-full inline-flex items-center justify-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-extrabold py-3 px-6 rounded-xl text-sm transition-all shadow-xs cursor-pointer"
-              >
-                <UserPlus size={18} />
-                <span>Create Student Account (Get 100 Pts)</span>
+                <User size={18} />
+                <span>Login / Sign Up with Mobile OTP</span>
               </button>
 
               <button

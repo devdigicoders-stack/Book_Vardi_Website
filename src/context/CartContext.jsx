@@ -1594,8 +1594,17 @@ export function CartProvider({ children }) {
           name: newUserData.name || '',
           email: email || '',
           password: password || 'BookVardi@123',
-          phone: phone || ''
+          phone: phone || '',
+          institution: newUserData.institution || '',
+          standard: newUserData.standard || '',
+          studentId: newUserData.studentId || ''
         });
+
+        const token = response?.token;
+        if (token) {
+          localStorage.setItem('book_vardi_auth_token', token);
+          localStorage.setItem('token', token);
+        }
 
         const apiUser = response?.user || {
           id: `USR-${Date.now().toString().slice(-4)}`,
@@ -1611,9 +1620,9 @@ export function CartProvider({ children }) {
           name: apiUser.name || newUserData.name || '',
           email: apiUser.email || email || '',
           phone: apiUser.phone || phone || '',
-          institution: apiUser.institution || '',
-          studentId: apiUser.studentId || '',
-          standard: apiUser.standard || '',
+          institution: apiUser.institution || newUserData.institution || '',
+          studentId: apiUser.studentId || newUserData.studentId || '',
+          standard: apiUser.standard || newUserData.standard || '',
           role: apiUser.role === 'admin' ? 'Admin' : 'Student',
           roles: apiUser.role === 'admin' ? ['Admin', 'Customer'] : ['Student', 'Customer'],
           isAdmin: apiUser.role === 'admin',

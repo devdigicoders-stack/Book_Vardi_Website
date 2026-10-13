@@ -14,6 +14,7 @@ import {
   Loader2,
   CheckCircle2,
   ArrowLeft,
+  ArrowRight,
   ShieldCheck,
   RotateCcw,
   Smartphone,
@@ -218,8 +219,9 @@ export default function AuthModal() {
 
   // ===== LOGIN HANDLER =====
   const handleSendLoginOtp = async () => {
-    const phone = loginPhone.trim();
-    if (!phone || phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+    const rawDigits = loginPhone.replace(/\D/g, '');
+    const phone = rawDigits.length >= 10 ? rawDigits.slice(-10) : rawDigits;
+    if (!phone || phone.length !== 10) {
       showToast('⚠️ Please enter a valid 10-digit phone number');
       return;
     }
@@ -228,19 +230,9 @@ export default function AuthModal() {
     try {
       let response = null;
       try {
-        response = await sendOtpToBackend(phone, 'login');
+        response = await sendOtpToBackend(phone, 'auth');
       } catch (err) {
-        showToast('⚠️ Account not found. Please register first to get started! 📝');
-        setAuthMode('register');
-        setRegisterData((prev) => ({ ...prev, phone }));
-        return;
-      }
-
-      if ((response && (response.isRegistered === false || response.success === false)) || (!response && !isUserRegistered(phone))) {
-        showToast('⚠️ Account not found. Please register first to get started! 📝');
-        setAuthMode('register');
-        setRegisterData((prev) => ({ ...prev, phone }));
-        return;
+        console.warn('Backend send OTP warning:', err);
       }
 
       const otpValue = response?.otp || '1234';
@@ -248,11 +240,9 @@ export default function AuthModal() {
       setLoginOtpSent(true);
       setLoginOtp(otpValue);
       setLoginOtpTimer(30);
-      showToast(`📲 OTP sent to ${phone} • OTP for testing: ${otpValue}`);
+      showToast(`📲 OTP sent to +91 ${phone} • Test OTP: ${otpValue}`);
     } catch (error) {
-      showToast('⚠️ Account not found. Please register first to get started! 📝');
-      setAuthMode('register');
-      setRegisterData((prev) => ({ ...prev, phone }));
+      showToast(error.message || '⚠️ Unable to send OTP. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -264,9 +254,10 @@ export default function AuthModal() {
   };
 
   const handleLoginSubmit = async (e) => {
-    e.preventDefault();
-    const phone = loginPhone.trim();
-    if (!phone || phone.length !== 10 || !/^\d{10}$/.test(phone)) {
+    if (e && e.preventDefault) e.preventDefault();
+    const rawDigits = loginPhone.replace(/\D/g, '');
+    const phone = rawDigits.length >= 10 ? rawDigits.slice(-10) : rawDigits;
+    if (!phone || phone.length !== 10) {
       showToast('⚠️ Please enter a valid 10-digit phone number');
       return;
     }
@@ -291,6 +282,30 @@ export default function AuthModal() {
       }
 
       const verifiedUser = verificationResponse?.user;
+      const isNewUser = Boolean(
+        verificationResponse?.isNewUser ||
+        (!verifiedUser && !isUserRegistered(phone))
+      );
+
+      // If user does not exist in DB: seamlessly move to Registration Details form!
+      if (isNewUser) {
+        showToast('📱 OTP verified! Please enter your details to complete registration 📝');
+        setAuthMode('register');
+        setRegisterStep('details');
+        setRegisterOtpSent(true);
+        setRegisterData((prev) => ({
+          name: '',
+          email: '',
+          institution: '',
+          standard: '',
+          studentId: '',
+          ...prev,
+          phone
+        }));
+        return;
+      }
+
+      // Existing user: direct login!
       const success = await login({
         phone,
         otp: loginOtp.trim(),
@@ -301,7 +316,8 @@ export default function AuthModal() {
       });
 
       if (success) {
-        resetLoginState();
+        resetAuthForms();
+        closeAuthModal();
       } else {
         showToast('Unable to complete login.');
       }
@@ -328,8 +344,9 @@ export default function AuthModal() {
 
   // ===== REGISTER HANDLER =====
   const handleSendRegisterOtp = async () => {
-    const phone = registerData.phone.trim();
-    if (!phone || phone.length < 10 || !/^\d{10}$/.test(phone)) {
+    const rawDigits = registerData.phone.replace(/\D/g, '');
+    const phone = rawDigits.length >= 10 ? rawDigits.slice(-10) : rawDigits;
+    if (!phone || phone.length !== 10) {
       showToast('⚠️ Please enter a valid 10-digit phone number');
       return;
     }
@@ -338,19 +355,9 @@ export default function AuthModal() {
     try {
       let response = null;
       try {
-        response = await sendOtpToBackend(phone, 'register');
+        response = await sendOtpToBackend(phone, 'auth');
       } catch (err) {
-        showToast('🔑 Account already exists with this phone number. Please log in! 🔓');
-        setAuthMode('login');
-        setLoginPhone(phone);
-        return;
-      }
-
-      if ((response && response.isRegistered === true) || (!response && isUserRegistered(phone))) {
-        showToast('🔑 Account already exists with this phone number. Please log in! 🔓');
-        setAuthMode('login');
-        setLoginPhone(phone);
-        return;
+        console.warn('Backend send OTP warning:', err);
       }
 
       const otpValue = response?.otp || '1234';
@@ -359,11 +366,9 @@ export default function AuthModal() {
       setRegisterOtpSent(true);
       setRegisterOtp(otpValue);
       setRegisterOtpTimer(30);
-      showToast(`📲 OTP sent to ${phone} • OTP for testing: ${otpValue}`);
+      showToast(`📲 OTP sent to +91 ${phone} • Test OTP: ${otpValue}`);
     } catch (error) {
-      showToast('🔑 Account already exists with this phone number. Please log in! 🔓');
-      setAuthMode('login');
-      setLoginPhone(phone);
+      showToast(error.message || '⚠️ Unable to send OTP. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -379,21 +384,22 @@ export default function AuthModal() {
       if (updateProfile) {
         await updateProfile(payload);
       }
-      resetRegisterState();
+      resetAuthForms();
       closeAuthModal();
       showToast(`🎉 Profile saved! Welcome to BookVardi, ${payload.name || 'Student'}! ✨`);
     } catch (err) {
-      resetRegisterState();
+      resetAuthForms();
       closeAuthModal();
       showToast('🎉 Registration complete! Welcome to BookVardi! ✨');
     }
   };
 
   const handleRegisterSubmit = async (e) => {
-    e.preventDefault();
-    const phone = registerData.phone.trim();
+    if (e && e.preventDefault) e.preventDefault();
+    const rawDigits = registerData.phone.replace(/\D/g, '');
+    const phone = rawDigits.length >= 10 ? rawDigits.slice(-10) : rawDigits;
 
-    if (!phone || phone.length < 10 || !/^\d{10}$/.test(phone)) {
+    if (!phone || phone.length !== 10) {
       showToast('⚠️ Please enter a valid 10-digit phone number');
       return;
     }
@@ -411,37 +417,35 @@ export default function AuthModal() {
 
       setIsLoading(true);
       try {
-        let otpVerified = false;
+        let verificationResponse = null;
         try {
-          const res = await verifyOtpWithBackend(phone, registerOtp.trim());
-          if (res?.verified) otpVerified = true;
-        } catch (e) {}
-
-        if (!otpVerified && registerOtp.trim() !== generatedOtp && registerOtp.trim() !== '3123' && registerOtp.trim() !== '1234') {
-          throw new Error('⚠️ Invalid OTP. Please try again.');
-        }
-
-        const initialPayload = {
-          name: registerData.name.trim() || `Student ${phone.slice(-4)}`,
-          email: registerData.email.trim() || `student${phone.slice(-4)}@bookvardi.app`,
-          phone,
-          password: 'BookVardi@123',
-          institution: registerData.institution.trim() || 'School / College',
-          studentId: `SC-${Math.floor(1000 + Math.random() * 9000)}`
-        };
-
-        try {
-          await register(initialPayload, { keepModalOpen: true });
+          verificationResponse = await verifyOtpWithBackend(phone, registerOtp.trim());
         } catch (e) {
-          showToast('🔑 Account already exists with this phone number. Please log in! 🔓');
-          setAuthMode('login');
-          setLoginPhone(phone);
-          setIsLoading(false);
-          return;
+          if (registerOtp.trim() !== generatedOtp && registerOtp.trim() !== '3123' && registerOtp.trim() !== '1234') {
+            throw new Error('⚠️ Invalid OTP. Please try again.');
+          }
         }
 
+        // If user already exists in DB, log them in directly!
+        if (verificationResponse?.user && !verificationResponse?.isNewUser) {
+          const success = await login({
+            phone,
+            otp: registerOtp.trim(),
+            name: verificationResponse.user.name,
+            email: verificationResponse.user.email,
+            verifiedUser: verificationResponse.user,
+            token: verificationResponse.token
+          });
+          if (success) {
+            resetAuthForms();
+            closeAuthModal();
+            return;
+          }
+        }
+
+        // Otherwise advance to details form
         setRegisterStep('details');
-        showToast('✨ Auto logged in! Profile setup is optional below.');
+        showToast('✓ Phone verified! Please enter your details 📝');
       } catch (error) {
         showToast(error.message || '⚠️ Invalid OTP. Please try again.');
       } finally {
@@ -450,20 +454,33 @@ export default function AuthModal() {
       return;
     }
 
+    // Details step submission
+    const name = String(registerData?.name || '').trim();
+    if (!name) {
+      showToast('⚠️ Please enter your full name');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const email = registerData.email.trim();
+      const email = String(registerData?.email || '').trim();
+      const institution = String(registerData?.institution || '').trim();
+      const standard = String(registerData?.standard || '').trim();
+      const studentId = String(registerData?.studentId || '').trim();
+
       const backendPayload = {
-        name: registerData.name.trim() || `Student ${phone.slice(-4)}`,
+        name,
         email: email || `student${phone.slice(-4)}@bookvardi.app`,
         phone,
         password: 'BookVardi@123',
-        institution: registerData.institution.trim() || 'School / College',
-        standard: registerData.standard.trim() || 'Nursery',
-        studentId: registerData.studentId.trim() || `SC-${Math.floor(1000 + Math.random() * 9000)}`
+        institution: institution || 'School / College',
+        standard: standard || 'Nursery',
+        studentId: studentId || `SC-${Math.floor(1000 + Math.random() * 9000)}`
       };
 
-      await finishRegistration(backendPayload);
+      await register(backendPayload);
+      resetAuthForms();
+      closeAuthModal();
     } catch (error) {
       showToast(error.message || '⚠️ Error saving profile.');
     } finally {
@@ -472,9 +489,29 @@ export default function AuthModal() {
   };
 
   const handleRegisterSkipDetails = async () => {
-    resetRegisterState();
-    closeAuthModal();
-    showToast('🎉 Welcome to BookVardi! You can update your profile details anytime in My Account. ✨');
+    setIsLoading(true);
+    try {
+      const rawDigits = registerData.phone.replace(/\D/g, '');
+      const phone = rawDigits.length >= 10 ? rawDigits.slice(-10) : (loginPhone.replace(/\D/g, '').slice(-10) || '9999999999');
+      const backendPayload = {
+        name: `Student ${phone.slice(-4)}`,
+        email: `student${phone.slice(-4)}@bookvardi.app`,
+        phone,
+        password: 'BookVardi@123',
+        institution: 'School / College',
+        standard: 'Nursery',
+        studentId: `SC-${Math.floor(1000 + Math.random() * 9000)}`
+      };
+      await register(backendPayload);
+      resetAuthForms();
+      closeAuthModal();
+      showToast('🎉 Welcome to BookVardi! You can update your profile details anytime in My Account. ✨');
+    } catch (e) {
+      resetAuthForms();
+      closeAuthModal();
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // ===== OTP FLOW HANDLERS =====
@@ -623,47 +660,41 @@ export default function AuthModal() {
           
 
           <h3 className="font-display text-2xl font-extrabold tracking-tight">
-            {authMode === 'login'
-              ? 'Welcome Back!'
-              : authMode === 'register'
-              ? 'Create Account'
-              : 'Forgot Password?'}
+            {registerStep === 'details'
+              ? 'Complete Profile'
+              : authMode === 'forgot'
+              ? 'Forgot Password?'
+              : 'Welcome to BookVardi'}
           </h3>
           <p className="text-xs text-white/80 mt-1 leading-relaxed">
-            {authMode === 'login'
-              ? 'Sign in to access your orders, saved addresses & student discounts.'
-              : authMode === 'register'
-              ? 'Join Book Vardi to earn reward points & exclusive discounts on stationery.'
-              : 'Verify your student account via OTP sent to your email or phone.'}
+            {registerStep === 'details'
+              ? 'Phone verified! Enter your details to create your student account.'
+              : authMode === 'forgot'
+              ? 'Verify your student account via OTP sent to your email or phone.'
+              : loginOtpSent
+              ? `Enter the 4-digit OTP sent to +91 ${loginPhone}`
+              : 'Enter your mobile number to get instant OTP verification.'}
           </p>
 
-          {/* Mode Switcher Tabs */}
-          {authMode !== 'forgot' ? (
-            <div className="grid grid-cols-2 bg-black/20 p-1 rounded-xl mt-5">
+          {/* Subheader status ribbon (only when on details or forgot) */}
+          {registerStep === 'details' ? (
+            <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/20">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-200 bg-white/10 px-3 py-1 rounded-full border border-emerald-400/30 flex items-center gap-1.5">
+                <CheckCircle2 size={13} className="text-emerald-300" />
+                <span>Mobile Verified: +91 {registerData.phone || loginPhone}</span>
+              </span>
               <button
                 type="button"
-                onClick={() => setAuthMode('login')}
-                className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  authMode === 'login'
-                    ? 'bg-white text-brand-teal shadow-xs'
-                    : 'text-white/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setRegisterStep('otp');
+                  setLoginOtpSent(false);
+                }}
+                className="text-xs font-bold text-white hover:text-brand-yellow flex items-center gap-1 transition-colors cursor-pointer"
               >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthMode('register')}
-                className={`py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  authMode === 'register'
-                    ? 'bg-white text-brand-teal shadow-xs'
-                    : 'text-white/70 hover:text-white'
-                }`}
-              >
-                Register
+                <span>Change Number</span>
               </button>
             </div>
-          ) : (
+          ) : authMode === 'forgot' ? (
             <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/20">
               <button
                 type="button"
@@ -674,7 +705,7 @@ export default function AuthModal() {
                 className="text-xs font-bold text-white hover:text-brand-yellow flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <ArrowLeft size={14} />
-                <span>Back to Sign In</span>
+                <span>Back</span>
               </button>
               <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand-yellow bg-white/10 px-2.5 py-1 rounded-full border border-white/15">
                 {forgotStep === 'request' && 'Step 1: Choose Target'}
@@ -683,53 +714,162 @@ export default function AuthModal() {
                 {forgotStep === 'success' && 'Step 4: Success'}
               </span>
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Form Body */}
         <div className="p-6 flex-1 overflow-y-auto max-h-[calc(90vh-160px)] hide-scrollbar">
-          {authMode === 'login' && (
-            /* ===== LOGIN FORM ===== */
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              {!loginOtpSent && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                      Mobile Phone
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAuthMode('forgot');
-                        setForgotStep('request');
-                        if (loginPhone) setForgotPhone(loginPhone);
-                      }}
-                      className="text-[11px] font-bold text-brand-teal hover:underline cursor-pointer"
-                    >
-                      Forgot?
-                    </button>
+          {registerStep === 'details' ? (
+            /* ===== COMPLETE PROFILE / REGISTRATION FORM ===== */
+            <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+              <div className="space-y-3.5 border border-brand-teal/20 bg-brand-teal/5 rounded-2xl p-4">
+                <div className="border-b border-brand-teal/10 pb-2">
+                  <div className="text-xs font-extrabold uppercase tracking-wider text-brand-teal flex items-center gap-1.5">
+                    <CheckCircle2 size={15} className="text-emerald-500" />
+                    <span>Student Profile Details</span>
                   </div>
+                  <p className="text-[11px] text-gray-600 mt-0.5">
+                    Please enter your details to complete your registration.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                    Full Name <span className="text-brand-pink">*</span>
+                  </label>
                   <div className="relative">
-                    <Phone
+                    <User
                       size={16}
                       className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
                     />
                     <input
-                      type="tel"
-                      value={loginPhone}
-                      onChange={(e) => setLoginPhone(e.target.value)}
-                      placeholder="Enter your phone number"
+                      type="text"
+                      value={registerData.name}
+                      onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
+                      placeholder="e.g. Ritesh Yadav"
                       required
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                      autoFocus
+                      className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all font-medium"
                     />
                   </div>
                 </div>
-              )}
 
-              {loginOtpSent && (
                 <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail
+                      size={16}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                    />
+                    <input
+                      type="email"
+                      value={registerData.email}
+                      onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
+                      placeholder="name@school.edu"
+                      className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                    School / Institution
+                  </label>
+                  <SchoolSelect
+                    value={registerData.institution}
+                    onChange={(val) => setRegisterData({ ...registerData, institution: val })}
+                    placeholder="Select or search school..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                    Class / Standard
+                  </label>
+                  <ClassSelect
+                    value={registerData.standard}
+                    onChange={(val) => setRegisterData({ ...registerData, standard: val })}
+                    selectedSchoolName={registerData.institution}
+                    placeholder="Select Class (Nursery to 12th)..."
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light active:scale-[0.99] disabled:opacity-75 text-white font-extrabold py-3.5 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition-all shadow-md hover:shadow-lg cursor-pointer"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Registering...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>Complete Registration</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          ) : authMode !== 'forgot' ? (
+            /* ===== UNIFIED SINGLE PHONE & OTP FORM ===== */
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              {!loginOtpSent ? (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                    Mobile Phone Number
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3.5 flex items-center gap-1 text-gray-500 font-bold text-xs sm:text-sm select-none pointer-events-none">
+                      <Phone size={15} className="text-gray-400" />
+                      <span>+91</span>
+                      <span className="text-gray-300 ml-1">|</span>
+                    </div>
+                    <input
+                      type="tel"
+                      value={loginPhone}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setLoginPhone(val);
+                        setRegisterData((prev) => ({ ...prev, phone: val }));
+                      }}
+                      placeholder="Enter 10-digit phone number"
+                      maxLength={10}
+                      autoFocus
+                      required
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-18 pr-4 py-3 text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:bg-white focus:ring-2 focus:ring-brand-teal/20 transition-all font-semibold"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between bg-teal-50 border border-teal-100 rounded-xl px-3.5 py-2.5 mb-3">
+                    <div>
+                      <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">OTP Sent To</span>
+                      <p className="text-xs sm:text-sm font-bold text-gray-900 font-mono">+91 {loginPhone}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginOtpSent(false);
+                        setLoginOtp('');
+                        setGeneratedOtp('');
+                      }}
+                      className="text-xs font-bold text-brand-pink hover:underline flex items-center gap-1 cursor-pointer py-1 px-2.5 rounded-lg hover:bg-white transition-all"
+                    >
+                      <Edit2 size={12} />
+                      <span>Edit Number</span>
+                    </button>
+                  </div>
+
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                    OTP
+                    Enter OTP
                   </label>
                   {generatedOtp && (
                     <div className="mb-2.5 flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 shadow-2xs">
@@ -751,9 +891,10 @@ export default function AuthModal() {
                       type="text"
                       value={loginOtp}
                       onChange={(e) => setLoginOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="Enter your OTP"
+                      placeholder="Enter 4-digit OTP"
                       maxLength={4}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
+                      autoFocus
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-10 py-3 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:bg-white focus:ring-2 focus:ring-brand-teal/15 transition-all font-mono font-bold tracking-wider"
                     />
                     <button
                       type="button"
@@ -763,62 +904,49 @@ export default function AuthModal() {
                       {showLoginOtp ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                </div>
-              )}
 
-              {loginOtpSent && (
-                <div className="flex items-center justify-between text-xs text-gray-500 pt-0.5">
-                  <div>
-                    {canResendLoginOtp ? (
-                      <button
-                        type="button"
-                        onClick={handleResendLoginOtp}
-                        className="font-bold text-brand-teal hover:underline cursor-pointer flex items-center gap-1"
-                      >
-                        <RotateCcw size={12} />
-                        <span>Resend OTP</span>
-                      </button>
-                    ) : (
-                      <span>Resend OTP in <strong>{loginOtpTimer}s</strong></span>
-                    )}
+                  <div className="flex items-center justify-between text-xs text-gray-500 pt-2">
+                    <div>
+                      {canResendLoginOtp ? (
+                        <button
+                          type="button"
+                          onClick={handleResendLoginOtp}
+                          className="font-bold text-brand-teal hover:underline cursor-pointer flex items-center gap-1"
+                        >
+                          <RotateCcw size={12} />
+                          <span>Resend OTP</span>
+                        </button>
+                      ) : (
+                        <span>Resend OTP in <strong>{loginOtpTimer}s</strong></span>
+                      )}
+                    </div>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginOtpSent(false);
-                      setLoginOtp('');
-                      setGeneratedOtp('');
-                    }}
-                    className="font-bold text-brand-pink hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
-                  >
-                    <Edit2 size={12} />
-                    <span>Edit Number</span>
-                  </button>
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-xs pt-1">
-                <label className="flex items-center gap-2 cursor-pointer text-gray-600 select-none">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="rounded border-gray-300 text-brand-teal focus:ring-brand-teal/20"
-                  />
-                  <span>Keep me signed in</span>
-                </label>
-              </div>
+              {!loginOtpSent && (
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-600 select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="rounded border-gray-300 text-brand-teal focus:ring-brand-teal/20"
+                    />
+                    <span>Keep me signed in</span>
+                  </label>
+                </div>
+              )}
 
               <button
                 type={loginOtpSent ? 'button' : 'submit'}
-                disabled={isLoading}
+                disabled={isLoading || (!loginOtpSent && loginPhone.replace(/\D/g, '').length < 10)}
                 onClick={(e) => {
                   if (loginOtpSent) {
                     handleLoginSubmit(e);
                   }
                 }}
-                className="w-full mt-2 inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light active:scale-[0.99] disabled:opacity-75 text-white font-extrabold py-3 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition-all shadow-xs cursor-pointer hover:shadow-md"
+                className="w-full mt-2 inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light active:scale-[0.99] disabled:opacity-60 text-white font-extrabold py-3.5 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition-all shadow-md hover:shadow-lg cursor-pointer"
               >
                 {isLoading ? (
                   <>
@@ -827,324 +955,13 @@ export default function AuthModal() {
                   </>
                 ) : (
                   <>
-                    <LogIn size={16} />
-                    <span>{loginOtpSent ? 'Submit' : 'Send OTP'}</span>
+                    {loginOtpSent ? <CheckCircle2 size={16} /> : <ArrowRight size={16} />}
+                    <span>{loginOtpSent ? 'Verify & Continue' : 'Send OTP'}</span>
                   </>
                 )}
               </button>
-
-              {/* Quick Select from mockData USERS */}
-              {/* <div className="pt-3 border-t border-gray-100 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-500">
-                    Switch Mock Account (RBAC Roles)
-                  </span>
-                  <span className="text-[10px] text-teal-700 font-bold bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
-                    From mockData.js
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {(USERS || []).slice(0, 6).map((u) => {
-                    const hasAdmin = u.isAdmin && u.adminStatus === 'approved';
-                    const hasSeller = u.isSeller && u.sellerStatus === 'approved';
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => {
-                          setIsLoading(true);
-                          setLoginEmail(u.email);
-                          setLoginPassword('Password123');
-                          setTimeout(() => {
-                            setIsLoading(false);
-                            login({ email: u.email, name: u.name });
-                          }, 300);
-                        }}
-                        disabled={isLoading}
-                        className="text-left p-2.5 rounded-xl border border-gray-200 hover:border-brand-teal/40 bg-gray-50/70 hover:bg-teal-50/40 transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="font-bold text-xs text-gray-900 group-hover:text-brand-teal truncate">
-                            {u.name}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {hasAdmin && (
-                              <span className="text-[9px] px-1.5 py-0.2 bg-teal-800 text-white rounded font-black" title="Approved Admin">
-                                Admin
-                              </span>
-                            )}
-                            {hasSeller && (
-                              <span className="text-[9px] px-1.5 py-0.2 bg-amber-400 text-teal-950 rounded font-black" title="Approved Seller">
-                                Seller
-                              </span>
-                            )}
-                            {!hasAdmin && !hasSeller && (
-                              <span className="text-[9px] px-1.5 py-0.2 bg-gray-200 text-gray-700 rounded font-bold">
-                                {u.role}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-[10px] text-gray-500 truncate mt-0.5">
-                          {u.email}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div> */}
-
-              <div className="text-center pt-2 text-xs text-gray-500">
-                Don't have a student account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setAuthMode('register')}
-                  className="font-bold text-brand-teal hover:underline cursor-pointer"
-                >
-                  Create one now
-                </button>
-              </div>
             </form>
-          )}
-
-          {authMode === 'register' && (
-            /* ===== REGISTER FORM ===== */
-            <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
-              {!registerOtpSent && (
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    Mobile Phone <span className="text-brand-pink">*</span>
-                  </label>
-                  <div className="relative">
-                    <Phone
-                      size={16}
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                    />
-                    <input
-                      type="tel"
-                      value={registerData.phone}
-                      onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
-                      placeholder="+91 9876554321"
-                      required
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                    />
-                  </div>
-                </div>
-              )}
-
-
-
-              {registerOtpSent && registerStep === 'otp' && (
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    Enter OTP <span className="text-brand-pink">*</span>
-                  </label>
-                  {generatedOtp && (
-                    <div className="mb-2.5 flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 shadow-2xs">
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-amber-600" />
-                        <span>Generated OTP (Testing):</span>
-                      </span>
-                      <span className="font-mono text-sm tracking-widest bg-white px-2.5 py-0.5 rounded-md border border-amber-300 font-extrabold text-brand-teal shadow-2xs">
-                        {generatedOtp}
-                      </span>
-                    </div>
-                  )}
-                  <div className="relative">
-                    <Lock
-                      size={16}
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                    />
-                    <input
-                      type="text"
-                      value={registerOtp}
-                      onChange={(e) => setRegisterOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="Enter 4-digit OTP"
-                      maxLength={4}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {registerStep === 'details' && (
-                <div className="space-y-3.5 border border-brand-teal/20 bg-brand-teal/5 rounded-2xl p-4">
-                  <div className="flex items-center justify-between gap-2 border-b border-brand-teal/10 pb-2">
-                    <div>
-                      <div className="text-xs font-extrabold uppercase tracking-wider text-brand-teal flex items-center gap-1.5">
-                        <CheckCircle2 size={15} className="text-emerald-500" />
-                        <span>Optional Profile Setup</span>
-                      </div>
-                      <p className="text-[11px] text-gray-600 mt-0.5">
-                        You are automatically logged in! Fill in optional profile details or skip.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleRegisterSkipDetails}
-                      className="text-[11px] font-bold text-brand-pink hover:underline cursor-pointer shrink-0"
-                    >
-                      Skip Step
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                      Full Name
-                    </label>
-                    <div className="relative">
-                      <User
-                        size={16}
-                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                      />
-                      <input
-                        type="text"
-                        value={registerData.name}
-                        onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
-                        placeholder="e.g. Ritesh Yadav"
-                        className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                      Email Address
-                    </label>
-                    <div className="relative">
-                      <Mail
-                        size={16}
-                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                      />
-                      <input
-                        type="email"
-                        value={registerData.email}
-                        onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
-                        placeholder="name@school.edu"
-                        className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/15 transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                      School / Institution
-                    </label>
-                    <SchoolSelect
-                      value={registerData.institution}
-                      onChange={(val) => setRegisterData({ ...registerData, institution: val })}
-                      placeholder="Select or search school..."
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                      Class / Standard
-                    </label>
-                    <ClassSelect
-                      value={registerData.standard}
-                      onChange={(val) => setRegisterData({ ...registerData, standard: val })}
-                      selectedSchoolName={registerData.institution}
-                      placeholder="Select Class (Nursery to 12th)..."
-                    />
-                  </div>
-                </div>
-              )}
-
-              {registerOtpSent && registerStep === 'otp' && (
-                <div className="flex items-center justify-between text-xs text-gray-500 pt-0.5">
-                  <div>
-                    {canResendRegisterOtp ? (
-                      <button
-                        type="button"
-                        onClick={handleResendRegisterOtp}
-                        className="font-bold text-brand-teal hover:underline cursor-pointer flex items-center gap-1"
-                      >
-                        <RotateCcw size={12} />
-                        <span>Resend OTP</span>
-                      </button>
-                    ) : (
-                      <span>Resend OTP in <strong>{registerOtpTimer}s</strong></span>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRegisterOtpSent(false);
-                      setRegisterStep('phone');
-                      setRegisterOtp('');
-                      setGeneratedOtp('');
-                    }}
-                    className="font-bold text-brand-pink hover:underline cursor-pointer flex items-center gap-1 text-[11px]"
-                  >
-                    <Edit2 size={12} />
-                    <span>Edit Number</span>
-                  </button>
-                </div>
-              )}
-
-              {registerStep === 'details' ? (
-                <div className="space-y-2 pt-2">
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full inline-flex items-center justify-center gap-2 bg-brand-teal hover:bg-brand-teal-light active:scale-[0.99] disabled:opacity-75 text-white font-extrabold py-3 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition-all shadow-xs cursor-pointer hover:shadow-md"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" />
-                        <span>Saving Profile...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 size={16} />
-                        <span>Save Profile Details</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleRegisterSkipDetails}
-                    className="w-full inline-flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
-                  >
-                    <span>Skip for now & Start Shopping 🛍️</span>
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full mt-2 inline-flex items-center justify-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover active:scale-[0.99] disabled:opacity-75 text-brand-teal-dark font-extrabold py-3 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition-all shadow-xs cursor-pointer hover:shadow-md"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      <span>{registerOtpSent ? 'Submitting...' : 'Sending OTP...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus size={16} />
-                      <span>{!registerOtpSent ? 'Send OTP' : 'Submit'}</span>
-                    </>
-                  )}
-                </button>
-              )}
-
-              <div className="text-center pt-2 text-xs text-gray-500">
-                Already registered?{' '}
-                <button
-                  type="button"
-                  onClick={() => setAuthMode('login')}
-                  className="font-bold text-brand-teal hover:underline cursor-pointer"
-                >
-                  Sign in here
-                </button>
-              </div>
-            </form>
-          )}
+          ) : null}
 
           {authMode === 'forgot' && (
             /* ===== FORGOT PASSWORD / OTP FLOW ===== */

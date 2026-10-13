@@ -24,8 +24,6 @@ export default function CartDrawer({ onNavigate }) {
     freeShippingProgress,
     freeShippingRemaining,
     isAuthenticated,
-    isProfileIncomplete,
-    profileCompleteness,
     products = [],
     showToast
   } = useCart();
@@ -69,12 +67,6 @@ export default function CartDrawer({ onNavigate }) {
     }
     setIsCheckingOut(true);
     setIsCartOpen(false);
-    if (isAuthenticated && isProfileIncomplete) {
-      const missingLabels = profileCompleteness?.missing?.map((m) => m.label).join(', ') || 'required details';
-      if (showToast) {
-        showToast(`⚠️ Please complete your profile (${missingLabels}) before checking out.`);
-      }
-    }
     if (onNavigate) {
       onNavigate('checkout');
     }
