@@ -27,7 +27,8 @@ import {
   Loader2,
   ArrowRight,
   XCircle,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Share2
 } from 'lucide-react';
 import { useCart, getCartItemKey } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
@@ -36,15 +37,14 @@ import { resolveImageUrl, parseSizeVariants } from '../../utils/api';
 import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
 import { isCouponApplicableToProduct } from '../../utils/couponApplicability';
 import GrabKitSection from './GrabKitSection';
+import { getProductStockUnit, formatStockQty } from '../../utils/stockUnitHelper';
 
 export { getProductPaymentRestrictions };
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
 
-const getProductGallery = (product) => {
-  if (!product) return [];
-  const list = [];
-
+const getProductGallery = (prod) => {
+  if (!prod) return [];
   const extractUrl = (val) => {
     if (!val) return '';
     if (typeof val === 'string') return val.trim();
@@ -54,35 +54,44 @@ const getProductGallery = (product) => {
     return '';
   };
 
-  const primary = extractUrl(product.image || product.coverImage || product.imageUrl || product.photo || product.primaryImage);
-  if (primary) list.push(primary);
+  const isPlaceholder = (url) => {
+    if (!url) return true;
+    const lower = String(url).toLowerCase();
+    return lower.includes('unsplash.com') || lower.includes('placeholder') || lower.includes('via.placeholder');
+  };
 
-  if (Array.isArray(product.images) && product.images.length > 0) {
-    product.images.forEach(img => {
-      const url = extractUrl(img);
-      if (url && !list.includes(url)) {
-        list.push(url);
-      }
-    });
+  const seenUrls = new Set();
+  const result = [];
+
+  const addImage = (raw) => {
+    const u = extractUrl(raw);
+    if (!u) return;
+    const resolved = resolveImageUrl(u);
+    if (!resolved || isPlaceholder(resolved)) return;
+    if (!seenUrls.has(resolved)) {
+      seenUrls.add(resolved);
+      result.push(resolved);
+    }
+  };
+
+  // 1. Primary Cover Photo
+  addImage(prod.image || prod.coverImage || prod.imageUrl || prod.photo || prod.primaryImage);
+
+  // 2. Base Product Gallery Photos
+  if (Array.isArray(prod.images)) {
+    prod.images.forEach(img => addImage(img));
   }
 
-  const variants = parseSizeVariants(product);
+  // 3. Variant Photos
+  const variants = parseSizeVariants(prod);
   variants.forEach(v => {
-    const vImg = extractUrl(v.image);
-    if (vImg && !list.includes(vImg)) list.push(vImg);
-
+    if (v.image) addImage(v.image);
     if (Array.isArray(v.images)) {
-      v.images.forEach(img => {
-        const url = extractUrl(img);
-        if (url && !list.includes(url)) {
-          list.push(url);
-        }
-      });
+      v.images.forEach(img => addImage(img));
     }
   });
 
-  const resolved = list.map(img => resolveImageUrl(img)).filter(Boolean);
-  return [...new Set(resolved)];
+  return result;
 };
 
 export default function ProductDetailPage({ onNavigate }) {
@@ -159,7 +168,11 @@ export default function ProductDetailPage({ onNavigate }) {
   }
 
   // Size Variants & Base Version handling with individual prices, MRPs, images, and stocks
-  const parsedVariants = parseSizeVariants(selectedProduct);
+  const allParsedVariants = parseSizeVariants(selectedProduct);
+  const hasSpecificSizeVariants = allParsedVariants.some(v => !v.isBase && !String(v.size || '').toLowerCase().includes('base'));
+  const parsedVariants = hasSpecificSizeVariants
+    ? allParsedVariants.filter(v => !v.isBase && !String(v.size || '').toLowerCase().includes('base'))
+    : allParsedVariants;
   const rawSizeVariants = parsedVariants.length > 0
     ? parsedVariants
     : (Array.isArray(selectedProduct?.sizes) && selectedProduct.sizes.length > 0
@@ -461,7 +474,7 @@ export default function ProductDetailPage({ onNavigate }) {
   const renderConfidenceBadges = (className = '') => (
     <div className={`grid grid-cols-2 gap-2.5 ${className}`}>
       {/* 1. Dynamic Free Delivery */}
-      <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
+      <div className="p-2.5 rounded-xl bg-slate-50/90 border-0 shadow-2xs flex items-center gap-2 text-[11px] text-gray-700">
         <Truck size={16} className="text-brand-teal shrink-0" />
         <span>
           {shippingFee === 0
@@ -471,13 +484,13 @@ export default function ProductDetailPage({ onNavigate }) {
       </div>
 
       {/* 2. Dynamic Dispatch Timeline */}
-      <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
+      <div className="p-2.5 rounded-xl bg-slate-50/90 border-0 shadow-2xs flex items-center gap-2 text-[11px] text-gray-700">
         <Zap size={16} className="text-brand-ochre shrink-0" />
         <span>{dispatchLabel}</span>
       </div>
 
       {/* 3. Dynamic Return & Exchange Policy */}
-      <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center gap-2 text-[11px] text-gray-700">
+      <div className="p-2.5 rounded-xl bg-slate-50/90 border-0 shadow-2xs flex items-center gap-2 text-[11px] text-gray-700">
         {!isRet && !isExc ? (
           <>
             <XCircle size={16} className="text-gray-400 shrink-0" />
@@ -492,10 +505,10 @@ export default function ProductDetailPage({ onNavigate }) {
       </div>
 
       {/* 4. Dynamic Admin Certification */}
-      <div className={`p-2.5 rounded-xl border flex items-center gap-2 text-[11px] ${
+      <div className={`p-2.5 rounded-xl border-0 shadow-2xs flex items-center gap-2 text-[11px] ${
         isApprovedOrAdminCertified
-          ? 'bg-emerald-50/80 border-emerald-200/80 text-emerald-900 font-bold'
-          : 'bg-gray-50 border-gray-100 text-gray-700'
+          ? 'bg-emerald-50/90 text-emerald-900 font-bold'
+          : 'bg-slate-50/90 text-gray-700'
       }`}>
         <ShieldCheck size={16} className={isApprovedOrAdminCertified ? 'text-emerald-700 shrink-0' : 'text-brand-teal shrink-0'} />
         <span>{isApprovedOrAdminCertified ? '100% Genuine & Admin Certified' : '100% Genuine Certified'}</span>
@@ -823,7 +836,7 @@ export default function ProductDetailPage({ onNavigate }) {
               <div
                 key={rec.id || rec._id || rec.slug || `rec-item-${recIdx}`}
                 onClick={() => openProductDetails(rec)}
-                className="w-[170px] sm:w-[190px] min-w-[170px] sm:min-w-[190px] max-w-[170px] sm:max-w-[190px] shrink-0 snap-start p-3 rounded-2xl border border-gray-200 bg-white hover:border-brand-teal/30 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+                className="w-[170px] sm:w-[190px] min-w-[170px] sm:min-w-[190px] max-w-[170px] sm:max-w-[190px] shrink-0 snap-start p-3 rounded-2xl border-0 shadow-sm shadow-slate-200/60 bg-white hover:shadow-md hover:shadow-slate-200/80 transition-all cursor-pointer flex flex-col justify-between group"
               >
                 <div className="w-full min-w-0">
                   <div className="relative w-full pt-[75%] rounded-xl overflow-hidden bg-gray-50 mb-2.5">
@@ -935,10 +948,10 @@ export default function ProductDetailPage({ onNavigate }) {
     if (sizeVariants.length > 0) {
       specs.push({
         label: 'Stock Available',
-        value: totalProductStock > 0 ? `${totalProductStock} units available across sizes` : 'Out of Stock'
+        value: totalProductStock > 0 ? `${totalProductStock} ${getProductStockUnit(p)} available across sizes` : 'Out of Stock'
       });
     } else if (p.stock !== undefined && p.stock !== null) {
-      specs.push({ label: 'Stock Available', value: p.stock > 0 ? `${p.stock} units` : 'Out of Stock' });
+      specs.push({ label: 'Stock Available', value: p.stock > 0 ? `${p.stock} ${getProductStockUnit(p)}` : 'Out of Stock' });
     }
     const pIsRet = p.isReturnable === true || (p.isReturnable !== false && p.returnPolicy !== 'non_returnable' && p.returnPolicy !== 'no_return');
     const pIsExc = p.isExchangeable === true || (p.isExchangeable !== false && p.returnPolicy !== 'non_returnable' && p.returnPolicy !== 'no_return');
@@ -981,47 +994,70 @@ export default function ProductDetailPage({ onNavigate }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 pt-6">
-      <div className="container mx-auto max-w-5xl px-4"> 
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col">
-          {/* Header Bar */}
-          {/* <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-brand-teal/10 text-brand-teal">
-                {selectedProduct.category}
-              </span>
-              <span className="text-xs text-gray-400">•</span>
-              <span className="text-xs font-bold text-green-700 flex items-center gap-1">
-                <CheckCircle2 size={13} />
-                <span>In Stock</span>
-              </span>
-            </div> */}
-          {/* </div> */}
-
+    <div className="min-h-screen bg-gray-50 pb-20 pt-4 sm:pt-6">
+      <div className="container mx-auto max-w-5xl px-3 sm:px-4"> 
+        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border-0 flex flex-col overflow-hidden">
           {/* Product Hero Grid */}
-          <div className="p-6 sm:p-8">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+          <div className="p-4 sm:p-8">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-8 items-start">
               {/* Left: Product Image Showcase */}
               <div className="md:col-span-6 space-y-3">
-                <div className="relative w-full pt-[95%] bg-gray-50 rounded-2xl overflow-hidden border border-gray-100 group shadow-2xs">
+                <div className="relative w-full pt-[95%] sm:pt-[90%] bg-gradient-to-b from-gray-50 to-gray-100/50 rounded-2xl overflow-hidden border-0 group shadow-md shadow-slate-200/50">
                   {selectedProduct.discountBadge && (
                     <span className="absolute top-3 left-3 z-10 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-brand-pink text-white shadow-xs">
                       {selectedProduct.discountBadge}
                     </span>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => toggleWishlist(selectedProduct.id, selectedProduct)}
-                    className={`absolute top-3 right-3 z-10 w-9 h-9 rounded-full backdrop-blur border flex items-center justify-center transition-all cursor-pointer shadow-xs ${
-                      isWishlisted
-                        ? 'text-brand-pink bg-pink-50 border-brand-pink/40 scale-105'
-                        : 'bg-white/90 border-gray-200 text-gray-400 hover:text-brand-pink hover:scale-110'
-                    }`}
-                    title={isWishlisted ? 'Liked' : 'Like'}
-                  >
-                    <Heart size={16} fill={isWishlisted ? 'currentColor' : 'none'} />
-                  </button>
+                  {/* Action buttons on top of image: Share & Wishlist */}
+                  <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const shareUrl = window.location.href;
+                        const shareData = {
+                          title: selectedProduct.name || 'Book Vardi Product',
+                          text: selectedProduct.subtitle || selectedProduct.name,
+                          url: shareUrl
+                        };
+                        if (navigator.share) {
+                          try {
+                            await navigator.share(shareData);
+                            return;
+                          } catch (err) {
+                            if (err.name !== 'AbortError') console.error('Share error:', err);
+                          }
+                        }
+                        try {
+                          await navigator.clipboard.writeText(shareUrl);
+                          if (typeof showToast === 'function') {
+                            showToast('🔗 Product link copied to clipboard!');
+                          }
+                        } catch {
+                          if (typeof showToast === 'function') {
+                            showToast('🔗 ' + shareUrl);
+                          }
+                        }
+                      }}
+                      className="w-9 h-9 rounded-full bg-white/90 backdrop-blur-md border-0 text-gray-600 hover:text-brand-teal hover:scale-110 flex items-center justify-center transition-all cursor-pointer shadow-md shadow-slate-200/50"
+                      title="Share Product"
+                      aria-label="Share product"
+                    >
+                      <Share2 size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleWishlist(selectedProduct.id, selectedProduct)}
+                      className={`w-9 h-9 rounded-full backdrop-blur-md border-0 flex items-center justify-center transition-all cursor-pointer shadow-md shadow-slate-200/50 ${
+                        isWishlisted
+                          ? 'text-brand-pink bg-pink-50 scale-105'
+                          : 'bg-white/90 text-gray-500 hover:text-brand-pink hover:scale-110'
+                      }`}
+                      title={isWishlisted ? 'Liked' : 'Like'}
+                    >
+                      <Heart size={16} fill={isWishlisted ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
 
                   {(() => {
                     const currentImg = variantImageOverride || productGallery[activeImageIndex] || resolveImageUrl(getProductMainImage(selectedProduct));
@@ -1049,10 +1085,10 @@ export default function ProductDetailPage({ onNavigate }) {
                         setActiveImageIndex(index);
                         setVariantImageOverride(null);
                       }}
-                      className={`relative overflow-hidden rounded-xl border transition-all cursor-pointer ${
+                      className={`relative overflow-hidden rounded-xl border-0 transition-all cursor-pointer ${
                         !variantImageOverride && activeImageIndex === index
-                          ? 'border-brand-teal ring-2 ring-brand-teal/20 shadow-xs'
-                          : 'border-gray-200 hover:border-brand-teal/30'
+                          ? 'ring-2 ring-brand-teal shadow-md shadow-teal-900/10 scale-105'
+                          : 'opacity-70 hover:opacity-100 hover:shadow-xs'
                       }`}
                       aria-label={`View product image ${index + 1}`}
                     >
@@ -1066,19 +1102,19 @@ export default function ProductDetailPage({ onNavigate }) {
                 </div>
 
                 {/* Selected Size & Available Stock Summary directly under image gallery */}
-                <div className="flex items-center justify-between p-2.5 bg-gray-50/90 rounded-xl border border-gray-200 text-xs">
+                <div className="flex items-center justify-between p-2.5 bg-slate-50/90 rounded-xl border-0 shadow-2xs text-xs">
                   <span className="text-gray-700 font-bold flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-brand-teal"></span>
                     {selectedSize ? `Size: ${selectedSize}` : 'Current Product Stock:'}
                   </span>
-                  <span className={`font-bold font-mono px-2.5 py-0.5 rounded-full text-xs border ${
+                  <span className={`font-bold font-mono px-2.5 py-0.5 rounded-full text-xs border-0 shadow-2xs ${
                     currentVariantStock > 10
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      ? 'bg-emerald-50 text-emerald-800'
                       : currentVariantStock > 0
-                      ? 'bg-amber-50 text-amber-800 border-amber-200'
-                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                      ? 'bg-amber-50 text-amber-800'
+                      : 'bg-rose-50 text-rose-800'
                   }`}>
-                    {currentVariantStock > 0 ? `${currentVariantStock} Available in Stock` : 'Out of Stock'}
+                    {currentVariantStock > 0 ? `${currentVariantStock} ${getProductStockUnit(selectedProduct, activeVariant || currentSelectedVariant)} Available in Stock` : 'Out of Stock'}
                   </span>
                 </div>
 
@@ -1157,9 +1193,9 @@ export default function ProductDetailPage({ onNavigate }) {
                           : 'text-rose-700 bg-rose-50 border-rose-200'
                       }`}>
                         {currentVariantStock > 10
-                          ? (sizeVariants.length > 0 && selectedSize ? `In Stock (${currentVariantStock} left in ${selectedSize})` : `In Stock (${currentVariantStock} units)`)
+                          ? (sizeVariants.length > 0 && selectedSize ? `In Stock (${currentVariantStock} ${getProductStockUnit(selectedProduct, activeVariant || currentSelectedVariant, { short: true })} left in ${selectedSize})` : `In Stock (${currentVariantStock} ${getProductStockUnit(selectedProduct, activeVariant || currentSelectedVariant, { short: true })})`)
                           : currentVariantStock > 0
-                          ? `Only ${currentVariantStock} Left in ${selectedSize || 'Stock'}`
+                          ? `Only ${currentVariantStock} ${getProductStockUnit(selectedProduct, activeVariant || currentSelectedVariant, { short: true })} Left in ${selectedSize || 'Stock'}`
                           : `${selectedSize ? `${selectedSize}: ` : ''}Out of Stock`}
                       </span>
                     )}
@@ -1194,27 +1230,11 @@ export default function ProductDetailPage({ onNavigate }) {
                           <span>Non-Returnable & Non-Exchangeable</span>
                         </span>
                       )}
-
-                      {currentVariantStock !== undefined && (
-                        <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
-                          currentVariantStock > 10
-                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                            : currentVariantStock > 0
-                            ? 'text-amber-800 bg-amber-50 border-amber-200'
-                            : 'text-rose-700 bg-rose-50 border-rose-200'
-                        }`}>
-                          {currentVariantStock > 10
-                            ? (sizeVariants.length > 0 && selectedSize ? `In Stock (${currentVariantStock} in ${selectedSize})` : 'In Stock')
-                            : currentVariantStock > 0
-                            ? `Only ${currentVariantStock} Left`
-                            : 'Out of Stock'}
-                        </span>
-                      )}
                     </div>
                 </div>
 
                 {/* Price & Savings */}
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50/40 via-amber-50/30 to-gray-50 border border-gray-200/80 shadow-xs">
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-teal-50/60 via-amber-50/40 to-slate-50 border-0 shadow-sm shadow-slate-200/50">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex flex-wrap items-baseline gap-2 sm:gap-3">
                       <div className="flex items-baseline gap-1.5 flex-wrap">
@@ -1280,7 +1300,7 @@ export default function ProductDetailPage({ onNavigate }) {
                 </div>
 
                 {/* Size / Scale Variants Selector & Size Chart */}
-                {(!selectedProduct.isMeterBased && selectedProduct.unit !== 'meter') && sizeVariants.length > 0 && (
+                {(!selectedProduct.isMeterBased && selectedProduct.unit !== 'meter') && sizeVariants.length > 0 && hasSpecificSizeVariants && (
                   <div className="space-y-2 pt-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-gray-700">
@@ -1296,7 +1316,7 @@ export default function ProductDetailPage({ onNavigate }) {
                       </span>
                       {currentVariantStock !== undefined && (
                         <span className={`text-[11px] font-bold ${currentVariantStock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                          {currentVariantStock > 0 ? `${currentVariantStock} in stock` : 'Out of Stock'}
+                          {currentVariantStock > 0 ? `${currentVariantStock} ${getProductStockUnit(selectedProduct, activeVariant || currentSelectedVariant, { short: true })} in stock` : 'Out of Stock'}
                         </span>
                       )}
                     </div>
@@ -1315,16 +1335,16 @@ export default function ProductDetailPage({ onNavigate }) {
                             key={variant.id || variant._id || variantVal || `size-var-${vIdx}`}
                             type="button"
                             onClick={() => handleSelectSize(variant)}
-                            className={`flex items-center gap-2.5 p-2 rounded-2xl border transition-all cursor-pointer shrink-0 text-left ${
+                            className={`flex items-center gap-2.5 p-2 rounded-2xl transition-all cursor-pointer shrink-0 text-left border-0 ${
                               isSelected
-                                ? 'bg-teal-950 text-white border-teal-950 ring-2 ring-teal-700/30 shadow-md scale-[1.02]'
+                                ? 'bg-gradient-to-r from-teal-900 to-teal-950 text-white shadow-lg shadow-teal-950/20 ring-2 ring-teal-600 scale-[1.02]'
                                 : isVOutOfStock
-                                ? 'bg-gray-50 text-gray-400 border-gray-200 opacity-60 hover:border-gray-300'
-                                : 'bg-white text-gray-800 border-gray-200 hover:border-brand-teal/50 hover:bg-teal-50/20'
+                                ? 'bg-gray-100 text-gray-400 opacity-60 cursor-not-allowed'
+                                : 'bg-slate-50 hover:bg-white text-gray-800 shadow-xs hover:shadow-md hover:shadow-slate-200/50'
                             }`}
                           >
-                            <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border overflow-hidden ${
-                              isSelected ? 'bg-teal-800 text-teal-100 border-teal-700' : isVOutOfStock ? 'bg-gray-200 text-gray-400 border-gray-200' : 'bg-gray-100 text-gray-600 border-gray-200'
+                            <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden ${
+                              isSelected ? 'bg-teal-800 text-teal-100' : isVOutOfStock ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-600'
                             }`}>
                               {vImgUrl ? (
                                 <img
@@ -1336,11 +1356,11 @@ export default function ProductDetailPage({ onNavigate }) {
                               ) : null}
                               <span className="select-none absolute z-0">{variantVal.slice(0, 3)}</span>
                             </div>
-                            <div className="pr-1.5 min-w-[60px]">
+                            <div className="pr-2 min-w-[55px]">
                               <div className="text-xs font-extrabold flex items-center gap-1">
                                 <span>{variantVal}</span>
                                 {variant.measureScale && variant.measureScale !== 'size' && (
-                                  <span className={`text-[9px] px-1 py-0.2 rounded uppercase font-bold ${isSelected ? 'bg-teal-800 text-amber-300' : 'bg-gray-100 text-gray-500'}`}>
+                                  <span className={`text-[9px] px-1 py-0.2 rounded uppercase font-bold ${isSelected ? 'bg-teal-800 text-amber-300' : 'bg-gray-200/80 text-gray-600'}`}>
                                     {variant.measureScale}
                                   </span>
                                 )}
@@ -1529,7 +1549,7 @@ export default function ProductDetailPage({ onNavigate }) {
                           type="button"
                           onClick={() => {
                             if (currentVariantStock > 0 && quantity >= currentVariantStock) {
-                              showToast(`⚠️ Only ${currentVariantStock} items available for this size`);
+                              showToast(`⚠️ Only ${currentVariantStock} ${getProductStockUnit(selectedProduct, activeVariant || currentSelectedVariant, { short: true })} available for this selection`);
                               return;
                             }
                             setQuantity((q) => q + 1);
@@ -1658,7 +1678,7 @@ export default function ProductDetailPage({ onNavigate }) {
               </div>
               
               {availableCoupons.length === 0 ? (
-                <div className="p-4 bg-gray-50/80 border border-dashed border-gray-200 rounded-2xl text-center text-xs text-gray-500 font-medium">
+                <div className="p-4 bg-slate-50/70 rounded-2xl text-center text-xs text-gray-500 font-medium border-0 shadow-2xs">
                   No active offers or coupons available at this time.
                 </div>
               ) : (
@@ -1981,7 +2001,7 @@ export default function ProductDetailPage({ onNavigate }) {
               </div>
 
               {activeTab === 'desc' && (
-                <div className="p-5 sm:p-6 rounded-2xl bg-gray-50/70 border border-gray-100 text-xs sm:text-sm text-gray-700 leading-relaxed space-y-4">
+                <div className="p-5 sm:p-6 rounded-2xl bg-slate-50/80 border-0 shadow-2xs text-xs sm:text-sm text-gray-700 leading-relaxed space-y-4">
                   {selectedProduct.description ? (
                     <div className="whitespace-pre-line leading-relaxed text-gray-800 font-medium">
                       {selectedProduct.description}
@@ -2015,7 +2035,7 @@ export default function ProductDetailPage({ onNavigate }) {
                     {getProductSpecs().map((spec, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between p-3 rounded-xl bg-gray-50/80 border border-gray-100"
+                        className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/80 border-0 shadow-2xs"
                       >
                         <span className="font-bold text-gray-500">{spec.label}</span>
                         <span className="font-semibold text-gray-800 text-right">{spec.value}</span>
@@ -2024,14 +2044,14 @@ export default function ProductDetailPage({ onNavigate }) {
                   </div>
 
                   {/* Return & Exchange Policy Highlight Card */}
-                  <div className={`p-4 rounded-2xl border text-xs leading-relaxed ${
+                  <div className={`p-4 rounded-2xl border-0 shadow-2xs text-xs leading-relaxed ${
                     isRet && isExc
-                      ? 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950'
+                      ? 'bg-emerald-50/70 text-emerald-950'
                       : isRet
-                      ? 'bg-blue-50/60 border-blue-200/80 text-blue-950'
+                      ? 'bg-blue-50/70 text-blue-950'
                       : isExc
-                      ? 'bg-purple-50/60 border-purple-200/80 text-purple-950'
-                      : 'bg-slate-50 border-slate-200/80 text-slate-700'
+                      ? 'bg-purple-50/70 text-purple-950'
+                      : 'bg-slate-50/80 text-slate-700'
                   }`}>
                     <div className="flex items-center gap-2 font-bold mb-1">
                       {isRet && isExc ? (
@@ -2076,7 +2096,7 @@ export default function ProductDetailPage({ onNavigate }) {
               )}
 
               {activeTab === 'details' && (
-                <div className="p-5 rounded-2xl bg-gray-50/70 border border-gray-100 text-xs text-gray-700 leading-relaxed space-y-3">
+                <div className="p-5 rounded-2xl bg-slate-50/80 border-0 shadow-2xs text-xs text-gray-700 leading-relaxed space-y-3">
                   <p>
                     Engineered specifically for demanding academic schedules, long study hours, and exam revision. Every material is vetted for ink endurance, bleed resistance, and ergonomic handling.
                   </p>
@@ -2153,7 +2173,7 @@ export default function ProductDetailPage({ onNavigate }) {
               </div>
 
               {/* Rating Breakdown Overview */}
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 bg-gray-50/80 border border-gray-200/80 rounded-2xl p-5 sm:p-6 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 bg-slate-50/80 border-0 shadow-sm rounded-2xl p-5 sm:p-6 mb-8">
                 <div className="sm:col-span-4 text-center sm:text-left flex flex-col justify-center">
                   <div className="font-display text-4xl font-extrabold text-brand-teal">
                     {averageRating}
@@ -2325,7 +2345,7 @@ export default function ProductDetailPage({ onNavigate }) {
                   {reviewsList.map((review, index) => (
                     <div
                       key={review._id || review.id || `rev-${index}`}
-                      className="p-5 rounded-2xl border border-gray-200 bg-white hover:border-brand-teal/30 hover:shadow-xs transition-all space-y-2.5"
+                      className="p-5 rounded-2xl border-0 shadow-2xs bg-white hover:shadow-md transition-all space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">

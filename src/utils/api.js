@@ -53,11 +53,42 @@ export function parseSizeVariants(product) {
         }
 
         if (typeof v === 'object' && v !== null) {
-          const rawImage = v.image || v.imageUrl || v.photo || v.url || (Array.isArray(v.images) && v.images[0]) || product?.image || (Array.isArray(product?.images) && product.images[0]) || '';
-          let rawImages = Array.isArray(v.images) && v.images.length > 0 ? v.images : (rawImage ? [rawImage] : []);
+          const fallbackProductImg = product?.image || (Array.isArray(product?.images) && product.images[0]) || '';
+          const fallbackUrl = fallbackProductImg ? resolveImageUrl(fallbackProductImg) : '';
+          const isPlaceholder = (img) => !img || (typeof img === 'string' && img.includes('unsplash.com'));
+
+          let rawImages = Array.isArray(v.images) && v.images.length > 0 ? v.images : (v.image ? [v.image] : []);
           if (typeof rawImages === 'string') {
             try { rawImages = JSON.parse(rawImages); } catch { rawImages = [rawImages]; }
           }
+          if (!Array.isArray(rawImages)) rawImages = [rawImages];
+
+          // Deduplicate and filter placeholders
+          const seen = new Set();
+          let cleanedImages = [];
+          rawImages.forEach(img => {
+            if (!img || isPlaceholder(img)) return;
+            const resolved = resolveImageUrl(img);
+            if (resolved && !seen.has(resolved)) {
+              seen.add(resolved);
+              cleanedImages.push(img);
+            }
+          });
+
+          // If there are multiple images and one is the base product fallback, keep only custom variant images
+          if (cleanedImages.length > 1 && fallbackUrl) {
+            const customOnly = cleanedImages.filter(img => resolveImageUrl(img) !== fallbackUrl);
+            if (customOnly.length > 0) {
+              cleanedImages = customOnly;
+            }
+          }
+
+          // If no variant image, fallback to base product image
+          if (cleanedImages.length === 0 && fallbackProductImg && !isPlaceholder(fallbackProductImg)) {
+            cleanedImages = [fallbackProductImg];
+          }
+
+          const rawImage = cleanedImages[0] || (v.image && !isPlaceholder(v.image) ? v.image : fallbackProductImg);
 
           const sizeVal = String(v.size || v.measureValue || v.name || v.label || v.title || `Variant #${idx + 1}`);
           const priceVal = (v.price !== undefined && v.price !== null && !isNaN(Number(v.price)) && Number(v.price) >= 0)
@@ -84,7 +115,7 @@ export function parseSizeVariants(product) {
             stockQuantity: stockVal,
             sku: v.sku || (product?.sku ? `${product.sku}-${sizeVal}` : `SKU-VAR-${idx + 1}`),
             image: rawImage,
-            images: rawImages
+            images: cleanedImages
           };
         }
 
@@ -93,30 +124,7 @@ export function parseSizeVariants(product) {
     }
   }
 
-  // Prepend Base Product if product has variants and base price > 0, and base variant is not already present
-  if (parsed.length > 0 && Number(product?.price || 0) > 0) {
-    const hasBaseVariant = parsed.some(v => v.isBase || String(v.size || '').toLowerCase().includes('base'));
-    if (!hasBaseVariant) {
-      const baseMrp = Number(product.mrp || product.originalPrice || product.regularPrice || product.price || 0);
-      const baseOption = {
-        id: `base_option_${product._id || product.id || '0'}`,
-        size: 'Base Product',
-        measureScale: product.unit || 'unit',
-        measureValue: 'Base Product',
-        price: Number(product.price || 0),
-        mrp: baseMrp > Number(product.price || 0) ? baseMrp : Number(product.price || 0),
-        originalPrice: baseMrp > Number(product.price || 0) ? baseMrp : Number(product.price || 0),
-        stock: Number(product.stockQuantity ?? product.stock ?? 0),
-        stockQuantity: Number(product.stockQuantity ?? product.stock ?? 0),
-        sku: product.sku || `SKU-BASE-${String(product._id || product.id || '').slice(-6).toUpperCase()}`,
-        image: product.image || product.imageUrl || (Array.isArray(product.images) ? product.images[0] : '') || '',
-        images: Array.isArray(product.images) && product.images.length > 0 ? product.images : (product.image ? [product.image] : []),
-        isBase: true
-      };
-      parsed = [baseOption, ...parsed];
-    }
-  }
-
+  // Return parsed variants cleanly without prepending an artificial "Base Product" option
   return parsed;
 }
 
