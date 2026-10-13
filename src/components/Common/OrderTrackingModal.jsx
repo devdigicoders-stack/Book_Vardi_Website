@@ -347,8 +347,16 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
   const currentStatus = String(order.overallStatus || order.status || 'pending').toLowerCase().trim();
   const isCancelled = currentStatus === 'cancelled';
-  const isReturnOrExchangeOrRefund = isOrderRefundedOrReturnOrExchange(order);
-  const isRefunded = currentStatus === 'refunded' || currentStatus === 'refund_completed' || String(order.paymentStatus || '').toLowerCase() === 'refunded' || String(order.refundStatus || '').toLowerCase().includes('completed') || String(order.refundStatus || '').toLowerCase().includes('refund');
+  const isRefundCompleted = (
+    currentStatus === 'refunded' ||
+    currentStatus === 'refund_completed' ||
+    String(order.paymentStatus || '').toLowerCase().trim() === 'refunded' ||
+    String(order.refundStatus || '').toLowerCase().trim() === 'refund completed' ||
+    String(order.refundStatus || '').toLowerCase().trim() === 'refund_completed' ||
+    String(order.refundStatus || '').toLowerCase().trim() === 'refunded'
+  );
+  const isRefundTypeRequest = !(String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim() === 'exchange' || currentStatus.includes('exchange'));
+  const isRefunded = isRefundTypeRequest;
 
   const retReqType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim();
   const retReqStatus = String(order.returnRequest?.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
@@ -397,7 +405,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
       returnActiveIndex = 0;
     }
   } else {
-    if (isRefunded || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || currentStatus === 'refund_completed' || currentStatus === 'refunded') {
+    if (isRefundCompleted || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || currentStatus === 'refund_completed' || currentStatus === 'refunded') {
       returnActiveIndex = 4;
     } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || currentStatus === 'product_received' || currentStatus === 'product_return_received' || retReqStatus === 'refund_initiated' || currentStatus === 'refund_initiated') {
       returnActiveIndex = 3;
@@ -677,7 +685,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                 {isCancelled ? (
                   <XCircle size={26} className="text-rose-400" />
                 ) : isReturnOrExchangeOrRefund ? (
-                  isRefunded ? (
+                  isRefundCompleted ? (
                     <CheckCircle2 size={26} className="text-emerald-400" />
                   ) : (
                     <RotateCcw size={26} className="animate-pulse text-amber-400" />

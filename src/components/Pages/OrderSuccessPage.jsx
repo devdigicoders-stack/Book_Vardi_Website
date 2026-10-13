@@ -217,7 +217,18 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
 
   const isCancelled = currentStatus === 'cancelled';
   const isReturnOrExchangeOrRefund = isOrderRefundedOrReturnOrExchange(order);
-  const isRefunded = currentStatus === 'refunded' || currentStatus === 'refund_completed' || String(order.paymentStatus || '').toLowerCase() === 'refunded' || String(order.refundStatus || '').toLowerCase().includes('completed') || String(order.refundStatus || '').toLowerCase().includes('refund');
+  const isRefundCompleted = (
+    currentStatus === 'refunded' ||
+    currentStatus === 'refund_completed' ||
+    String(order.paymentStatus || '').toLowerCase().trim() === 'refunded' ||
+    String(order.refundStatus || '').toLowerCase().trim() === 'refund completed' ||
+    String(order.refundStatus || '').toLowerCase().trim() === 'refund_completed' ||
+    String(order.refundStatus || '').toLowerCase().trim() === 'refunded'
+  );
+  const isExchangeOrder = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim() === 'exchange' ||
+    currentStatus.includes('exchange');
+  const isRefundTypeRequest = !isExchangeOrder;
+  const isRefunded = isRefundTypeRequest;
   const hasPendingItems = !currentStatus || ['pending', 'placed', 'unconfirmed'].includes(currentStatus) || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
     const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
     return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
@@ -463,18 +474,34 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           ];
 
           let returnStepIndex = 1;
-          if (isRefunded || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || retReqStatus === 'exchanged' || statusLower === 'refund_completed' || statusLower === 'refunded' || statusLower === 'exchanged') {
-            returnStepIndex = 5;
-          } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || retReqStatus === 'exchange_dispatched' || statusLower === 'product_received' || statusLower === 'exchange_dispatched') {
-            returnStepIndex = 4;
-          } else if (retReqStatus === 'pickup_scheduled' || statusLower === 'pickup_scheduled') {
-            returnStepIndex = 3;
-          } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || statusLower.endsWith('_approved')) {
-            returnStepIndex = 2;
-          } else if (retReqStatus.includes('reject') || statusLower.includes('reject')) {
-            returnStepIndex = 2;
+          if (isExchange) {
+            if (retReqStatus === 'exchanged' || statusLower === 'exchanged' || statusLower === 'completed') {
+              returnStepIndex = 5;
+            } else if (retReqStatus === 'exchange_dispatched' || statusLower === 'exchange_dispatched') {
+              returnStepIndex = 4;
+            } else if (retReqStatus === 'pickup_scheduled' || statusLower === 'pickup_scheduled') {
+              returnStepIndex = 3;
+            } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || statusLower.endsWith('_approved')) {
+              returnStepIndex = 2;
+            } else if (retReqStatus.includes('reject') || statusLower.includes('reject')) {
+              returnStepIndex = 2;
+            } else {
+              returnStepIndex = 1;
+            }
           } else {
-            returnStepIndex = 1;
+            if (isRefundCompleted || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || statusLower === 'refund_completed' || statusLower === 'refunded') {
+              returnStepIndex = 5;
+            } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || statusLower === 'product_received' || statusLower === 'product_return_received' || retReqStatus === 'refund_initiated' || statusLower === 'refund_initiated') {
+              returnStepIndex = 4;
+            } else if (retReqStatus === 'pickup_scheduled' || statusLower === 'pickup_scheduled') {
+              returnStepIndex = 3;
+            } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || statusLower.endsWith('_approved')) {
+              returnStepIndex = 2;
+            } else if (retReqStatus.includes('reject') || statusLower.includes('reject')) {
+              returnStepIndex = 2;
+            } else {
+              returnStepIndex = 1;
+            }
           }
 
           const stepIndex = (statusLower === 'delivered' || statusLower === 'completed')
@@ -811,7 +838,13 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                                   : order.returnRequest?.priceAdjustmentType === 'partial_refund'
                                   ? `₹${Math.abs(order.returnRequest.priceDifference)} Refund`
                                   : '₹0 (Even Exchange)')
-                              : (returnStepIndex === 5 ? 'Refund Completed' : 'Refund In Process')}
+                              : (returnStepIndex === 5
+                                  ? 'Refund Completed'
+                                  : (returnStepIndex === 4
+                                      ? 'Product Received'
+                                      : (returnStepIndex === 3
+                                          ? 'Pickup Scheduled'
+                                          : (order.refundStatus || 'Refund In Process'))))}
                           </span>
                         </div>
                       </div>
