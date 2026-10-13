@@ -410,28 +410,33 @@ export default function CheckoutPage({ onNavigate }) {
     let paymentLabel = paymentMethod === 'upi' ? 'UPI / Online Payment' : 'Cash on Delivery (COD)';
 
     const executeDirectOrder = (label, address, razorpayInfo = {}) => {
-      placeOrder({
-        subtotal,
-        taxAmount: extraTaxAmount,
-        shippingCost: totalShippingCost,
-        discount: couponDiscount + pointsDiscount,
-        total: grandTotal,
-        shippingAddress: address,
-        paymentMethod: label,
-        paymentStatus: paymentMethod === 'cod' ? 'Pending' : 'Paid',
-        razorpayPaymentId: razorpayInfo.paymentId || null,
-        razorpayOrderId: razorpayInfo.orderId || null,
-        deliverySpeed: 'Standard Delivery (3-5 Days)',
-        estimatedDelivery: '3 - 5 Business Days'
-      });
-      setIsSubmitting(false);
-      onNavigate('order-success');
+      try {
+        placeOrder({
+          subtotal,
+          taxAmount: extraTaxAmount,
+          shippingCost: totalShippingCost,
+          discount: couponDiscount + pointsDiscount,
+          total: grandTotal,
+          shippingAddress: address,
+          paymentMethod: label,
+          paymentStatus: paymentMethod === 'cod' ? 'Pending' : 'Paid',
+          razorpayPaymentId: razorpayInfo.paymentId || null,
+          razorpayOrderId: razorpayInfo.orderId || null,
+          deliverySpeed: 'Standard Delivery (3-5 Days)',
+          estimatedDelivery: '3 - 5 Business Days'
+        });
+      } catch (err) {
+        console.error('Order placement execution caught error:', err);
+      } finally {
+        setIsSubmitting(false);
+        onNavigate('order-success');
+      }
     };
 
     if (paymentMethod !== 'cod') {
       const isRazorpayReady = await loadRazorpayScript();
       if (!isRazorpayReady || typeof window.Razorpay === 'undefined') {
-        setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 800);
+        setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
         return;
       }
       // Sanitize inputs for Razorpay Standard Checkout
@@ -557,16 +562,16 @@ export default function CheckoutPage({ onNavigate }) {
             });
             rzp.open();
           } else {
-            setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 800);
+            setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
           }
         })
         .catch(() => {
-          setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 800);
+          setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
         });
       return;
     }
 
-    setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 1000);
+    setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
   };
 
   return (

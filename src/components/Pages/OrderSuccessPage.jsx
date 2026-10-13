@@ -158,7 +158,38 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
     ? order.shippingFee
     : (order.shippingCost !== undefined ? order.shippingCost : 0);
 
-  const currentStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+  const resolveOrderLifecycleStatus = (o) => {
+    if (!o) return 'placed';
+    const rawOverall = String(o.overallStatus || o.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    const rawRet = String(o.returnRequest?.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    const rawRefund = String(o.refundStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    const rawPayment = String(o.paymentStatus || '').toLowerCase().trim();
+
+    if (
+      rawOverall === 'refund_completed' ||
+      rawOverall === 'refunded' ||
+      rawRet === 'refund_completed' ||
+      rawRet === 'refunded' ||
+      rawRefund.includes('completed') ||
+      rawRefund.includes('refund_completed') ||
+      rawPayment === 'refunded'
+    ) {
+      return 'refund_completed';
+    }
+    if (rawOverall === 'exchanged' || rawRet === 'exchanged') return 'exchanged';
+    if (rawOverall === 'exchange_dispatched' || rawRet === 'exchange_dispatched') return 'exchange_dispatched';
+    if (rawOverall === 'product_received' || rawOverall === 'product_return_received' || rawRet === 'product_received' || rawRet === 'product_return_received') return 'product_received';
+    if (rawOverall === 'pickup_scheduled' || rawRet === 'pickup_scheduled') return 'pickup_scheduled';
+    if (rawOverall.includes('approved') || rawRet.includes('approved')) return (o.returnRequest?.type === 'exchange') ? 'exchange_approved' : 'return_approved';
+    if (rawOverall.includes('reject') || rawRet.includes('reject')) return (o.returnRequest?.type === 'exchange') ? 'exchange_rejected' : 'return_rejected';
+    if (rawOverall.includes('refund_init') || rawRet.includes('refund_init') || rawRefund.includes('initiated')) return 'refund_initiated';
+    if (rawRet === 'return_requested' || rawOverall === 'return_requested') return 'return_requested';
+    if (rawRet === 'exchange_requested' || rawOverall === 'exchange_requested') return 'exchange_requested';
+    if (rawRet && rawRet !== 'no_request' && rawRet !== 'none') return (o.returnRequest?.type === 'exchange') ? 'exchange_requested' : 'return_requested';
+    return rawOverall || 'placed';
+  };
+
+  const currentStatus = resolveOrderLifecycleStatus(order);
   const isCancelEligible = ['placed', 'pending', 'confirmed', 'processing', 'packed'].includes(currentStatus);
   const isDelivered = ['delivered', 'completed'].includes(currentStatus);
   const orderItems = order.items || [];
@@ -179,7 +210,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   })();
   const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
   const now = new Date();
-  const isReturnWindowValid = isDelivered && isOrderReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
+  const isReturnWindowValid = isDelivered && isOrderReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded', 'refund_completed'].includes(currentStatus);
   const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   const daysLeft = Math.max(0, Math.ceil((returnTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
   const orderAvail = getReturnExchangeAvailability(hasReturnable, hasExchangeable, formattedTillDate, daysLeft);
@@ -400,7 +431,40 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           const vehicleNumber = selfDetails?.vehicleNumber || order.deliveryDetails?.vehicleNumber || '';
           const trackingToken = selfDetails?.deliveryPartnerToken || order.deliveryDetails?.deliveryPartnerToken || order.trackingNumber || '';
 
-          const statusLower = String(order.overallStatus || order.status || '').toLowerCase().trim();
+          const statusLower = String(order.overallStatus || order.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+          const retReqType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim();
+          const retReqStatus = String(order.returnRequest?.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+          const isExchange = retReqType === 'exchange' || statusLower.includes('exchange');
+
+          const returnExchangeSteps = isExchange ? [
+            { id: 1, title: 'Exchange Requested', desc: 'Replacement requested', icon: RotateCcw },
+            { id: 2, title: 'Exchange Approved', desc: 'Store approved request', icon: CheckCircle2 },
+            { id: 3, title: 'Pickup Scheduled', desc: 'Courier pickup booked', icon: Calendar },
+            { id: 4, title: 'Replacement Dispatched', desc: 'Dispatched via courier', icon: Truck },
+            { id: 5, title: 'Exchange Completed', desc: 'Replacement delivered', icon: ShieldCheck }
+          ] : [
+            { id: 1, title: 'Return Requested', desc: 'Return request submitted', icon: RotateCcw },
+            { id: 2, title: 'Return Approved', desc: 'Store approved return', icon: CheckCircle2 },
+            { id: 3, title: 'Pickup Scheduled', desc: 'Doorstep pickup booked', icon: Calendar },
+            { id: 4, title: 'Product Received', desc: 'Inspected & verified', icon: Boxes },
+            { id: 5, title: 'Refund Completed', desc: 'Credited to account', icon: ShieldCheck }
+          ];
+
+          let returnStepIndex = 1;
+          if (isRefunded || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || retReqStatus === 'exchanged' || statusLower === 'refund_completed' || statusLower === 'refunded' || statusLower === 'exchanged') {
+            returnStepIndex = 5;
+          } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || retReqStatus === 'exchange_dispatched' || statusLower === 'product_received' || statusLower === 'exchange_dispatched') {
+            returnStepIndex = 4;
+          } else if (retReqStatus === 'pickup_scheduled' || statusLower === 'pickup_scheduled') {
+            returnStepIndex = 3;
+          } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || statusLower.endsWith('_approved')) {
+            returnStepIndex = 2;
+          } else if (retReqStatus.includes('reject') || statusLower.includes('reject')) {
+            returnStepIndex = 2;
+          } else {
+            returnStepIndex = 1;
+          }
+
           const stepIndex = (statusLower === 'delivered' || statusLower === 'completed')
             ? 4
             : ((statusLower === 'in_transit' || statusLower === 'shipped' || statusLower === 'out_for_delivery' || statusLower === 'out for delivery')
@@ -436,7 +500,11 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             }
           ];
 
-          const progressPercent = stepIndex === 4 ? 100 : stepIndex === 3 ? 68 : stepIndex === 2 ? 35 : 5;
+          const activeTrackingSteps = isReturnOrExchangeOrRefund ? returnExchangeSteps : trackingSteps;
+          const activeCurrentStepIndex = isReturnOrExchangeOrRefund ? returnStepIndex : stepIndex;
+          const progressPercent = isReturnOrExchangeOrRefund
+            ? (returnStepIndex === 5 ? 100 : returnStepIndex === 4 ? 75 : returnStepIndex === 3 ? 50 : returnStepIndex === 2 ? 25 : 5)
+            : (stepIndex === 4 ? 100 : stepIndex === 3 ? 68 : stepIndex === 2 ? 35 : 5);
 
           const handleCopyOtp = (e) => {
             e.stopPropagation();
@@ -637,10 +705,10 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                       </div>
 
                       {/* Step Nodes */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-2 relative z-10">
-                        {trackingSteps.map((step) => {
-                          const isCompleted = step.id < stepIndex;
-                          const isCurrent = step.id === stepIndex;
+                      <div className={`grid gap-4 sm:gap-2 relative z-10 ${isReturnOrExchangeOrRefund ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
+                        {activeTrackingSteps.map((step) => {
+                          const isCompleted = step.id < activeCurrentStepIndex;
+                          const isCurrent = step.id === activeCurrentStepIndex;
                           const StepIcon = step.icon;
 
                           return (
@@ -652,7 +720,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                               <div
                                 className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 mb-2.5 ${
                                   isCurrent
-                                    ? 'bg-brand-teal text-white ring-4 ring-brand-teal/25 shadow-lg scale-110 animate-pulse'
+                                    ? (isReturnOrExchangeOrRefund ? 'bg-amber-600 text-white ring-4 ring-amber-600/25 shadow-lg scale-110 animate-pulse' : 'bg-brand-teal text-white ring-4 ring-brand-teal/25 shadow-lg scale-110 animate-pulse')
                                     : isCompleted
                                     ? 'bg-emerald-600 text-white shadow-xs'
                                     : 'bg-white text-gray-400 border-2 border-gray-200 group-hover:border-gray-300'
@@ -661,14 +729,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                                 {isCompleted ? (
                                   <Check size={20} className="stroke-[3]" />
                                 ) : (
-                                  <StepIcon size={20} className={isCurrent ? "text-amber-300" : ""} />
+                                  <StepIcon size={20} className={isCurrent ? "text-amber-200" : ""} />
                                 )}
                               </div>
 
                               <span
                                 className={`text-xs font-black transition-colors ${
                                   isCurrent
-                                    ? 'text-brand-teal'
+                                    ? (isReturnOrExchangeOrRefund ? 'text-amber-800' : 'text-brand-teal')
                                     : isCompleted
                                     ? 'text-gray-900 font-extrabold'
                                     : 'text-gray-400'
@@ -686,8 +754,89 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                     </div>
                   </div>
 
-                  {/* Store Fleet & Rider Handshake Info Banner */}
-                  {isSelfDelivery && (
+                  {/* Return / Exchange Journey Summary Card */}
+                  {isReturnOrExchangeOrRefund ? (
+                    <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
+                        <div className="flex items-center gap-2">
+                          <RotateCcw size={18} className="text-amber-700 shrink-0" />
+                          <h4 className="font-extrabold text-sm text-amber-950">
+                            {isExchange ? 'Live Product Exchange Journey' : 'Live Product Return & Refund Journey'}
+                          </h4>
+                        </div>
+                        <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border self-start sm:self-center ${
+                          returnStepIndex === 5 ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'
+                        }`}>
+                          {activeTrackingSteps[activeCurrentStepIndex - 1]?.title || 'Processing'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-xl border border-amber-100/80">
+                          <span className="text-[10px] text-gray-400 font-bold uppercase block">Product Item</span>
+                          <span className="font-bold text-gray-900 line-clamp-1 block mt-0.5">
+                            {order.returnRequest?.itemName || order.items?.[0]?.name || 'Purchased Product'}
+                          </span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-amber-100/80">
+                          <span className="text-[10px] text-gray-400 font-bold uppercase block">
+                            {isExchange ? 'Replacement Variant' : 'Return Reason'}
+                          </span>
+                          <span className="font-bold text-gray-900 block mt-0.5 truncate">
+                            {isExchange
+                              ? (order.returnRequest?.exchangeLength ? `${order.returnRequest.exchangeLength} Meter(s)` : (order.returnRequest?.exchangeSize || 'Replacement'))
+                              : (order.returnRequest?.reason || 'Customer requested return')}
+                          </span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-amber-100/80">
+                          <span className="text-[10px] text-gray-400 font-bold uppercase block">
+                            {isExchange ? 'Price Adjustment' : 'Refund Status'}
+                          </span>
+                          <span className="font-extrabold text-emerald-700 block mt-0.5">
+                            {isExchange
+                              ? (order.returnRequest?.priceAdjustmentType === 'extra_payment'
+                                  ? `+₹${order.returnRequest.priceDifference} Extra`
+                                  : order.returnRequest?.priceAdjustmentType === 'partial_refund'
+                                  ? `₹${Math.abs(order.returnRequest.priceDifference)} Refund`
+                                  : '₹0 (Even Exchange)')
+                              : (returnStepIndex === 5 ? 'Refund Completed' : 'Refund In Process')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Direct Statutory PDF Action Buttons */}
+                      <div className="pt-2 border-t border-amber-200/60 flex flex-wrap items-center gap-2">
+                        {(!isExchange || order.returnRequest?.priceAdjustmentType === 'partial_refund') && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadInvoiceApi(order.id || order.orderId, order.shippingAddress?.phone || userProfile?.phone || '', 'credit-note');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer shadow-2xs"
+                            title="Download Statutory GST Credit Note under Section 34 of CGST Act"
+                          >
+                            <FileText size={13} className="text-rose-600" />
+                            <span>Download GST Credit Note</span>
+                          </button>
+                        )}
+                        {isExchange && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadInvoiceApi(order.id || order.orderId, order.shippingAddress?.phone || userProfile?.phone || '', 'exchange-invoice');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
+                            title="Download GST Exchange Tax Invoice & Replacement Slip"
+                          >
+                            <FileText size={13} className="text-indigo-600" />
+                            <span>Download Exchange Invoice</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : isSelfDelivery && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
                       {/* Merchant Dispatch Node */}
                       <div className="bg-teal-50/60 rounded-2xl p-3.5 border border-teal-100 flex items-start gap-3">
@@ -972,11 +1121,8 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                     <span className="font-semibold text-gray-900 font-mono">₹{subtotalVal.toFixed(2)}</span>
                   </div>
 
-                  <div className="flex justify-between items-start text-gray-700 font-medium">
-                    <div>
-                      <span>Delivery Charges:</span>
-                      <span className="text-[10px] text-gray-400 block font-normal">(Incl. 18% GST)</span>
-                    </div>
+                  <div className="flex justify-between items-center text-gray-700 font-medium">
+                    <span>Delivery Charges:</span>
                     <span className="font-semibold text-emerald-700 font-mono">
                       {shipVal === 0 ? 'FREE' : `₹${shipVal.toFixed(2)}`}
                     </span>

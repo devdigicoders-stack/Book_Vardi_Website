@@ -452,7 +452,7 @@ export function loadRazorpayScript() {
         console.warn('⚠️ Razorpay checkout.js CDN script load timed out.');
         resolve(false);
       }
-    }, 12000);
+    }, 5000);
 
     script.onload = () => {
       if (!isResolved) {
