@@ -1164,6 +1164,18 @@ export async function requestReturnExchangeApi(orderId, payload = {}, phone = ''
   });
 }
 
+export async function updateItemSellerPricesApi(orderId, itemPrices, extra = {}) {
+  const token = localStorage.getItem('bv_admin_jwt_token') || localStorage.getItem('bv_seller_token') || localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+  return requestApi(`/schools/bulk-orders/${orderId}/item-prices`, {
+    method: 'PATCH',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    data: { itemPrices, ...extra }
+  });
+}
+
+
 
 
 
