@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const fallbackBaseUrl = 'http://localhost:5000/api';
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || fallbackBaseUrl;
+const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || fallbackBaseUrl;
 const apiBaseUrl = (configuredBaseUrl || fallbackBaseUrl).replace(/\/+$/, '');
 export const API_BASE_URL = apiBaseUrl;
 export const backendEnabled = import.meta.env.VITE_USE_BACKEND !== 'false';
