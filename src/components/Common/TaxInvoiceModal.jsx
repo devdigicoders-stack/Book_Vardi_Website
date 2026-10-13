@@ -57,6 +57,173 @@ export function getProductGstRate(item) {
   return 5;
 }
 
+export const GST_STATE_CODES = {
+  '01': 'jammu_kashmir', '02': 'himachal_pradesh', '03': 'punjab', '04': 'chandigarh',
+  '05': 'uttarakhand', '06': 'haryana', '07': 'delhi', '08': 'rajasthan',
+  '09': 'uttar_pradesh', '10': 'bihar', '11': 'sikkim', '12': 'arunachal_pradesh',
+  '13': 'manipur', '14': 'nagaland', '15': 'mizoram', '16': 'tripura',
+  '17': 'meghalaya', '18': 'assam', '19': 'west_bengal', '20': 'jharkhand',
+  '21': 'odisha', '22': 'chhattisgarh', '23': 'madhya_pradesh', '24': 'gujarat',
+  '27': 'maharashtra', '29': 'karnataka', '30': 'goa', '32': 'kerala',
+  '33': 'tamil_nadu', '36': 'telangana', '37': 'andhra_pradesh'
+};
+
+export const PINCODE_PREFIX_MAP = [
+  { regex: /^(20|21|22|23|24[0-7]|25|26[12]|27|28)/, key: 'uttar_pradesh', name: 'Uttar Pradesh' },
+  { regex: /^(24[89]|26[3-9])/, key: 'uttarakhand', name: 'Uttarakhand' },
+  { regex: /^11/, key: 'delhi', name: 'Delhi' },
+  { regex: /^(12|13)/, key: 'haryana', name: 'Haryana' },
+  { regex: /^(14|15|16)/, key: 'punjab', name: 'Punjab' },
+  { regex: /^3[0-4]/, key: 'rajasthan', name: 'Rajasthan' },
+  { regex: /^3[6-9]/, key: 'gujarat', name: 'Gujarat' },
+  { regex: /^4[0-4]/, key: 'maharashtra', name: 'Maharashtra' },
+  { regex: /^4[5-9]/, key: 'madhya_pradesh', name: 'Madhya Pradesh' },
+  { regex: /^5[0-3]/, key: 'telangana', name: 'Telangana' },
+  { regex: /^5[6-9]/, key: 'karnataka', name: 'Karnataka' },
+  { regex: /^6[0-4]/, key: 'tamil_nadu', name: 'Tamil Nadu' },
+  { regex: /^6[7-9]/, key: 'kerala', name: 'Kerala' },
+  { regex: /^7[0-4]/, key: 'west_bengal', name: 'West Bengal' },
+  { regex: /^8[0-5]/, key: 'bihar', name: 'Bihar' }
+];
+
+export const INDIAN_STATES = [
+  {
+    key: 'uttar_pradesh',
+    name: 'Uttar Pradesh',
+    aliases: [
+      'uttar pradesh', 'uttarpradesh', 'utter pradesh', 'utterpradesh', 'uttarpardesh', 'uttar pardesh', 'uttar prdesh', 'uttarprdesh', 'u.p.', 'u.p', 'up', 'u p',
+      'lucknow', 'kanpur', 'varanasi', 'mirzapur', 'behat', 'saharanpur', 'noida', 'greater noida', 'ghaziabad', 'agra', 'prayagraj', 'allahabad', 'gorakhpur', 'meerut', 'bareilly', 'aligarh', 'moradabad', 'jhansi', 'ayodhya', 'faizabad', 'azamgarh', 'muzaffarnagar', 'mathura', 'firozabad', 'bulandshahr', 'sambhal', 'amroha', 'hardoi', 'fatehpur', 'raebareli', 'sitapur', 'bahraich', 'gonda', 'basti', 'deoria', 'ballia', 'jaunpur', 'ghazipur', 'chandauli', 'bhadohi', 'sonbhadra', 'unnao', 'lakhimpur', 'pilibhit', 'shahjahanpur', 'budaun', 'rampur', 'bijnor', 'shamli', 'baghpat', 'hapur', 'kasganj', 'hathras', 'etah', 'mainpuri', 'etawah', 'auraiya', 'kannauj', 'farrukhabad', 'kanpur dehat', 'jalaun', 'hamirpur', 'mahoba', 'banda', 'chitrakoot', 'kaushambi', 'pratapgarh', 'amethi', 'sultanpur', 'barabanki', 'shravasti', 'balrampur', 'siddharthnagar', 'sant kabir nagar', 'maharajganj', 'kushinagar', 'mau', 'lalitpur'
+    ]
+  },
+  {
+    key: 'maharashtra',
+    name: 'Maharashtra',
+    aliases: [
+      'maharashtra', 'maharastra', 'maharashtr', 'maharastr', 'maha rashtra', 'maha rastra', 'maharasthra', 'maharashtra state', 'm.h.', 'mh', 'm h',
+      'mumbai', 'bombay', 'pune', 'nagpur', 'thane', 'navi mumbai', 'nashik', 'aurangabad', 'chhatrapati sambhaji nagar', 'solapur', 'kolhapur', 'amravati', 'nanded', 'jalgaon', 'akola', 'latur', 'dhule', 'ahmednagar', 'chandrapur', 'parbhani', 'panvel', 'kalyan', 'dombivli', 'vasai', 'virar', 'mira bhayandar', 'ulhasnagar', 'satara'
+    ]
+  },
+  { key: 'delhi', name: 'Delhi', aliases: ['delhi', 'new delhi', 'nct of delhi', 'nct', 'dl', 'newdelhi', 'd.l.'] },
+  { key: 'uttarakhand', name: 'Uttarakhand', aliases: ['uttarakhand', 'uttaranchal', 'dehradun', 'haridwar', 'roorkee', 'rishikesh', 'nainital', 'haldwani', 'uk', 'u.k.'] },
+  { key: 'karnataka', name: 'Karnataka', aliases: ['karnataka', 'karnatka', 'karnatak', 'bangalore', 'bengaluru', 'mysore', 'mysuru', 'ka', 'k.a.', 'hubli', 'mangalore', 'mangaluru'] },
+  { key: 'tamil_nadu', name: 'Tamil Nadu', aliases: ['tamil nadu', 'tamilnadu', 'tamil nad', 'chennai', 'madras', 'coimbatore', 'madurai', 'tn', 't.n.'] },
+  { key: 'haryana', name: 'Haryana', aliases: ['haryana', 'hariyana', 'gurugram', 'gurgaon', 'faridabad', 'panipat', 'ambala', 'hr', 'h.r.'] },
+  { key: 'rajasthan', name: 'Rajasthan', aliases: ['rajasthan', 'rajisthan', 'rajashtan', 'jaipur', 'jodhpur', 'udaipur', 'kota', 'bikaner', 'rj', 'r.j.'] },
+  { key: 'west_bengal', name: 'West Bengal', aliases: ['west bengal', 'westbengal', 'paschim banga', 'kolkata', 'calcutta', 'howrah', 'siliguri', 'wb', 'w.b.'] },
+  { key: 'gujarat', name: 'Gujarat', aliases: ['gujarat', 'gujrat', 'gujarath', 'ahmedabad', 'amdavad', 'surat', 'vadodara', 'baroda', 'rajkot', 'gj', 'g.j.'] },
+  { key: 'punjab', name: 'Punjab', aliases: ['punjab', 'panjab', 'ludhiana', 'amritsar', 'jalandhar', 'pb', 'p.b.'] },
+  { key: 'madhya_pradesh', name: 'Madhya Pradesh', aliases: ['madhya pradesh', 'madhyapradesh', 'madhya pardesh', 'bhopal', 'indore', 'gwalior', 'jabalpur', 'mp', 'm.p.'] },
+  { key: 'bihar', name: 'Bihar', aliases: ['bihar', 'patna', 'gaya', 'bhagalpur', 'muzaffarpur', 'br', 'b.r.'] },
+  { key: 'telangana', name: 'Telangana', aliases: ['telangana', 'telengana', 'hyderabad', 'secunderabad', 'warangal', 'tg', 'ts'] },
+  { key: 'andhra_pradesh', name: 'Andhra Pradesh', aliases: ['andhra pradesh', 'andhrapradesh', 'visakhapatnam', 'vizag', 'vijayawada', 'guntur', 'ap', 'a.p.'] },
+  { key: 'kerala', name: 'Kerala', aliases: ['kerala', 'keralam', 'kochi', 'cochin', 'thiruvananthapuram', 'trivandrum', 'kozhikode', 'kl', 'k.l.'] },
+  { key: 'assam', name: 'Assam', aliases: ['assam', 'asom', 'guwahati', 'as'] },
+  { key: 'jharkhand', name: 'Jharkhand', aliases: ['jharkhand', 'jharkand', 'ranchi', 'jamshedpur', 'dhanbad', 'jh'] },
+  { key: 'odisha', name: 'Odisha', aliases: ['odisha', 'orissa', 'bhubaneswar', 'cuttack', 'od', 'or'] },
+  { key: 'chhattisgarh', name: 'Chhattisgarh', aliases: ['chhattisgarh', 'chhatisgarh', 'chattisgarh', 'raipur', 'bilaspur', 'cg'] },
+  { key: 'himachal_pradesh', name: 'Himachal Pradesh', aliases: ['himachal pradesh', 'himachal', 'shimla', 'dharamshala', 'hp'] },
+  { key: 'jammu_kashmir', name: 'Jammu & Kashmir', aliases: ['jammu & kashmir', 'jammu and kashmir', 'jammu', 'kashmir', 'srinagar', 'jk'] },
+  { key: 'goa', name: 'Goa', aliases: ['goa', 'panaji', 'panjim', 'margao', 'ga'] }
+];
+
+export function matchStateByText(inputStr) {
+  if (!inputStr || typeof inputStr !== 'string') return null;
+  const clean = inputStr.trim().toLowerCase();
+  if (!clean) return null;
+
+  for (const st of INDIAN_STATES) {
+    for (const alias of st.aliases) {
+      const regex = new RegExp(`(^|[^a-z0-9])${alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i');
+      if (regex.test(clean)) {
+        return { key: st.key, name: st.name };
+      }
+    }
+  }
+  return null;
+}
+
+export function parseStateInfo(sourceObj, fallbackString = '') {
+  // 1. FIRST PRIORITY: Explicit declared State Field (Place of Supply authoritative field)
+  const explicitState = String(
+    sourceObj?.state ||
+    sourceObj?.province ||
+    sourceObj?.stateName ||
+    sourceObj?.shippingAddress?.state ||
+    ''
+  ).trim();
+
+  if (explicitState) {
+    const matched = matchStateByText(explicitState);
+    if (matched) return matched;
+  }
+
+  // 2. SECOND PRIORITY: Explicit declared City Field
+  const explicitCity = String(
+    sourceObj?.city ||
+    sourceObj?.district ||
+    sourceObj?.cityName ||
+    sourceObj?.shippingAddress?.city ||
+    ''
+  ).trim();
+
+  if (explicitCity) {
+    const matched = matchStateByText(explicitCity);
+    if (matched) return matched;
+  }
+
+  // 3. THIRD PRIORITY: Address text scan (Combined address lines, street, landmark)
+  let addressText = '';
+  if (sourceObj && typeof sourceObj === 'object') {
+    addressText = [
+      sourceObj.state,
+      sourceObj.city,
+      sourceObj.addressLine,
+      sourceObj.addressLine1,
+      sourceObj.street,
+      sourceObj.address,
+      sourceObj.colony,
+      sourceObj.landmark,
+      fallbackString
+    ].filter(Boolean).join(' ');
+  } else if (typeof sourceObj === 'string') {
+    addressText = `${sourceObj} ${fallbackString}`;
+  } else if (fallbackString) {
+    addressText = String(fallbackString);
+  }
+
+  if (addressText.trim()) {
+    const matched = matchStateByText(addressText);
+    if (matched) return matched;
+  }
+
+  // 4. FOURTH PRIORITY: GSTIN Prefix (2-digit state code)
+  const rawGst = String(
+    sourceObj?.gstNumber || sourceObj?.gstin || sourceObj?.gst || ''
+  ).trim();
+  if (rawGst.length >= 2 && /^\d{2}/.test(rawGst)) {
+    const code = rawGst.slice(0, 2);
+    if (GST_STATE_CODES[code]) {
+      const found = INDIAN_STATES.find(s => s.key === GST_STATE_CODES[code]);
+      if (found) return { key: found.key, name: found.name };
+    }
+  }
+
+  // 5. FIFTH PRIORITY: 6-Digit Pincode (Fallback if State & City text was not provided)
+  const explicitPin = String(sourceObj?.pincode || sourceObj?.pin || sourceObj?.postalCode || '').trim();
+  const isolatedPinMatch = explicitPin.match(/\b([1-9]\d{5})\b/) || String(addressText || '').match(/\b([1-9]\d{5})\b/);
+  const sixPin = isolatedPinMatch ? isolatedPinMatch[1] : (explicitPin.replace(/\D/g, '').length >= 6 ? explicitPin.replace(/\D/g, '').slice(0, 6) : '');
+  if (sixPin) {
+    for (const p of PINCODE_PREFIX_MAP) {
+      if (p.regex.test(sixPin)) {
+        return { key: p.key, name: p.name };
+      }
+    }
+  }
+
+  // 6. DEFAULT FALLBACK: Uttar Pradesh
+  return { key: 'uttar_pradesh', name: 'Uttar Pradesh' };
+}
+
 export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
 
@@ -134,8 +301,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     }
   ];
 
-  let totalTaxableValue = 0;
-  let totalTaxAmount = 0;
+  let itemsTaxableValue = 0;
+  let itemsTaxAmount = 0;
 
   const itemBreakdowns = items.map((item) => {
     const isUnstitched = Boolean(
@@ -176,8 +343,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       }
     }
 
-    totalTaxableValue += taxableVal;
-    totalTaxAmount += taxAmt;
+    itemsTaxableValue += taxableVal;
+    itemsTaxAmount += taxAmt;
 
     return {
       ...item,
@@ -192,11 +359,31 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   });
 
   const subtotal = Number(order.subtotal || items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0));
-  const taxAmount = order.taxAmount !== undefined && order.taxAmount !== null ? Number(order.taxAmount) : Math.round(totalTaxAmount * 100) / 100;
   const shippingCost = Number(order.shippingCost ?? order.shippingFee ?? 0);
   const discount = Number(order.discount ?? order.discountAmount ?? 0);
   const pointsDiscount = Number(order.pointsDiscount || 0);
   const grandTotal = Number(order.total || order.totalAmount || (subtotal + shippingCost - discount - pointsDiscount));
+
+  // Delivery service GST (standard 18% GST)
+  let shippingTaxable = 0;
+  let shippingTax = 0;
+  if (shippingCost > 0) {
+    const shippingGstRate = 18;
+    shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
+    shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+  }
+
+  // Combined gross values before discount
+  const grossBill = subtotal + shippingCost;
+  const grossTaxAmt = itemsTaxAmount + shippingTax;
+
+  // Proportionally scale tax if discounts applied
+  const totalTaxAmount = (grossBill > 0 && (discount + pointsDiscount) > 0)
+    ? Math.round(grossTaxAmt * (Math.max(0, grandTotal) / grossBill) * 100) / 100
+    : Math.round(grossTaxAmt * 100) / 100;
+
+  // Total Taxable Base Value
+  const totalTaxableValue = Math.round((grandTotal - totalTaxAmount) * 100) / 100;
 
   const handlePrint = () => {
     window.print();
@@ -343,7 +530,9 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       items[0]?.sellerDetails?.gstNumber,
       items[0]?.gstNumber,
       items[0]?.sellerGst
-    ].find(g => g && g !== '09AAACB1234F1Z9' && g !== 'Exempt / N/A' && String(g).trim() !== '') || 'Exempt / N/A';
+    ].find(g => g && g !== '09AAACB1234F1Z9' && g !== 'Exempt / N/A' && String(g).trim() !== '') || '09AAACB1234F1Z9';
+
+    const firstSellerObj = typeof order.items?.[0]?.sellerId === 'object' ? order.items[0].sellerId : (typeof order.sellerDetails?.sellerId === 'object' ? order.sellerDetails.sellerId : null);
 
     const primaryCity = [
       order.sellerDetails?.city,
@@ -351,17 +540,39 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       order.sellerCity,
       order.items?.[0]?.sellerDetails?.city,
       items[0]?.sellerDetails?.city,
-      items[0]?.sellerCity
+      items[0]?.sellerCity,
+      firstSellerObj?.city,
+      firstSellerObj?.address
     ].find(Boolean) || 'Lucknow, Uttar Pradesh';
+
+    const primaryState = [
+      order.sellerDetails?.state,
+      order.sellerState,
+      order.items?.[0]?.sellerDetails?.state,
+      items[0]?.sellerDetails?.state,
+      items[0]?.sellerState,
+      firstSellerObj?.state
+    ].find(Boolean) || 'Uttar Pradesh';
     
     return {
       storeName: primaryName || 'Partner Store',
       gstNumber: primaryGst,
-      city: primaryCity
+      city: primaryCity,
+      state: primaryState
     };
   };
 
   const resolvedSeller = resolveSeller();
+
+  // Dynamic Intra-State vs Inter-State detection
+  const sellerStateInfo = parseStateInfo(resolvedSeller, `${resolvedSeller.city} ${resolvedSeller.state}`);
+  const customerStateInfo = parseStateInfo(shippingAddr, `${formattedAddressStr} ${shippingAddr?.state || ''}`);
+  const isIntraState = !sellerStateInfo.key || !customerStateInfo.key || (sellerStateInfo.key === customerStateInfo.key);
+
+  // Dynamic CGST + SGST vs IGST Split on total order tax
+  const cgstAmount = isIntraState ? Math.round((totalTaxAmount / 2) * 100) / 100 : 0;
+  const sgstAmount = isIntraState ? Math.round((totalTaxAmount - cgstAmount) * 100) / 100 : 0;
+  const igstAmount = !isIntraState ? totalTaxAmount : 0;
 
   // Logistics tracking resolution
   const logisticsStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
@@ -592,6 +803,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                           )}
                           {sizeInfo && item.category && <span>•</span>}
                           <span>{item.category || 'School Supply'}</span>
+                          <span>•</span>
+                          <span className="text-gray-600 font-semibold">{item.rate}% GST</span>
                         </div>
                       </td>
                       <td className="py-2.5 px-3">
@@ -685,25 +898,33 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
             </div>
 
             {/* Right Column: Financial Calculation */}
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2 text-xs flex flex-col justify-between">
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2.5 text-xs flex flex-col justify-between">
               <div className="space-y-2">
-                <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">
-                  {isCancelled ? 'Refund & Credit Breakdown' : 'Price Summary'}
-                </span>
-                <div className="flex justify-between items-start text-gray-600">
-                  <div>
-                    <span>{isCancelled ? 'Items Subtotal Reversal:' : 'Items Subtotal:'}</span>
-                    <span className="text-[10px] text-gray-400 block font-normal">(GST Included in Item Prices)</span>
-                  </div>
+                <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+                  <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">
+                    {isCancelled ? 'Refund & Credit Breakdown' : 'Price Summary'}
+                  </span>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                    isIntraState 
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  }`}>
+                    {isIntraState ? `Intra-State (${customerStateInfo.name})` : `Inter-State (${sellerStateInfo.name} ➔ ${customerStateInfo.name})`}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-gray-600">
+                  <span>{isCancelled ? 'Items Subtotal Reversal:' : 'Items Subtotal:'}</span>
                   <span className="font-mono font-semibold text-gray-900">₹{subtotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between items-start text-gray-600">
-                  <div>
-                    <span>GST Tax (Included):</span>
-                    <span className="text-[10px] text-gray-400 block font-normal">(Included in Price)</span>
-                  </div>
-                  <span className="font-mono font-semibold text-brand-teal">₹{taxAmount.toFixed(2)}</span>
+
+                <div className="flex justify-between items-center text-gray-600">
+                  <span>{isCancelled ? 'Delivery Adjustment:' : 'Delivery Charges:'}</span>
+                  <span className="font-mono font-semibold text-emerald-700">
+                    {shippingCost === 0 ? 'FREE' : `₹${shippingCost.toFixed(2)}`}
+                  </span>
                 </div>
+
                 {discount > 0 ? (
                   <div className={`flex justify-between font-bold ${isCancelled ? 'text-rose-700' : 'text-emerald-700'}`}>
                     <span>{isCancelled ? 'Coupon Reversal:' : 'Offer / Coupon Applied:'}</span>
@@ -715,25 +936,48 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                     <span className="font-mono">None Applied (₹0.00)</span>
                   </div>
                 )}
+
                 {pointsDiscount > 0 && (
                   <div className="flex justify-between text-amber-700 font-bold">
                     <span>{isCancelled ? 'Reward Points Restored:' : 'Reward Points Redeemed:'}</span>
                     <span className="font-mono">{isCancelled ? `+₹${pointsDiscount.toFixed(2)}` : `-₹${pointsDiscount.toFixed(2)}`}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-start text-gray-600">
-                  <div>
-                    <span>{isCancelled ? 'Delivery Adjustment:' : 'Delivery Charges:'}</span>
-                    <span className="text-[10px] text-gray-400 block font-normal">(Incl. 18% GST)</span>
+
+                {/* Unified GST Breakdown on the Total Bill Amount */}
+                <div className="bg-white rounded-xl p-3 border border-gray-200 space-y-1.5 shadow-2xs mt-2">
+                  <div className="flex justify-between items-center text-gray-600 text-[11px]">
+                    <span className="font-medium">{isCancelled ? 'Taxable Amount Reversal:' : 'Taxable Value (Base Price):'}</span>
+                    <span className="font-mono font-bold text-gray-900">₹{totalTaxableValue.toFixed(2)}</span>
                   </div>
-                  <span className="font-mono font-semibold text-emerald-700">
-                    {shippingCost === 0 ? 'FREE' : `₹${shippingCost.toFixed(2)}`}
-                  </span>
+
+                  {isIntraState ? (
+                    <>
+                      <div className="flex justify-between items-center text-gray-600 text-[11px]">
+                        <span>{isCancelled ? 'CGST Reversal (Central Tax):' : 'CGST (Central Tax):'}</span>
+                        <span className="font-mono font-semibold text-brand-teal">₹{cgstAmount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-gray-600 text-[11px]">
+                        <span>{isCancelled ? 'SGST / UTGST Reversal (State Tax):' : 'SGST / UTGST (State Tax):'}</span>
+                        <span className="font-mono font-semibold text-brand-teal">₹{sgstAmount.toFixed(2)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between items-center text-gray-600 text-[11px]">
+                      <span>{isCancelled ? 'IGST Reversal (Integrated Tax):' : 'IGST (Integrated Tax):'}</span>
+                      <span className="font-mono font-semibold text-brand-teal">₹{igstAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center text-gray-900 text-[11px] pt-1.5 border-t border-gray-100 font-bold">
+                    <span>{isCancelled ? 'Total Tax Reversed (GST):' : 'Total GST Tax (Included):'}</span>
+                    <span className="font-mono text-brand-teal font-extrabold">₹{totalTaxAmount.toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
 
               {isCancelled ? (
-                <div className="bg-rose-600 text-white rounded-xl p-3 flex items-center justify-between shadow-xs">
+                <div className="bg-rose-600 text-white rounded-xl p-3 flex items-center justify-between shadow-xs mt-2">
                   <div>
                     <span className="text-xs font-black block">Net Refunded Credit Amount:</span>
                     <span className="text-[10px] text-rose-100 font-normal">(Full Reversal Authorized)</span>

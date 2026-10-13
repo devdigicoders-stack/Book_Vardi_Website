@@ -7,7 +7,10 @@ export default function TopAnnouncementBar({ onNavigate, onVisibilityChange }) {
 
   useEffect(() => {
     let isMounted = true;
-    async function loadAnnouncements() {
+    async function loadAnnouncements(isPeriodic = false) {
+      if (isPeriodic && typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
       try {
         const res = await fetchAnnouncementsFromBackend();
         const list = res?.data || res?.announcements;
@@ -19,15 +22,16 @@ export default function TopAnnouncementBar({ onNavigate, onVisibilityChange }) {
       }
     }
 
-    loadAnnouncements();
+    loadAnnouncements(false);
 
-    const interval = setInterval(loadAnnouncements, 15000);
-    window.addEventListener('focus', loadAnnouncements);
+    const interval = setInterval(() => loadAnnouncements(true), 60000);
+    const onFocus = () => loadAnnouncements(false);
+    window.addEventListener('focus', onFocus);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
-      window.removeEventListener('focus', loadAnnouncements);
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
 

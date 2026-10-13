@@ -22,7 +22,9 @@ import {
   RotateCcw,
   ArrowRightLeft,
   Sparkles,
-  Lock
+  Lock,
+  Calendar,
+  ExternalLink
 } from 'lucide-react';
 import BulkOrderTrackingModal from './BulkOrderTrackingModal';
 import { trackAwbApi, downloadInvoiceApi } from '../../utils/api';
@@ -37,10 +39,7 @@ export const getOrderDeliveryOtp = (order) => {
     order.deliveryCode ||
     '';
   if (otp && String(otp).trim()) return String(otp).trim();
-  const rawId = String(order.orderId || order.id || order._id || '');
-  const digits = rawId.replace(/\D/g, '');
-  if (digits.length >= 4) return digits.slice(-4);
-  return '4829';
+  return '';
 };
 
 export const isOrderRefundedOrReturnOrExchange = (order) => {
@@ -78,7 +77,7 @@ const hasActiveReturnRequest = (order) => {
   if (req && typeof req === 'object') {
     const type = req.requestType || req.type;
     const status = String(req.status || '').toLowerCase().trim();
-    const invalidStatuses = ['', 'none', 'n/a', 'no_request', 'normal', 'null', 'undefined', 'requesting', 'requested'];
+    const invalidStatuses = ['', 'none', 'n/a', 'no_request', 'normal', 'null', 'undefined'];
     
     if (type && !['none', 'n/a', ''].includes(String(type).toLowerCase())) return true;
     if (status && !invalidStatuses.includes(status)) return true;
@@ -120,6 +119,70 @@ const getItemStatusMeta = (status) => {
       label: s === 'exchanged' ? 'Exchanged' : 'Exchange Requested',
       badgeClass: 'bg-indigo-100 text-indigo-950 border border-indigo-300',
       iconClass: 'text-indigo-600'
+    };
+  }
+  if (s === 'return_approved') {
+    return {
+      icon: CheckCircle2,
+      label: 'Return Approved',
+      badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+      iconClass: 'text-emerald-600'
+    };
+  }
+  if (s === 'exchange_approved') {
+    return {
+      icon: CheckCircle2,
+      label: 'Exchange Approved',
+      badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+      iconClass: 'text-emerald-600'
+    };
+  }
+  if (s === 'pickup_scheduled') {
+    return {
+      icon: Truck,
+      label: 'Pickup Scheduled',
+      badgeClass: 'bg-cyan-100 text-cyan-950 border border-cyan-300',
+      iconClass: 'text-cyan-600'
+    };
+  }
+  if (s === 'product_received' || s === 'product_return_received') {
+    return {
+      icon: Package,
+      label: 'Product Received',
+      badgeClass: 'bg-purple-100 text-purple-950 border border-purple-300',
+      iconClass: 'text-purple-600'
+    };
+  }
+  if (s === 'refund_initiated' || s === 'refund_processed') {
+    return {
+      icon: Clock,
+      label: 'Refund In Process',
+      badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
+      iconClass: 'text-amber-600'
+    };
+  }
+  if (s === 'refund_completed' || s === 'refunded') {
+    return {
+      icon: CheckCircle2,
+      label: 'Refund Completed',
+      badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+      iconClass: 'text-emerald-600'
+    };
+  }
+  if (s === 'exchange_dispatched') {
+    return {
+      icon: Truck,
+      label: 'Replacement Dispatched',
+      badgeClass: 'bg-blue-100 text-blue-950 border border-blue-300',
+      iconClass: 'text-blue-600'
+    };
+  }
+  if (s === 'return_rejected' || s === 'exchange_rejected' || s === 'rejected') {
+    return {
+      icon: XCircle,
+      label: s === 'exchange_rejected' ? 'Exchange Rejected' : 'Return Rejected',
+      badgeClass: 'bg-rose-100 text-rose-950 border border-rose-300',
+      iconClass: 'text-rose-600'
     };
   }
   if (s === 'out_for_delivery' || s === 'out for delivery') {
@@ -284,7 +347,40 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   const isReturnOrExchangeOrRefund = isOrderRefundedOrReturnOrExchange(order);
   const isRefunded = currentStatus === 'refunded' || currentStatus === 'refund_completed' || String(order.paymentStatus || '').toLowerCase() === 'refunded' || String(order.refundStatus || '').toLowerCase().includes('completed') || String(order.refundStatus || '').toLowerCase().includes('refund');
 
-  // Stepper steps
+  const retReqType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim();
+  const retReqStatus = String(order.returnRequest?.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const isExchange = retReqType === 'exchange' || currentStatus.includes('exchange');
+
+  const returnSteps = isExchange ? [
+    { key: 'exchange_requested', label: 'Exchange Requested', desc: 'Replacement requested', icon: RotateCcw },
+    { key: 'exchange_approved', label: 'Exchange Approved', desc: 'Store approved request', icon: CheckCircle2 },
+    { key: 'pickup_scheduled', label: 'Pickup Scheduled', desc: 'Pickup date booked', icon: Calendar },
+    { key: 'exchange_dispatched', label: 'Replacement Dispatched', desc: 'Dispatched via courier', icon: Truck },
+    { key: 'exchanged', label: 'Exchange Completed', desc: 'Replacement delivered', icon: ShieldCheck }
+  ] : [
+    { key: 'return_requested', label: 'Return Requested', desc: 'Return request submitted', icon: RotateCcw },
+    { key: 'return_approved', label: 'Return Approved', desc: 'Store approved return', icon: CheckCircle2 },
+    { key: 'pickup_scheduled', label: 'Pickup Scheduled', desc: 'Doorstep pickup booked', icon: Calendar },
+    { key: 'product_received', label: 'Product Received', desc: 'Item inspected & restocked', icon: Boxes },
+    { key: 'refund_completed', label: 'Refund Completed', desc: 'Refund credited to account', icon: ShieldCheck }
+  ];
+
+  let returnActiveIndex = 0;
+  if (isRefunded || retReqStatus === 'refund_completed' || retReqStatus === 'refunded' || retReqStatus === 'exchanged' || currentStatus === 'refund_completed' || currentStatus === 'refunded' || currentStatus === 'exchanged') {
+    returnActiveIndex = 4;
+  } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || retReqStatus === 'exchange_dispatched' || currentStatus === 'product_received' || currentStatus === 'exchange_dispatched') {
+    returnActiveIndex = 3;
+  } else if (retReqStatus === 'pickup_scheduled' || currentStatus === 'pickup_scheduled') {
+    returnActiveIndex = 2;
+  } else if (retReqStatus === 'approved' || retReqStatus.endsWith('_approved') || currentStatus.endsWith('_approved')) {
+    returnActiveIndex = 1;
+  } else if (retReqStatus.includes('reject') || currentStatus.includes('reject')) {
+    returnActiveIndex = 1;
+  } else {
+    returnActiveIndex = 0;
+  }
+
+  // Stepper steps for forward order
   const steps = isSelfDelivery ? [
     { key: 'placed', label: 'Order Placed', desc: 'Received at store', icon: FileText },
     { key: 'confirmed', label: 'Confirmed', desc: 'Store accepted', icon: CheckCircle2 },
@@ -500,6 +596,12 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
               <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-brand-yellow shrink-0 shadow-inner">
                 {isCancelled ? (
                   <XCircle size={26} className="text-rose-400" />
+                ) : isReturnOrExchangeOrRefund ? (
+                  isRefunded ? (
+                    <CheckCircle2 size={26} className="text-emerald-400" />
+                  ) : (
+                    <RotateCcw size={26} className="animate-pulse text-amber-400" />
+                  )
                 ) : activeIndex === 5 ? (
                   <CheckCircle2 size={26} className="text-emerald-400" />
                 ) : activeIndex >= 3 ? (
@@ -510,14 +612,32 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
               </div>
               <div>
                 <span className="text-[10px] uppercase font-black tracking-widest text-teal-300 bg-teal-950/80 px-2 py-0.5 rounded border border-teal-700/50">
-                  {isCancelled ? 'Order Terminated' : (isSelfDelivery ? 'Direct Delivery Mode' : 'Courier Network Mode')}
+                  {isCancelled
+                    ? 'Order Terminated'
+                    : isReturnOrExchangeOrRefund
+                    ? (isExchange ? 'Exchange Fulfillment Process' : 'Return & Refund Processing')
+                    : (isSelfDelivery ? 'Direct Delivery Mode' : 'Courier Network Mode')}
                 </span>
                 <h4 className="font-display font-extrabold text-base text-white mt-1">
-                  {isCancelled ? 'Order Cancelled' : steps[activeIndex]?.label}
+                  {isCancelled
+                    ? 'Order Cancelled'
+                    : isReturnOrExchangeOrRefund
+                    ? (returnSteps[returnActiveIndex]?.label || (isExchange ? 'Exchange Requested' : 'Return Requested'))
+                    : steps[activeIndex]?.label}
                 </h4>
                 <p className="text-[11px] text-teal-100/90 font-medium">
                   {isCancelled
                     ? 'Shipping stopped due to order cancellation.'
+                    : isReturnOrExchangeOrRefund
+                    ? (returnActiveIndex === 0
+                        ? (isExchange ? 'Exchange request submitted. Store will review and schedule replacement.' : 'Return request submitted. Awaiting store review and pickup scheduling.')
+                        : returnActiveIndex === 1
+                        ? (order.returnRequest?.rejectionReason ? `Request rejected: ${order.returnRequest.rejectionReason}` : `${isExchange ? 'Exchange' : 'Return'} request approved by store. Pickup will be arranged.`)
+                        : returnActiveIndex === 2
+                        ? (order.returnRequest?.pickupDate ? `Scheduled pickup on ${new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}.` : 'Return pickup scheduled for upcoming business days.')
+                        : returnActiveIndex === 3
+                        ? (isExchange ? (order.returnRequest?.exchangeAwb ? `Replacement dispatched via ${order.returnRequest.exchangeCourier || 'Courier'} (AWB: ${order.returnRequest.exchangeAwb})` : 'Replacement exchange item dispatched.') : 'Returned product received back at store warehouse and verified.')
+                        : (isExchange ? 'Exchange fulfilled and replacement delivered.' : (order.returnRequest?.refundTxnId ? `Refund of ₹${order.total || order.totalAmount} completed (Ref: ${order.returnRequest.refundTxnId}).` : 'Refund processed and completed.')))
                     : (isSelfDelivery
                         ? `Merchant Store: ${sellerStoreName}`
                         : `${steps[activeIndex]?.desc} • Carrier: ${courierPartnerName}`)}
@@ -538,14 +658,17 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
           {!isCancelled && (
             <div className="bg-gray-50 border border-gray-200/80 p-4 sm:p-5 rounded-2xl space-y-3">
               <div className="flex items-center justify-between text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
-                <span>Live Fulfillment Journey</span>
-                <span className="text-teal-700 font-mono text-xs">Stage {activeIndex + 1} of {steps.length}</span>
+                <span>{isReturnOrExchangeOrRefund ? (isExchange ? 'Live Product Exchange Journey' : 'Live Return & Refund Journey') : 'Live Fulfillment Journey'}</span>
+                <span className="text-teal-700 font-mono text-xs">
+                  Stage {isReturnOrExchangeOrRefund ? (returnActiveIndex + 1) : (activeIndex + 1)} of {isReturnOrExchangeOrRefund ? returnSteps.length : steps.length}
+                </span>
               </div>
 
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-1">
-                {steps.map((st, idx) => {
-                  const isCompleted = activeIndex >= idx;
-                  const isCurrent = activeIndex === idx;
+              <div className={`grid gap-2 pt-1 ${isReturnOrExchangeOrRefund ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-3 sm:grid-cols-6'}`}>
+                {(isReturnOrExchangeOrRefund ? returnSteps : steps).map((st, idx) => {
+                  const currentIdx = isReturnOrExchangeOrRefund ? returnActiveIndex : activeIndex;
+                  const isCompleted = currentIdx >= idx;
+                  const isCurrent = currentIdx === idx;
                   const StepIcon = st.icon;
                   return (
                     <div key={idx} className="flex flex-col items-center text-center p-2 rounded-xl bg-white border border-gray-100 shadow-2xs">
@@ -571,8 +694,41 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
             </div>
           )}
 
-          {/* Direct Delivery Executive / Courier Carrier Details Card */}
-          {(!isCancelled && (isSelfDelivery || awbNumber)) && (
+          {/* Replacement Exchange Shipment Details (if replacement dispatched) */}
+          {(!isCancelled && isExchange && order.returnRequest?.exchangeAwb) && (
+            <div className="bg-indigo-50/80 border border-indigo-200 p-4 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Truck size={15} className="text-indigo-700" />
+                  Replacement Exchange Dispatch Details
+                </span>
+                <span className="text-[10px] font-mono font-bold bg-white text-indigo-900 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                  AWB: {order.returnRequest.exchangeAwb}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="bg-white p-3 rounded-xl border border-indigo-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">Courier Partner</span>
+                  <span className="font-extrabold text-gray-900 block mt-0.5">{order.returnRequest.exchangeCourier || 'Express Courier'}</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-indigo-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">Live Tracking</span>
+                  <a
+                    href={resolveCarrierUrl(order.returnRequest.exchangeCourier, order.returnRequest.exchangeAwb)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-extrabold text-indigo-700 hover:underline block mt-0.5 flex items-center gap-1"
+                  >
+                    <span>Track Replacement Shipment</span>
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Direct Delivery Executive / Courier Carrier Details Card (Forward Order only) */}
+          {(!isCancelled && !isReturnOrExchangeOrRefund && (isSelfDelivery || awbNumber)) && (
             <div className="bg-blue-50/70 border border-blue-200 p-4 rounded-2xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-blue-950 flex items-center gap-1.5 uppercase tracking-wider">
@@ -794,57 +950,75 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
         {/* Modal Footer matching Bulk Order Tracker */}
         <div className="border-t border-gray-200 p-4 bg-gray-50 flex items-center justify-between text-xs shrink-0">
           <div className="flex flex-wrap items-center gap-2">
-            {isCancelled ? (
-              <button
-                type="button"
-                onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'credit-note')}
-                className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <FileText size={14} />
-                <span>Download Credit Note</span>
-              </button>
-            ) : (
-              <>
-                {(() => {
-                  const hasPendingItems = !currentStatus || ['pending', 'placed', 'unconfirmed'].includes(currentStatus) || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
-                    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-                    return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
-                  }));
+            {/* Credit Note for Return, Refund, or Cancelled Orders */}
+            {(() => {
+              const isReturnOrRefund =
+                isCancelled ||
+                ['refund_completed', 'refunded', 'product_received', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved', 'pickup_scheduled'].includes(currentStatus) ||
+                order.returnRequest?.type === 'return' ||
+                order.paymentStatus === 'refunded' ||
+                order.refundStatus === 'Refund Completed';
 
-                  if (hasPendingItems) {
-                    return (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-semibold">
-                        <Lock size={12} /> Invoice locked until order confirmation
-                      </span>
-                    );
-                  }
+              const isExchangeReq =
+                order.returnRequest?.requestType === 'exchange' ||
+                order.returnRequest?.type === 'exchange' ||
+                ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) ||
+                ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus);
 
-                  if (['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus)) {
-                    return (
+              return (
+                <>
+                  {isReturnOrRefund && (
+                    <button
+                      type="button"
+                      onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'credit-note')}
+                      className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="Download Statutory GST Credit Note under Section 34 of CGST Act"
+                    >
+                      <FileText size={14} className="text-rose-600" />
+                      <span>Download GST Credit Note</span>
+                    </button>
+                  )}
+
+                  {isExchangeReq && (
+                    <>
                       <button
                         type="button"
-                        onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'invoice')}
-                        className="px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl border border-teal-200 transition-colors cursor-pointer flex items-center gap-1.5"
+                        onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'exchange-invoice')}
+                        className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                        title="Download GST Exchange Tax Invoice & Replacement Slip"
                       >
-                        <FileText size={14} />
-                        <span>Download Tax Invoice</span>
+                        <FileText size={14} className="text-indigo-600" />
+                        <span>Download Exchange Invoice</span>
                       </button>
-                    );
-                  }
-                  return null;
-                })()}
-                {(order.returnRequest?.requestType === 'exchange' || order.returnRequest?.type === 'exchange') && ['exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) && (
-                  <button
-                    type="button"
-                    onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'exchange-invoice')}
-                    className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer flex items-center gap-1.5"
-                  >
-                    <FileText size={14} />
-                    <span>Download Exchange Invoice</span>
-                  </button>
-                )}
-              </>
-            )}
+                      {order.returnRequest?.priceAdjustmentType === 'partial_refund' && (
+                        <button
+                          type="button"
+                          onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'credit-note')}
+                          className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                          title="Download GST Credit Note for partial refund adjustment"
+                        >
+                          <FileText size={14} className="text-rose-600" />
+                          <span>Credit Note (Refund)</span>
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* Original Forward Tax Invoice */}
+                  {!isCancelled && ['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed', 'return_requested', 'exchange_requested', 'pickup_scheduled'].includes(currentStatus) && (
+                    <button
+                      type="button"
+                      onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'invoice')}
+                      className="px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl border border-teal-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="Download Original GST Tax Invoice"
+                    >
+                      <FileText size={14} className="text-teal-600" />
+                      <span>Download Tax Invoice</span>
+                    </button>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           <button

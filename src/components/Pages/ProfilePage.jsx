@@ -37,7 +37,8 @@ import {
   XCircle,
   ArrowRightLeft,
   CreditCard,
-  ArrowRight
+  ArrowRight,
+  FileText
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import ProductCard from '../Products/ProductCard';
@@ -47,7 +48,7 @@ import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi, confirmBuyerAcceptanceApi, API_BASE_URL } from '../../utils/api';
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi, confirmBuyerAcceptanceApi, API_BASE_URL, downloadInvoiceApi } from '../../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import OrderTrackingModal, { isOrderRefundedOrReturnOrExchange } from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
@@ -101,12 +102,107 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const [returnModalOrder, setReturnModalOrder] = useState(null);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
 
+  const resolveOrderLifecycleStatus = (order) => {
+    if (!order) return 'placed';
+    const rawOverall = String(order.overallStatus || order.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    const rawRet = String(order.returnRequest?.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    const rawRefund = String(order.refundStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    const rawPayment = String(order.paymentStatus || '').toLowerCase().trim();
+
+    // 1. Completed Refund
+    if (
+      rawOverall === 'refund_completed' ||
+      rawOverall === 'refunded' ||
+      rawRet === 'refund_completed' ||
+      rawRet === 'refunded' ||
+      rawRefund.includes('completed') ||
+      rawRefund.includes('refund_completed') ||
+      rawPayment === 'refunded'
+    ) {
+      return 'refund_completed';
+    }
+
+    // 2. Completed Exchange
+    if (rawOverall === 'exchanged' || rawRet === 'exchanged') {
+      return 'exchanged';
+    }
+
+    // 3. Replacement Dispatched
+    if (rawOverall === 'exchange_dispatched' || rawRet === 'exchange_dispatched') {
+      return 'exchange_dispatched';
+    }
+
+    // 4. Returned Product Received
+    if (
+      rawOverall === 'product_received' ||
+      rawOverall === 'product_return_received' ||
+      rawRet === 'product_received' ||
+      rawRet === 'product_return_received'
+    ) {
+      return 'product_received';
+    }
+
+    // 5. Pickup Scheduled
+    if (rawOverall === 'pickup_scheduled' || rawRet === 'pickup_scheduled') {
+      return 'pickup_scheduled';
+    }
+
+    // 6. Request Approved
+    if (
+      rawOverall === 'return_approved' ||
+      rawOverall === 'exchange_approved' ||
+      rawOverall === 'approved' ||
+      rawRet === 'return_approved' ||
+      rawRet === 'exchange_approved' ||
+      rawRet === 'approved'
+    ) {
+      return (order.returnRequest?.type === 'exchange' || rawOverall.includes('exchange')) ? 'exchange_approved' : 'return_approved';
+    }
+
+    // 7. Request Rejected
+    if (rawOverall.includes('reject') || rawRet.includes('reject')) {
+      return (order.returnRequest?.type === 'exchange' || rawOverall.includes('exchange')) ? 'exchange_rejected' : 'return_rejected';
+    }
+
+    // 8. Refund In Process
+    if (
+      rawOverall === 'refund_initiated' ||
+      rawOverall === 'refund_processed' ||
+      rawRet === 'refund_initiated' ||
+      rawRet === 'refund_processed' ||
+      rawRefund.includes('initiated')
+    ) {
+      return 'refund_initiated';
+    }
+
+    // 9. Active Return / Exchange Request Under Review
+    if (rawRet === 'return_requested' || rawOverall === 'return_requested') {
+      return 'return_requested';
+    }
+    if (rawRet === 'exchange_requested' || rawOverall === 'exchange_requested') {
+      return 'exchange_requested';
+    }
+    if (rawRet && rawRet !== 'no_request' && rawRet !== 'none') {
+      return (order.returnRequest?.type === 'exchange') ? 'exchange_requested' : 'return_requested';
+    }
+
+    return rawOverall || 'placed';
+  };
+
   const getOrderStatusMeta = (status) => {
-    const s = String(status || '').toLowerCase().trim();
+    const s = String(status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
     if (s === 'delivered' || s === 'completed') {
       return {
         icon: CheckCircle2,
         label: 'Delivered',
+        badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+        iconClass: 'text-emerald-600'
+      };
+    }
+    if (s === 'refund_completed' || s === 'refunded' || s.includes('refund_completed') || s.includes('refund_processed_&_completed')) {
+      return {
+        icon: CheckCircle2,
+        label: 'Refund Completed',
         badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
         iconClass: 'text-emerald-600'
       };
@@ -127,7 +223,63 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         iconClass: 'text-indigo-600'
       };
     }
-    if (s === 'out_for_delivery' || s === 'out for delivery') {
+    if (s === 'return_approved' || s === 'approved') {
+      return {
+        icon: CheckCircle2,
+        label: 'Return Approved',
+        badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+        iconClass: 'text-emerald-600'
+      };
+    }
+    if (s === 'exchange_approved') {
+      return {
+        icon: CheckCircle2,
+        label: 'Exchange Approved',
+        badgeClass: 'bg-emerald-100 text-emerald-950 border border-emerald-300',
+        iconClass: 'text-emerald-600'
+      };
+    }
+    if (s === 'pickup_scheduled') {
+      return {
+        icon: Truck,
+        label: 'Pickup Scheduled',
+        badgeClass: 'bg-cyan-100 text-cyan-950 border border-cyan-300',
+        iconClass: 'text-cyan-600'
+      };
+    }
+    if (s === 'product_received' || s === 'product_return_received') {
+      return {
+        icon: Package,
+        label: 'Product Received',
+        badgeClass: 'bg-purple-100 text-purple-950 border border-purple-300',
+        iconClass: 'text-purple-600'
+      };
+    }
+    if (s === 'refund_initiated' || s === 'refund_processed') {
+      return {
+        icon: Clock,
+        label: 'Refund In Process',
+        badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
+        iconClass: 'text-amber-600'
+      };
+    }
+    if (s === 'exchange_dispatched') {
+      return {
+        icon: Truck,
+        label: 'Replacement Dispatched',
+        badgeClass: 'bg-blue-100 text-blue-950 border border-blue-300',
+        iconClass: 'text-blue-600'
+      };
+    }
+    if (s === 'return_rejected' || s === 'exchange_rejected' || s === 'rejected' || s.includes('reject')) {
+      return {
+        icon: XCircle,
+        label: s.includes('exchange') ? 'Exchange Rejected' : 'Return Rejected',
+        badgeClass: 'bg-rose-100 text-rose-950 border border-rose-300',
+        iconClass: 'text-rose-600'
+      };
+    }
+    if (s === 'out_for_delivery') {
       return {
         icon: Navigation,
         label: 'Out for Delivery',
@@ -135,7 +287,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         iconClass: 'text-purple-600 animate-pulse'
       };
     }
-    if (s === 'shipped' || s === 'in_transit' || s === 'in transit') {
+    if (s === 'shipped' || s === 'in_transit') {
       return {
         icon: Truck,
         label: 'In Transit',
@@ -687,20 +839,46 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     setEditingAddressData(null);
   };
 
+  // Filter helpers
+  const isOrderInTransit = (o) => {
+    const s = resolveOrderLifecycleStatus(o);
+    return ['in_transit', 'shipped', 'out_for_delivery', 'processing', 'packed', 'confirmed'].includes(s) &&
+      !['delivered', 'completed', 'cancelled', 'canceled', 'refunded', 'refund_completed', 'exchanged'].includes(s) &&
+      !isOrderRefundedOrReturnOrExchange(o);
+  };
+
+  const isOrderDeliveredOnly = (o) => {
+    const s = resolveOrderLifecycleStatus(o);
+    return ['delivered', 'completed'].includes(s) && !isOrderRefundedOrReturnOrExchange(o);
+  };
+
+  const isOrderReturnExchangeOnly = (o) => {
+    return isOrderRefundedOrReturnOrExchange(o);
+  };
+
+  const isOrderCancelledOnly = (o) => {
+    const s = resolveOrderLifecycleStatus(o);
+    return ['cancelled', 'canceled'].includes(s);
+  };
+
   // Compute filtered & sorted orders
   const allOrders = userProfile?.orders || [];
   const filteredOrders = allOrders
     .filter((order) => {
-      if (orderStatusFilter !== 'All') {
-        if (order.status.toLowerCase() !== orderStatusFilter.toLowerCase()) {
-          return false;
-        }
+      if (orderStatusFilter === 'In Transit') {
+        if (!isOrderInTransit(order)) return false;
+      } else if (orderStatusFilter === 'Delivered') {
+        if (!isOrderDeliveredOnly(order)) return false;
+      } else if (orderStatusFilter === 'Returns & Exchanges') {
+        if (!isOrderReturnExchangeOnly(order)) return false;
+      } else if (orderStatusFilter === 'Cancelled') {
+        if (!isOrderCancelledOnly(order)) return false;
       }
       if (orderSearch.trim()) {
         const query = orderSearch.trim().toLowerCase();
-        const idMatch = order.id?.toLowerCase().includes(query);
+        const idMatch = order.id?.toLowerCase().includes(query) || order.orderId?.toLowerCase().includes(query);
         const trackingMatch = order.trackingNumber?.toLowerCase().includes(query);
-        const itemMatch = order.items?.some((it) => it.name.toLowerCase().includes(query));
+        const itemMatch = order.items?.some((it) => it.name?.toLowerCase().includes(query));
         if (!idMatch && !trackingMatch && !itemMatch) {
           return false;
         }
@@ -708,12 +886,12 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       return true;
     })
     .sort((a, b) => {
-      if (orderSortBy === 'price-high') return b.total - a.total;
-      if (orderSortBy === 'price-low') return a.total - b.total;
+      if (orderSortBy === 'price-high') return (b.total || 0) - (a.total || 0);
+      if (orderSortBy === 'price-low') return (a.total || 0) - (b.total || 0);
       if (orderSortBy === 'oldest') {
-        return new Date(a.date) - new Date(b.date);
+        return new Date(a.date || a.createdAt || 0) - new Date(b.date || b.createdAt || 0);
       }
-      return new Date(b.date) - new Date(a.date);
+      return new Date(b.date || b.createdAt || 0) - new Date(a.date || a.createdAt || 0);
     });
 
   /* =========================================================
@@ -1749,29 +1927,31 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                       <span>Status:</span>
                     </span>
 
-                    {['All', 'Delivered', 'In Transit'].map((status) => {
-                      const count =
-                        status === 'All'
-                          ? allOrders.length
-                          : allOrders.filter((o) => o.status.toLowerCase() === status.toLowerCase()).length;
-                      const isActive = orderStatusFilter === status;
+                    {[
+                      { key: 'All', label: 'All Orders', count: allOrders.length },
+                      { key: 'In Transit', label: 'In Transit', count: allOrders.filter(isOrderInTransit).length },
+                      { key: 'Delivered', label: 'Delivered', count: allOrders.filter(isOrderDeliveredOnly).length },
+                      { key: 'Returns & Exchanges', label: 'Returns & Exchanges', count: allOrders.filter(isOrderReturnExchangeOnly).length },
+                      { key: 'Cancelled', label: 'Cancelled', count: allOrders.filter(isOrderCancelledOnly).length }
+                    ].map((filterTab) => {
+                      const isActive = orderStatusFilter === filterTab.key;
 
                       return (
                         <button
-                          key={status}
+                          key={filterTab.key}
                           type="button"
-                          onClick={() => setOrderStatusFilter(status)}
-                          className={`px-3 py-1 rounded-xl font-bold transition-all text-xs cursor-pointer flex items-center gap-1.5 ${
+                          onClick={() => setOrderStatusFilter(filterTab.key)}
+                          className={`px-3 py-1 rounded-xl font-bold transition-all text-xs cursor-pointer flex items-center gap-1.5 shrink-0 ${
                             isActive
                               ? 'bg-brand-teal text-white shadow-2xs'
                               : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100 hover:text-brand-teal'
                           }`}
                         >
-                          <span>{status === 'All' ? 'All Orders' : status}</span>
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                          <span>{filterTab.label}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                             isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
                           }`}>
-                            {count}
+                            {filterTab.count}
                           </span>
                         </button>
                       );
@@ -1784,7 +1964,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           setOrderStatusFilter('All');
                           setOrderSearch('');
                         }}
-                        className="ml-auto text-xs font-bold text-brand-teal hover:underline flex items-center gap-1 cursor-pointer"
+                        className="ml-auto text-xs font-bold text-brand-teal hover:underline flex items-center gap-1 cursor-pointer shrink-0"
                       >
                         <RotateCcw size={12} />
                         <span>Reset Filters</span>
@@ -1797,7 +1977,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 {filteredOrders.length > 0 ? (
                   <div className="space-y-4">
                     {filteredOrders.map((order, idx) => {
-                      const currentStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+                      const currentStatus = resolveOrderLifecycleStatus(order);
                       const statusMeta = getOrderStatusMeta(currentStatus);
                       const StatusIcon = statusMeta.icon;
 
@@ -1985,47 +2165,175 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           </div>
 
                           {/* Active Return / Exchange Request Details Banner */}
-                          {['exchange_requested', 'exchanged', 'return_requested', 'returned'].includes(currentStatus) && order.returnRequest && (
-                            <div className="mb-3 p-3 rounded-xl text-xs space-y-1 border bg-blue-50/80 border-blue-200 text-blue-950">
-                              <div className="flex items-center justify-between font-bold flex-wrap gap-1">
-                                <span className="flex items-center gap-1.5">
-                                  <ArrowRightLeft size={14} className="text-blue-600 shrink-0" />
-                                  <span>
-                                    {currentStatus.includes('exchange')
-                                      ? (order.returnRequest.exchangeLength || order.returnRequest.isMeterBased
+                          {Boolean(
+                            (order.returnRequest && order.returnRequest.status && order.returnRequest.status !== 'no_request') ||
+                            isOrderRefundedOrReturnOrExchange(order) ||
+                            [
+                              'requested', 'return_requested', 'exchange_requested',
+                              'approved', 'return_approved', 'exchange_approved',
+                              'pickup_scheduled',
+                              'product_received', 'product_return_received',
+                              'refund_initiated', 'refund_processed', 'refund_completed', 'refunded',
+                              'exchange_dispatched', 'exchanged',
+                              'rejected', 'return_rejected', 'exchange_rejected'
+                            ].includes(currentStatus)
+                          ) && (
+                            <div className={`mb-3 p-3.5 rounded-xl text-xs space-y-2 border ${
+                              ['rejected', 'return_rejected', 'exchange_rejected'].includes(currentStatus)
+                                ? 'bg-rose-50/90 border-rose-200 text-rose-950'
+                                : ['refund_completed', 'refunded', 'exchanged'].includes(currentStatus)
+                                ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                                : 'bg-blue-50/80 border-blue-200 text-blue-950'
+                            }`}>
+                              <div className="flex items-center justify-between font-bold flex-wrap gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  <ArrowRightLeft size={15} className="text-blue-600 shrink-0" />
+                                  <span className="font-semibold text-sm">
+                                    {(currentStatus.includes('exchange') || order.returnRequest?.type === 'exchange')
+                                      ? (order.returnRequest?.exchangeLength || order.returnRequest?.isMeterBased
                                           ? 'Fabric Length Exchange Request'
-                                          : String(order.returnRequest.exchangeSize || '').toLowerCase().includes('kids')
+                                          : String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('kids')
                                           ? 'Shoe Size Exchange Request'
-                                          : String(order.returnRequest.exchangeSize || '').toLowerCase().includes('line') || String(order.returnRequest.exchangeSize || '').toLowerCase().includes('pack') || String(order.returnRequest.exchangeSize || '').toLowerCase().includes('class') || String(order.returnRequest.exchangeSize || '').toLowerCase().includes('replacement')
+                                          : String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('line') || String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('pack') || String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('class') || String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('replacement')
                                           ? 'Variant Exchange Request'
                                           : 'Size Exchange Request')
                                       : 'Product Return Request'}
-                                    {(order.returnRequest.exchangeLength || order.returnRequest.exchangeSize) && (
+                                    {(order.returnRequest?.exchangeLength || order.returnRequest?.exchangeSize) && (
                                       ` (${order.returnRequest.exchangeLength ? `${order.returnRequest.exchangeLength} Meter(s)` : (/^(size|kids|class|pack|unit)/i.test(order.returnRequest.exchangeSize) || order.returnRequest.exchangeSize.includes('"') || order.returnRequest.exchangeSize.includes('Line') || order.returnRequest.exchangeSize.includes('Replacement')) ? order.returnRequest.exchangeSize : `Size ${order.returnRequest.exchangeSize}`})`
                                     )}
                                   </span>
-                                </span>
-                                {order.returnRequest.priceAdjustmentType === 'extra_payment' && (
-                                  <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
-                                    Extra Payable: +₹{order.returnRequest.priceDifference}
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                                    ['rejected', 'return_rejected', 'exchange_rejected'].includes(currentStatus)
+                                      ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                      : ['refund_completed', 'refunded', 'exchanged'].includes(currentStatus)
+                                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                      : ['exchange_dispatched', 'pickup_scheduled'].includes(currentStatus)
+                                      ? 'bg-purple-100 text-purple-900 border-purple-300'
+                                      : 'bg-blue-100 text-blue-900 border-blue-300'
+                                  }`}>
+                                    {currentStatus === 'pickup_scheduled'
+                                      ? 'Pickup Scheduled'
+                                      : (currentStatus === 'product_received' || currentStatus === 'product_return_received')
+                                      ? 'Product Received by Seller'
+                                      : currentStatus === 'exchange_dispatched'
+                                      ? 'Replacement Dispatched'
+                                      : (currentStatus === 'refund_completed' || currentStatus === 'refunded')
+                                      ? 'Refund Completed'
+                                      : currentStatus === 'exchanged'
+                                      ? 'Exchange Completed'
+                                      : (currentStatus === 'approved' || currentStatus === 'return_approved' || currentStatus === 'exchange_approved')
+                                      ? 'Request Approved'
+                                      : currentStatus.includes('rejected')
+                                      ? 'Request Rejected'
+                                      : 'Review in Progress'}
                                   </span>
-                                )}
-                                {order.returnRequest.priceAdjustmentType === 'partial_refund' && (
-                                  <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
-                                    Partial Refund: ₹{Math.abs(order.returnRequest.priceDifference)}
-                                  </span>
-                                )}
-                                {order.returnRequest.priceAdjustmentType === 'none' && (
-                                  <span className="bg-blue-100 text-blue-900 border border-blue-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
-                                    Equal Price
-                                  </span>
-                                )}
+
+                                  {order.returnRequest?.priceAdjustmentType === 'extra_payment' && (
+                                    <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
+                                      Extra Payable: +₹{order.returnRequest.priceDifference}
+                                    </span>
+                                  )}
+                                  {order.returnRequest?.priceAdjustmentType === 'partial_refund' && (
+                                    <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-md font-mono">
+                                      Partial Refund: ₹{Math.abs(order.returnRequest.priceDifference)}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
-                              {order.returnRequest.reason && (
-                                <p className="text-[11px] text-blue-800">
+
+                              {order.returnRequest?.reason && (
+                                <p className="text-[11px] text-gray-700">
                                   <strong>Reason:</strong> {order.returnRequest.reason}
                                 </p>
                               )}
+
+                              {order.returnRequest?.pickupScheduledDate && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-teal-800 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-lg">
+                                  <Truck size={13} className="text-teal-600 shrink-0" />
+                                  <span><strong>Pickup Date:</strong> {new Date(order.returnRequest.pickupScheduledDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                </div>
+                              )}
+
+                              {(order.returnRequest?.exchangeAwbNumber || order.returnRequest?.exchangeCourierName) && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-indigo-800 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                                  <Package size={13} className="text-indigo-600 shrink-0" />
+                                  <span>
+                                    <strong>Replacement Courier:</strong> {order.returnRequest.exchangeCourierName || 'Courier'}
+                                    {order.returnRequest.exchangeAwbNumber && ` (AWB: ${order.returnRequest.exchangeAwbNumber})`}
+                                  </span>
+                                </div>
+                              )}
+
+                              {(order.refundDetails?.refundTransactionId || order.returnRequest?.refundTxnId || ['refund_completed', 'refunded'].includes(currentStatus)) && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                                  <CreditCard size={13} className="text-emerald-600 shrink-0" />
+                                  <span>
+                                    <strong>Refund Status:</strong> Refund Processed & Credited (₹{order.refundDetails?.refundAmount || order.returnRequest?.refundAmount || order.total})
+                                    {(order.refundDetails?.refundTransactionId || order.returnRequest?.refundTxnId) && (
+                                      <span className="font-mono ml-1 font-bold">• TXN Ref: {order.refundDetails?.refundTransactionId || order.returnRequest?.refundTxnId}</span>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+
+                              {order.returnRequest?.rejectionReason && currentStatus.includes('rejected') && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-rose-800 bg-rose-100/60 border border-rose-300 px-2.5 py-1 rounded-lg">
+                                  <AlertTriangle size={13} className="text-rose-600 shrink-0" />
+                                  <span><strong>Rejection Reason:</strong> {order.returnRequest.rejectionReason}</span>
+                                </div>
+                              )}
+
+                              {/* Direct Statutory PDF Action Buttons */}
+                              <div className="pt-2 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-2">
+                                {(order.returnRequest?.type === 'return' || ['refund_completed', 'refunded', 'product_received', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus)) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-lg border border-rose-200 transition-colors cursor-pointer shadow-2xs"
+                                    title="Download Statutory GST Credit Note under Section 34 of CGST Act"
+                                  >
+                                    <FileText size={13} className="text-rose-600" />
+                                    <span>Download GST Credit Note</span>
+                                  </button>
+                                )}
+
+                                {(order.returnRequest?.type === 'exchange' || ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus)) && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-lg border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
+                                      title="Download GST Exchange Tax Invoice & Replacement Slip"
+                                    >
+                                      <FileText size={13} className="text-indigo-600" />
+                                      <span>Download Exchange Invoice</span>
+                                    </button>
+                                    {order.returnRequest?.priceAdjustmentType === 'partial_refund' && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-lg border border-rose-200 transition-colors cursor-pointer shadow-2xs"
+                                        title="Download GST Credit Note for partial refund adjustment"
+                                      >
+                                        <FileText size={13} className="text-rose-600" />
+                                        <span>Download Credit Note (Refund)</span>
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
                           )}
 
@@ -2047,6 +2355,20 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               <p className="text-[11px] text-rose-900">
                                 <strong>Reason:</strong> {order.cancellationReason || 'Cancelled by customer'}
                               </p>
+                              <div className="pt-2 mt-1 border-t border-rose-200 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-900 font-bold text-xs rounded-lg border border-rose-300 transition-colors cursor-pointer shadow-2xs"
+                                  title="Download GST Credit Note for Cancelled Order"
+                                >
+                                  <FileText size={13} className="text-rose-700" />
+                                  <span>Download GST Credit Note</span>
+                                </button>
+                              </div>
                             </div>
                           )}
 
@@ -2078,6 +2400,55 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                   <XCircle size={13} />
                                   <span>Cancel Order</span>
                                 </button>
+                              )}
+
+                              {/* Quick Document Download Buttons for Customer */}
+                              {(isOrderRefundedOrReturnOrExchange(order) || currentStatus === 'cancelled') ? (
+                                <>
+                                  {(order.returnRequest?.type === 'return' || currentStatus === 'cancelled' || ['refund_completed', 'refunded', 'product_received', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus)) && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
+                                      }}
+                                      className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                                      title="Download GST Credit Note"
+                                    >
+                                      <FileText size={13} />
+                                      <span>Credit Note</span>
+                                    </button>
+                                  )}
+                                  {(order.returnRequest?.type === 'exchange' || ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus)) && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
+                                      }}
+                                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                                      title="Download Exchange Invoice"
+                                    >
+                                      <FileText size={13} />
+                                      <span>Exchange Invoice</span>
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                ['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'invoice');
+                                    }}
+                                    className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                                    title="Download Tax Invoice"
+                                  >
+                                    <FileText size={13} />
+                                    <span>Invoice</span>
+                                  </button>
+                                )
                               )}
 
                               {(() => {
