@@ -254,6 +254,7 @@ export default function ProductDetailPage({ onNavigate }) {
   }, [selectedProduct?.id, selectedProduct?._id, isMeterProduct, minMeter]);
 
   const activeVariant = sizeVariants.find(v => String(v.size) === String(selectedSize)) || (sizeVariants.length > 0 ? sizeVariants[0] : null);
+  const currentSelectedVariant = activeVariant;
 
   const currentVariantStock = activeVariant
     ? Math.max(0, Number(activeVariant.stock !== undefined ? activeVariant.stock : (activeVariant.stockQuantity !== undefined ? activeVariant.stockQuantity : totalProductStock)))
