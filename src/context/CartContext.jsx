@@ -395,9 +395,11 @@ export function CartProvider({ children }) {
 
   const fetchUserOrders = useCallback(async (overridePhone = '') => {
     const phone = overridePhone || userProfile?.phone || '';
-    if (!phone && !userProfile?.id && !isAuthenticated) return [];
+    const userId = userProfile?.id || userProfile?._id || '';
+    const email = userProfile?.email || '';
+    if (!phone && !userId && !email && !isAuthenticated) return [];
     try {
-      const res = await fetchMyOrdersFromBackend(phone);
+      const res = await fetchMyOrdersFromBackend(phone, userId, email);
       const ordersList = Array.isArray(res) ? res : (res?.orders || []);
       if (Array.isArray(ordersList)) {
         setUserProfile((prev) => ({
@@ -410,7 +412,7 @@ export function CartProvider({ children }) {
       console.warn('⚠️ Could not fetch user orders from backend:', err?.message || err);
       return userProfile?.orders || [];
     }
-  }, [userProfile?.phone, userProfile?.id, isAuthenticated]);
+  }, [userProfile?.phone, userProfile?.id, userProfile?.email, isAuthenticated]);
 
   useEffect(() => {
     if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
@@ -419,10 +421,17 @@ export function CartProvider({ children }) {
       fetchCartFromBackend(phone, userId)
         .then((res) => {
           if (res?.cart?.items && Array.isArray(res.cart.items)) {
-            setCartItems(res.cart.items.map((it) => ({
-              ...it,
-              cartItemId: it.cartItemId || getCartItemKey(it)
-            })));
+            if (res.cart.items.length === 0) {
+              setCartItems([]);
+              try {
+                localStorage.removeItem('book_vardi_items_v2');
+              } catch (e) {}
+            } else {
+              setCartItems(res.cart.items.map((it) => ({
+                ...it,
+                cartItemId: it.cartItemId || getCartItemKey(it)
+              })));
+            }
           }
         })
         .catch(() => {});
@@ -439,6 +448,38 @@ export function CartProvider({ children }) {
       }
     };
 
+    let sseSource = null;
+    let reconnectTimeout = null;
+
+    const connectSSE = () => {
+      if (typeof window === 'undefined' || typeof EventSource === 'undefined' || !backendEnabled) return;
+      try {
+        const streamUrl = `${API_BASE_URL.replace(/\/+$/, '')}/realtime/stream`;
+        sseSource = new EventSource(streamUrl);
+
+        sseSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data && (data.type === 'ORDER_CREATED' || data.type === 'ORDER_UPDATED')) {
+              handleOrderSync();
+            }
+          } catch (e) {}
+        };
+
+        sseSource.onerror = () => {
+          if (sseSource) {
+            sseSource.close();
+            sseSource = null;
+          }
+          reconnectTimeout = setTimeout(() => {
+            connectSSE();
+          }, 8000);
+        };
+      } catch (err) {}
+    };
+
+    connectSSE();
+
     window.addEventListener('bv_orders_updated', handleOrderSync);
     window.addEventListener('focus', handleOrderSync);
     window.addEventListener('storage', (e) => {
@@ -448,6 +489,8 @@ export function CartProvider({ children }) {
     });
 
     return () => {
+      if (sseSource) sseSource.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       window.removeEventListener('bv_orders_updated', handleOrderSync);
       window.removeEventListener('focus', handleOrderSync);
       window.removeEventListener('storage', handleOrderSync);
@@ -1870,7 +1913,8 @@ export function CartProvider({ children }) {
     } catch (e) {}
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
-      clearCartInBackend(phone).catch(() => {});
+      const userId = userProfile?.id || userProfile?._id || '';
+      clearCartInBackend(phone, userId).catch(() => {});
     }
     showToast('Cart cleared! 🛒');
   };
@@ -2008,7 +2052,7 @@ export function CartProvider({ children }) {
     return `${prefix}${num}`;
   };
 
-  const placeOrder = (orderData) => {
+  const placeOrder = async (orderData) => {
     const randomId = generateProductOrderId();
     const randomTracking = orderData.trackingNumber || `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`;
     const today = new Date();
@@ -2019,40 +2063,85 @@ export function CartProvider({ children }) {
       timeZone: 'Asia/Kolkata'
     });
 
-    const itemsToBuy = cartItems.filter((item) => item.selected !== false);
-    const unselectedItems = cartItems.filter((item) => item.selected === false);
+    let itemsToBuy = cartItems.filter((item) => item.selected !== false);
+    if (itemsToBuy.length === 0 && cartItems.length > 0) {
+      itemsToBuy = [...cartItems];
+    }
+    const unselectedItems = cartItems.filter((item) => item.selected === false && !itemsToBuy.includes(item));
+
+    if (!itemsToBuy || itemsToBuy.length === 0) {
+      throw new Error('Your cart is empty. Please add items to checkout.');
+    }
 
     const isCod = /cod|cash\s*on\s*delivery/i.test(String(orderData.paymentMethod || ''));
     const initialPaymentStatus = orderData.paymentStatus || (isCod ? 'Pending' : 'Paid');
     const customerDeliveryOtp = String(orderData.deliveryOtp || Math.floor(1000 + Math.random() * 9000));
+    const customerPhone = userProfile?.phone || orderData?.shippingAddress?.phone || '';
+    const customerEmail = userProfile?.email || orderData?.shippingAddress?.email || '';
+    const customerName = userProfile?.name || orderData?.shippingAddress?.name || orderData?.shippingAddress?.fullName || 'Student Customer';
+    const userId = userProfile?.id || userProfile?._id || null;
 
     const newOrder = {
       id: randomId,
       orderId: randomId,
+      userId: userId,
       date: formattedDate,
       status: 'Pending',
+      overallStatus: 'Pending',
       statusColor: 'amber',
       trackingNumber: randomTracking,
       courierName: orderData.courierName || 'N/A',
       deliveryMode: orderData.deliveryMode || 'pending_choice',
+      paymentMethod: orderData.paymentMethod || (isCod ? 'Cash on Delivery (COD)' : 'UPI'),
       paymentStatus: initialPaymentStatus,
       deliveryOtp: customerDeliveryOtp,
       customer: {
-        name: userProfile?.name || orderData?.shippingAddress?.name || 'Student Customer',
-        email: userProfile?.email || orderData?.shippingAddress?.email || '',
-        phone: userProfile?.phone || orderData?.shippingAddress?.phone || ''
+        name: customerName,
+        email: customerEmail,
+        phone: customerPhone
       },
       sellerDetails: orderData.sellerDetails || null,
       selfDeliveryDetails: orderData.selfDeliveryDetails ? { ...orderData.selfDeliveryDetails, deliveryOtp: customerDeliveryOtp } : { deliveryOtp: customerDeliveryOtp },
-      itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
       items: itemsToBuy.map((item) => {
         const catProd = (products || []).find((p) => String(p.id || p._id) === String(item.productId || item.id || item._id));
+        
+        let cleanImg = "";
+        if (typeof item.image === "string" && item.image.trim()) {
+          cleanImg = item.image.trim();
+        } else if (Array.isArray(item.image) && item.image.length > 0) {
+          cleanImg = typeof item.image[0] === "string" ? item.image[0] : (item.image[0]?.url || item.image[0]?.src || "");
+        } else if (Array.isArray(item.images) && item.images.length > 0) {
+          cleanImg = typeof item.images[0] === "string" ? item.images[0] : (item.images[0]?.url || item.images[0]?.src || "");
+        } else if (catProd) {
+          if (typeof catProd.image === "string" && catProd.image.trim()) {
+            cleanImg = catProd.image.trim();
+          } else if (Array.isArray(catProd.images) && catProd.images.length > 0) {
+            cleanImg = typeof catProd.images[0] === "string" ? catProd.images[0] : (catProd.images[0]?.url || "");
+          }
+        }
+
+        const resolvedSellerId = item.sellerId || item.seller?._id || item.seller?.id || catProd?.sellerId || catProd?.seller?._id || catProd?.seller?.id || (typeof catProd?.seller === 'string' ? catProd.seller : null) || null;
+        const resolvedStoreName = item.storeName || item.sellerStoreName || item.sellerName || catProd?.sellerStoreName || catProd?.storeName || catProd?.sellerName || "BookVardi Verified Seller";
+
         return {
           ...item,
+          image: cleanImg,
+          images: undefined,
+          productId: catProd?._id || catProd?.id || item.productId || item.id || item._id,
+          id: catProd?._id || catProd?.id || item.productId || item.id || item._id,
+          sellerId: resolvedSellerId,
+          sellerName: resolvedStoreName,
+          storeName: resolvedStoreName,
+          sellerStoreName: resolvedStoreName,
+          price: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
+          finalPrice: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
+          quantity: Math.max(1, Number(item.quantity) || 1),
+          size: typeof item.selectedSize === "object" ? (item.selectedSize?.size || "") : String(item.selectedSize || item.size || ""),
+          color: typeof item.selectedColor === "object" ? (item.selectedColor?.name || "") : String(item.selectedColor || item.color || ""),
           isGstInclusive: item.isGstInclusive !== undefined ? item.isGstInclusive : (catProd?.isGstInclusive !== false),
           gst: item.gst ?? item.gstPercent ?? catProd?.gst ?? 5,
-          status: item.status || 'pending',
-          deliveryOtp: customerDeliveryOtp || ''
+          status: item.status || "pending",
+          deliveryOtp: customerDeliveryOtp || ""
         };
       }),
       taxAmount: orderData.taxAmount || 0,
@@ -2060,83 +2149,16 @@ export function CartProvider({ children }) {
       shippingCost: orderData.shippingCost,
       discount: orderData.discount || 0,
       total: orderData.total,
+      totalAmount: orderData.total,
       shippingAddress: orderData.shippingAddress,
-      paymentMethod: orderData.paymentMethod,
       deliverySpeed: orderData.deliverySpeed || 'Standard Delivery',
       estimatedDelivery: orderData.estimatedDelivery || '3-5 Business Days',
-      appliedCoupon: appliedCoupon?.code || null
+      appliedCoupon: appliedCoupon?.code || null,
+      razorpayPaymentId: orderData.razorpayPaymentId || null,
+      razorpayOrderId: orderData.razorpayOrderId || null
     };
 
-    // Save order into user profile
-    setUserProfile((prev) => {
-      const updatedOrders = [newOrder, ...(prev?.orders || [])];
-      return {
-        ...prev,
-        rewardPoints: (prev?.rewardPoints || 0) + 50,
-        orders: updatedOrders
-      };
-    });
-
-    // Format new order for Admin and Seller portals
-    const platformOrder = {
-      id: randomId,
-      orderId: randomId,
-      customerName: userProfile?.name || 'Student Customer',
-      customerEmail: userProfile?.email || 'customer@bookvardi.in',
-      customerPhone: userProfile?.phone || '+91 98765 43210',
-      school: userProfile?.institution || 'General Public',
-      date: formattedDate,
-      total: orderData.total,
-      taxAmount: orderData.taxAmount || 0,
-      itemsCount: itemsToBuy.reduce((acc, item) => acc + item.quantity, 0),
-      status: 'Pending',
-      deliveryOtp: '',
-      selfDeliveryDetails: null,
-      paymentMethod: orderData.paymentMethod || 'UPI',
-      paymentStatus: initialPaymentStatus,
-      shippingAddress: typeof orderData.shippingAddress === 'object'
-        ? `${orderData.shippingAddress.address || ''}, ${orderData.shippingAddress.city || ''} ${orderData.shippingAddress.pincode || ''}`
-        : (orderData.shippingAddress || 'Customer Address'),
-      trackingNumber: randomTracking,
-      courierName: orderData.courierName || 'N/A',
-      items: itemsToBuy.map((item) => {
-        const catProd = (products || []).find((p) => String(p.id || p._id) === String(item.productId || item.id || item._id));
-        return {
-          ...item,
-          id: item.id || item._id || item.productId,
-          productId: item.productId || item.id || item._id,
-          sellerId: item.sellerId || item.seller?._id || item.seller?.id || item.seller,
-          sellerName: item.sellerName || item.storeName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
-          storeName: item.storeName || item.sellerName || item.seller?.storeName || item.seller?.name || (typeof item.seller === 'string' ? item.seller : ''),
-          gst: item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? catProd?.gst ?? 5,
-          gstPercent: item.gstPercent ?? item.gst ?? item.gstPercentage ?? item.gstRate ?? catProd?.gst ?? 5,
-          gstPercentage: item.gstPercentage ?? item.gstPercent ?? item.gst ?? item.gstRate ?? catProd?.gst ?? 5,
-          isGstInclusive: item.isGstInclusive !== undefined ? item.isGstInclusive : (catProd?.isGstInclusive !== false),
-          name: item.name,
-          price: item.price,
-          finalPrice: item.finalPrice || item.price,
-          quantity: item.quantity,
-          size: item.selectedSize || item.size || '',
-          age: item.age || '',
-          image: item.image,
-          category: item.category || 'Stationery',
-          status: item.status || 'pending',
-          deliveryOtp: sharedDeliveryOtp
-        };
-      })
-    };
-
-    try {
-      const existingAdminOrders = JSON.parse(localStorage.getItem('bv_admin_orders') || '[]');
-      localStorage.setItem('bv_admin_orders', JSON.stringify([platformOrder, ...existingAdminOrders]));
-    } catch (e) {}
-
-    try {
-      const existingSellerOrders = JSON.parse(localStorage.getItem('bv_seller_orders') || '[]');
-      localStorage.setItem('bv_seller_orders', JSON.stringify([platformOrder, ...existingSellerOrders]));
-    } catch (e) {}
-
-    // Update product stock quantities locally and broadcast
+    // Update product stock quantities locally in website catalog
     const updatedProducts = products.map((prod) => {
       const prodIdStr = String(prod.id || prod._id || '');
       const cartMatches = itemsToBuy.filter((c) => {
@@ -2168,7 +2190,6 @@ export function CartProvider({ children }) {
           }
         });
 
-        // If product has variants, recalculate overall product stock from variants
         let remaining;
         if (updatedVariants && updatedVariants.length > 0) {
           remaining = updatedVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity || 0))), 0);
@@ -2192,7 +2213,6 @@ export function CartProvider({ children }) {
 
     setProducts(updatedProducts);
 
-    // Keep selectedProduct in sync so the product details page updates immediately
     setSelectedProduct((prev) => {
       if (!prev) return null;
       const prevId = String(prev.id || prev._id || '');
@@ -2204,35 +2224,76 @@ export function CartProvider({ children }) {
       localStorage.setItem('bv_sync_products', JSON.stringify(updatedProducts));
     } catch (e) {}
 
-    setLastPlacedOrder(newOrder);
-    setCartItems(unselectedItems);
-    setAppliedCoupon(null);
-
+    // Save order into MongoDB Database via Backend API
+    let placedOrderResult = newOrder;
     if (backendEnabled) {
-      const userPhone = userProfile?.phone || orderData?.shippingAddress?.phone || '';
-      createOrderInBackend(newOrder, userPhone)
-        .then((res) => {
-          if (res?.order) {
-            console.log('🌐 [FRONTEND API] Order created in backend DB:', res.order);
-          }
-          fetchUserOrders(userPhone);
-        })
-        .catch((err) => {
-          console.error('Failed to save order to backend DB:', err);
-          fetchUserOrders(userPhone);
-        });
+      try {
+        const res = await createOrderInBackend(newOrder, customerPhone, userId);
+        if (res?.order) {
+          console.log('🌐 [FRONTEND API] Order created in backend DB:', res.order);
+          placedOrderResult = res.order;
+        }
+      } catch (err) {
+        console.error('❌ Failed to save order to backend DB:', err);
+        throw new Error(err.response?.data?.message || err.message || 'Failed to place order in database. Please check your network and try again.');
+      }
 
-      clearCartInBackend(userPhone)
-        .then((res) => {
-          console.log('🌐 [FRONTEND API] Backend cart cleared successfully:', res);
-        })
-        .catch((err) => {
-          console.error('Failed to clear backend cart:', err);
-        });
+      // Clear cart in backend database
+      try {
+        await clearCartInBackend(customerPhone || userProfile?.phone || '', userId || userProfile?.id || '');
+        console.log('🌐 [FRONTEND API] Backend cart cleared successfully');
+      } catch (err) {
+        console.warn('Backend cart clear warning:', err);
+      }
+
+      // Sync user profile orders from backend database in background
+      fetchUserOrders(customerPhone || userProfile?.phone || '').catch(() => {});
     }
 
-    showToast(`🎉 Order ${randomId} placed successfully! +50 Points earned.`);
-    return newOrder;
+    // Set last placed order and clear local cart state immediately
+    setLastPlacedOrder(placedOrderResult);
+    const remainingCartItems = Array.isArray(unselectedItems) ? unselectedItems : [];
+    setCartItems(remainingCartItems);
+    try {
+      if (remainingCartItems.length > 0) {
+        localStorage.setItem('book_vardi_items_v2', JSON.stringify(remainingCartItems));
+      } else {
+        localStorage.removeItem('book_vardi_items_v2');
+      }
+    } catch (e) {}
+    setAppliedCoupon(null);
+
+    // Save order into user profile state and localStorage immediately
+    setUserProfile((prev) => {
+      const existing = prev?.orders || [];
+      const updatedOrders = [
+        placedOrderResult,
+        ...existing.filter((o) => (o.orderId || o.id) !== (placedOrderResult.orderId || placedOrderResult.id))
+      ];
+      const nextProfile = {
+        ...prev,
+        rewardPoints: (prev?.rewardPoints || 0) + 50,
+        orders: updatedOrders
+      };
+      try {
+        localStorage.setItem('book_vardi_user_profile', JSON.stringify(nextProfile));
+      } catch (e) {}
+      return nextProfile;
+    });
+
+    // Real-time broadcast to Admin, Seller, and open tabs
+    try {
+      window.dispatchEvent(new CustomEvent('bv_orders_updated', { detail: placedOrderResult }));
+      localStorage.setItem('bv_order_sync_timestamp', String(Date.now()));
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('bv_platform_channel');
+        bc.postMessage({ type: 'ORDER_CREATED', order: placedOrderResult });
+        bc.close();
+      }
+    } catch (e) {}
+
+    showToast(`🎉 Order #${placedOrderResult.orderId || placedOrderResult.id || randomId} placed successfully!`);
+    return placedOrderResult;
   };
 
   const profileCompletenessInfo = useMemo(() => getProfileCompleteness(userProfile), [userProfile]);

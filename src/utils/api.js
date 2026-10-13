@@ -120,8 +120,29 @@ export function parseSizeVariants(product) {
   return parsed;
 }
 
-// Console Logger Interceptors for Website API Requests
+// Dynamic Auth & Console Logger Interceptors for Website API Requests
 apiClient.interceptors.request.use((config) => {
+  try {
+    const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
+    if (token && token !== 'undefined' && token !== 'null') {
+      config.headers = config.headers || {};
+      if (!config.headers['Authorization']) {
+        config.headers['Authorization'] = `Bearer ${token.trim()}`;
+      }
+    }
+    const userProfileStr = localStorage.getItem('book_vardi_user_profile');
+    if (userProfileStr) {
+      const u = JSON.parse(userProfileStr);
+      const phone = u.phone || u.mobile || '';
+      if (phone) {
+        config.headers = config.headers || {};
+        if (!config.headers['x-user-phone']) {
+          config.headers['x-user-phone'] = String(phone).trim();
+        }
+      }
+    }
+  } catch (e) {}
+
   console.log(`🌐 [WEBSITE API REQ] ${config.method?.toUpperCase()} ${config.baseURL || ''}${config.url}`, config.data || '');
   return config;
 }, (error) => {
@@ -327,6 +348,7 @@ export async function clearCartInBackend(phone = '', userId = '') {
   console.log('🌐 [FRONTEND API] DELETE /api/cart/clear for phone/userId:', phone, userId);
   return requestApi('/cart/clear', {
     method: 'DELETE',
+    params: { phone, userId },
     data: { phone, userId },
     headers: makeAuthHeaders(phone, userId)
   });
@@ -372,24 +394,31 @@ export async function updateAddressInBackend(addressId, addressData, phone = '')
   return res;
 }
 
-export async function createOrderInBackend(orderPayload, phone = '') {
+export async function createOrderInBackend(orderPayload, phone = '', userId = '') {
   const userPhone = phone || orderPayload?.customer?.phone || orderPayload?.shippingAddress?.phone || '';
+  const resolvedUserId = userId || orderPayload?.userId || '';
   console.log('🌐 [FRONTEND API] POST /api/orders payload:', orderPayload);
+  const headers = makeAuthHeaders(userPhone, resolvedUserId);
   const res = await requestApi('/orders', {
     method: 'POST',
-    data: { ...orderPayload, phone: userPhone },
-    headers: userPhone ? { 'x-user-phone': userPhone } : {}
+    data: { ...orderPayload, phone: userPhone, userId: resolvedUserId },
+    headers
   });
   console.log('🌐 [FRONTEND API] POST /api/orders response:', res);
   return res;
 }
 
-export async function fetchMyOrdersFromBackend(phone = '') {
+export async function fetchMyOrdersFromBackend(phone = '', userId = '', email = '') {
   const userPhone = String(phone || '').trim();
+  const headers = makeAuthHeaders(userPhone, userId);
+  const params = {};
+  if (userPhone) params.phone = userPhone;
+  if (userId) params.userId = userId;
+  if (email) params.email = email;
   const res = await requestApi('/orders/my-orders', {
     method: 'GET',
-    headers: userPhone ? { 'x-user-phone': userPhone } : {},
-    params: userPhone ? { phone: userPhone } : {}
+    headers,
+    params
   });
   return res;
 }

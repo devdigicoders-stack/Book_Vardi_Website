@@ -251,7 +251,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               <span>Back to My Orders</span>
             </button>
             <span className="text-xs font-mono font-extrabold text-brand-teal bg-brand-teal/10 px-3 py-1 rounded-full">
-              Order #{order.id}
+              Order #{order.orderId || order.id}
             </span>
           </div>
         )}
@@ -316,7 +316,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                 Order ID:
               </span>
               <span className="font-mono font-extrabold text-sm text-gray-900">
-                #{order.id}
+                #{order.orderId || order.id}
               </span>
               <button
                 onClick={handleCopyOrderId}
@@ -435,6 +435,18 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           const retReqType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim();
           const retReqStatus = String(order.returnRequest?.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
           const isExchange = retReqType === 'exchange' || statusLower.includes('exchange');
+
+          const isExchangeCompleted = retReqStatus === 'exchanged' || statusLower === 'exchanged' || statusLower === 'completed';
+          const isExchangeRejected = retReqStatus.includes('reject') || statusLower.includes('reject');
+          const isExchangeOtpActive = isReturnOrExchangeOrRefund && isExchange && !isExchangeCompleted && !isExchangeRejected && !isCancelled;
+
+          const isReturnCompleted = ['product_received', 'product_return_received', 'returned', 'refund_completed', 'refund_initiated', 'refunded'].includes(retReqStatus) || ['product_received', 'product_return_received', 'returned', 'refunded'].includes(statusLower);
+          const isReturnRejected = retReqStatus.includes('reject') || statusLower.includes('reject');
+          const isReturnOtpActive = isReturnOrExchangeOrRefund && !isExchange && !isReturnCompleted && !isReturnRejected && !isCancelled;
+
+          const isRegularDeliveryOtpActive = !isCancelled && !isReturnOrExchangeOrRefund && statusLower !== 'delivered' && statusLower !== 'completed';
+
+          const shouldShowOtpInSuccessPage = Boolean(deliveryOtp && !isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
 
           const returnExchangeSteps = isExchange ? [
             { id: 1, title: 'Exchange Requested', desc: 'Replacement requested', icon: RotateCcw },
@@ -835,6 +847,78 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                           </button>
                         )}
                       </div>
+
+                      {/* Return / Exchange Handover Security OTP Banner */}
+                      {shouldShowOtpInSuccessPage && (
+                        <div className={`mt-2 p-4 rounded-2xl border-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${
+                          isReturnOtpActive
+                            ? 'bg-gradient-to-r from-cyan-50 via-teal-50 to-cyan-50 border-cyan-400'
+                            : isExchangeOtpActive
+                            ? 'bg-gradient-to-r from-purple-50 via-indigo-50 to-teal-50 border-purple-400'
+                            : 'bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-emerald-400'
+                        }`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-11 h-11 rounded-2xl text-white flex items-center justify-center font-black shrink-0 shadow-xs ${
+                              isReturnOtpActive ? 'bg-cyan-700' : isExchangeOtpActive ? 'bg-purple-700' : 'bg-emerald-600'
+                            }`}>
+                              <Key size={22} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded ${
+                                  isReturnOtpActive ? 'text-cyan-900 bg-cyan-200/80' : isExchangeOtpActive ? 'text-purple-900 bg-purple-200/80' : 'text-emerald-900 bg-emerald-200/80'
+                                }`}>
+                                  {isReturnOtpActive ? 'Return Pickup Security Code' : isExchangeOtpActive ? 'Exchange Handover Security Code' : 'Doorstep Verification OTP'}
+                                </span>
+                                <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded">
+                                  Doorstep Verification
+                                </span>
+                              </div>
+                              <h4 className="font-extrabold text-sm text-gray-900 mt-0.5">
+                                {isReturnOtpActive ? 'Share OTP Upon Return Item Pickup' : isExchangeOtpActive ? 'Share OTP Upon Exchange Delivery & Handover' : 'Share OTP Upon Arrival'}
+                              </h4>
+                              <p className="text-[11px] text-gray-700">
+                                {isReturnOtpActive
+                                  ? 'Provide this 4-digit code to the pickup executive at your doorstep when they arrive to inspect and collect the item.'
+                                  : isExchangeOtpActive
+                                  ? 'Provide this 4-digit code to the delivery executive at your doorstep upon handing over the old item and receiving your replacement.'
+                                  : 'Provide this 4-digit code to the delivery executive at your doorstep to confirm handover.'}
+                              </p>
+                              {riderName && (
+                                <p className="text-[11px] font-bold text-teal-900 mt-1">
+                                  🛵 Assigned Fleet Partner: {riderName} {riderPhone && `(${riderPhone})`} {vehicleNumber && `• ${vehicleNumber}`}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className={`bg-white border-2 px-4 py-2.5 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-sm flex sm:flex-col items-center justify-between sm:justify-center gap-2 ${
+                            isReturnOtpActive ? 'border-cyan-500' : isExchangeOtpActive ? 'border-purple-500' : 'border-emerald-500'
+                          }`}>
+                            <div>
+                              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                {isReturnOtpActive ? 'Pickup OTP' : isExchangeOtpActive ? 'Exchange OTP' : 'Delivery OTP'}
+                              </div>
+                              <div className={`font-mono text-2xl font-black tracking-widest leading-none mt-0.5 ${
+                                isReturnOtpActive ? 'text-cyan-800' : isExchangeOtpActive ? 'text-purple-800' : 'text-emerald-700'
+                              }`}>
+                                {deliveryOtp}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleCopyOtp}
+                              className={`px-2.5 py-1 font-bold text-[10px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
+                                isReturnOtpActive ? 'bg-cyan-100 hover:bg-cyan-200 text-cyan-900' : isExchangeOtpActive ? 'bg-purple-100 hover:bg-purple-200 text-purple-900' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                              }`}
+                              title="Copy OTP"
+                            >
+                              {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
+                              <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : isSelfDelivery && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
@@ -890,33 +974,73 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                         </div>
                       </div>
 
-                      {/* Delivery Security OTP */}
-                      {!isCancelled && !isReturnOrExchangeOrRefund && deliveryOtp ? (
-                        <div className="bg-emerald-50/70 rounded-2xl p-3.5 border border-emerald-200 flex items-start justify-between gap-2">
+                      {/* Delivery / Return / Exchange Security OTP */}
+                      {shouldShowOtpInSuccessPage ? (
+                        <div className={`rounded-2xl p-3.5 border flex items-start justify-between gap-2 ${
+                          isReturnOtpActive
+                            ? 'bg-cyan-50/80 border-cyan-300'
+                            : isExchangeOtpActive
+                            ? 'bg-purple-50/80 border-purple-300'
+                            : 'bg-emerald-50/70 border-emerald-200'
+                        }`}>
                           <div className="flex items-start gap-2.5 min-w-0">
-                            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                              isReturnOtpActive
+                                ? 'bg-cyan-100 text-cyan-800'
+                                : isExchangeOtpActive
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}>
                               <Key size={18} />
                             </div>
                             <div className="min-w-0">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">
-                                Handshake Security OTP
+                              <span className={`text-[10px] font-black uppercase tracking-wider block ${
+                                isReturnOtpActive
+                                  ? 'text-cyan-800'
+                                  : isExchangeOtpActive
+                                  ? 'text-purple-800'
+                                  : 'text-emerald-800'
+                              }`}>
+                                {isReturnOtpActive
+                                  ? 'Return Pickup Security OTP'
+                                  : isExchangeOtpActive
+                                  ? 'Exchange Handover Security OTP'
+                                  : 'Handshake Security OTP'}
                               </span>
                               <div className="flex items-center gap-2 mt-0.5">
-                                <span className="font-mono text-base font-black text-emerald-950 tracking-widest bg-white px-2 py-0.5 rounded-lg border border-emerald-300 shadow-2xs">
+                                <span className={`font-mono text-base font-black tracking-widest bg-white px-2 py-0.5 rounded-lg border shadow-2xs ${
+                                  isReturnOtpActive
+                                    ? 'text-cyan-950 border-cyan-300'
+                                    : isExchangeOtpActive
+                                    ? 'text-purple-950 border-purple-300'
+                                    : 'text-emerald-950 border-emerald-300'
+                                }`}>
                                   {deliveryOtp}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={handleCopyOtp}
-                                  className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-100/80 hover:bg-emerald-100 px-2 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1"
-                                  title="Copy Delivery OTP"
+                                  className={`text-[11px] font-bold px-2 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
+                                    isReturnOtpActive
+                                      ? 'text-cyan-800 bg-cyan-100/80 hover:bg-cyan-100'
+                                      : isExchangeOtpActive
+                                      ? 'text-purple-800 bg-purple-100/80 hover:bg-purple-100'
+                                      : 'text-emerald-800 bg-emerald-100/80 hover:bg-emerald-100'
+                                  }`}
+                                  title="Copy OTP"
                                 >
                                   {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
                                   <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
                                 </button>
                               </div>
-                              <span className="text-[10px] text-emerald-700 mt-1 block">
-                                Share with rider upon arrival
+                              <span className={`text-[10px] mt-1 block ${
+                                isReturnOtpActive ? 'text-cyan-700' : isExchangeOtpActive ? 'text-purple-700' : 'text-emerald-700'
+                              }`}>
+                                {isReturnOtpActive
+                                  ? 'Share with rider upon pickup'
+                                  : isExchangeOtpActive
+                                  ? 'Share with rider after replacement handover'
+                                  : 'Share with rider upon arrival'}
                               </span>
                             </div>
                           </div>
