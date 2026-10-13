@@ -497,28 +497,16 @@ export async function fetchCategoriesFromBackend() {
 }
 
 export async function fetchCategoryTreeFromBackend() {
-  const CACHE_KEY = 'bv_cached_categories_tree';
-  const CACHE_TIME_KEY = 'bv_cached_categories_time';
-
-  let cachedData = null;
+  // Clear any previously cached category keys to ensure live data
   try {
-    const saved = localStorage.getItem(CACHE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        cachedData = parsed;
-      }
-    }
+    localStorage.removeItem('bv_cached_categories_tree');
+    localStorage.removeItem('bv_cached_categories_time');
   } catch (e) {}
 
   if (backendEnabled) {
     try {
       const freshData = await requestApi('/categories/tree', { method: 'GET' });
-      if (Array.isArray(freshData) && freshData.length > 0) {
-        try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify(freshData));
-          localStorage.setItem(CACHE_TIME_KEY, String(Date.now()));
-        } catch (e) {}
+      if (Array.isArray(freshData)) {
         return freshData;
       }
     } catch (err) {
@@ -526,7 +514,7 @@ export async function fetchCategoryTreeFromBackend() {
     }
   }
 
-  return cachedData || [];
+  return [];
 }
 
 // Product Catalog & Search API calls

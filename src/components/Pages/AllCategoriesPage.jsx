@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, ChevronRight, Layers } from 'lucide-react';
+import { ArrowRight, ChevronRight, Layers, PackageOpen } from 'lucide-react';
 import { fetchCategoryTreeFromBackend } from '../../utils/api';
-import { CATEGORY_STRUCTURE } from '../../constants/categories';
 
 export default function AllCategoriesPage({ onNavigate }) {
   const [categories, setCategories] = useState([]);
@@ -10,20 +9,20 @@ export default function AllCategoriesPage({ onNavigate }) {
   useEffect(() => {
     fetchCategoryTreeFromBackend()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setCategories(data);
         } else {
-          setCategories(CATEGORY_STRUCTURE);
+          setCategories([]);
         }
         setLoading(false);
       })
       .catch(() => {
-        setCategories(CATEGORY_STRUCTURE);
+        setCategories([]);
         setLoading(false);
       });
   }, []);
 
-  const displayList = categories && categories.length > 0 ? categories : CATEGORY_STRUCTURE;
+  const displayList = Array.isArray(categories) ? categories : [];
 
   return (
     <div className="min-h-screen bg-gray-50/60 pb-20">
@@ -41,6 +40,15 @@ export default function AllCategoriesPage({ onNavigate }) {
       </div>
 
       <div className="container mx-auto max-w-6xl px-4 mt-10">
+        {displayList.length === 0 ? (
+          <div className="bg-white rounded-3xl p-12 text-center border border-gray-100 shadow-xs max-w-md mx-auto space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-brand-teal/10 text-brand-teal flex items-center justify-center mx-auto">
+              <PackageOpen size={32} />
+            </div>
+            <h3 className="font-display font-bold text-lg text-gray-800">No Categories Found</h3>
+            <p className="text-xs text-gray-500">Categories will appear here once added in the Admin Dashboard.</p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {displayList.map((cat, idx) => {
             const catName = cat.name || cat.title || 'Category';
@@ -107,6 +115,7 @@ export default function AllCategoriesPage({ onNavigate }) {
             );
           })}
         </div>
+        )}
       </div>
     </div>
   );

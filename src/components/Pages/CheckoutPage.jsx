@@ -38,6 +38,7 @@ const POPULAR_BANKS = [
 
 export default function CheckoutPage({ onNavigate }) {
   const {
+    products = [],
     cartItems,
     selectedCartItems,
     toggleCartItemSelection,
@@ -196,7 +197,7 @@ export default function CheckoutPage({ onNavigate }) {
     disabledCodReasonItem,
     disabledOnlineReasonItem,
     noPaymentMethodItem
-  } = getCartPaymentRestrictions(selectedCartItems);
+  } = getCartPaymentRestrictions(selectedCartItems, products);
 
   // Automatically switch active payment option if current selection is disabled by seller
   React.useEffect(() => {
@@ -285,8 +286,29 @@ export default function CheckoutPage({ onNavigate }) {
     maxCap = details.maxDiscount;
   }
 
+  // Calculate extra GST for items configured as "GST Extra" (isGstInclusive === false)
+  const extraTaxAmount = Math.round(
+    selectedCartItems.reduce((acc, item) => {
+      const catalogProduct = (products || []).find(p => String(p.id || p._id) === String(item.productId || item.id || item._id));
+      const isInclusive = item.isGstInclusive !== undefined
+        ? (item.isGstInclusive !== false)
+        : (catalogProduct?.isGstInclusive !== false);
+
+      if (!isInclusive) {
+        const rate = Number(
+          item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ??
+          catalogProduct?.gst ?? catalogProduct?.gstPercentage ?? 5
+        ) || 0;
+        const itemTotal = (Number(item.price) || 0) * (Number(item.quantity) || 1);
+        return acc + (itemTotal * rate) / 100;
+      }
+      return acc;
+    }, 0) * 100
+  ) / 100;
+
+  const hasExtraTax = extraTaxAmount > 0;
   const pointsDiscount = isRedeemingPoints ? Math.min(50, subtotal) : 0;
-  const grandTotal = Math.max(0, subtotal - couponDiscount - pointsDiscount + totalShippingCost);
+  const grandTotal = Math.max(0, Math.round((subtotal + extraTaxAmount - couponDiscount - pointsDiscount + totalShippingCost) * 100) / 100);
 
   // Handle adding a new address for authenticated user
   const handleAddNewAddress = (e) => {
@@ -393,6 +415,7 @@ export default function CheckoutPage({ onNavigate }) {
     const executeDirectOrder = (label, address, razorpayInfo = {}) => {
       placeOrder({
         subtotal,
+        taxAmount: extraTaxAmount,
         shippingCost: totalShippingCost,
         discount: couponDiscount + pointsDiscount,
         total: grandTotal,
@@ -1237,9 +1260,13 @@ export default function CheckoutPage({ onNavigate }) {
                   </div>
                 )}
 
-                <div className="flex justify-between text-gray-400">
-                  <span>Estimated GST / Tax</span>
-                  <span className="font-medium text-emerald-700">Included</span>
+                <div className="flex justify-between text-xs font-medium">
+                  <span className="text-gray-500">Estimated GST / Tax</span>
+                  {hasExtraTax ? (
+                    <span className="font-bold text-gray-900">+₹{extraTaxAmount}</span>
+                  ) : (
+                    <span className="font-medium text-emerald-700">Included</span>
+                  )}
                 </div>
 
                 <div className="flex justify-between text-base font-extrabold text-brand-teal pt-3 border-t border-dashed border-gray-200">

@@ -4,18 +4,31 @@
  */
 
 /**
- * Evaluates payment restrictions for a single product.
+ * Evaluates payment restrictions for a single product or cart item.
+ * Supports cross-referencing with catalogProducts to get latest live settings.
  * Returns: { acceptsCod: boolean, acceptsOnline: boolean, allDisabled: boolean }
  */
-export const getProductPaymentRestrictions = (product) => {
+export const getProductPaymentRestrictions = (product, catalogProducts = []) => {
   if (!product) return { acceptsCod: true, acceptsOnline: true, allDisabled: false };
 
+  // Find corresponding catalog product if available to ensure live permissions
+  const prodId = String(product.id || product._id || product.productId || '');
+  const catalogProd = Array.isArray(catalogProducts) && catalogProducts.length > 0
+    ? catalogProducts.find(
+        (p) =>
+          (prodId && String(p.id || p._id) === prodId) ||
+          (product.name && p.name && p.name.trim().toLowerCase() === product.name.trim().toLowerCase())
+      )
+    : null;
+
+  const resolved = catalogProd ? { ...product, ...catalogProd } : product;
+
   const rawPma = (
-    product.paymentMethodAllowed ||
-    product.payment_method_allowed ||
-    product.paymentMethod ||
-    product.seller?.paymentMethodAllowed ||
-    product.seller?.payment_method_allowed ||
+    resolved.paymentMethodAllowed ||
+    resolved.payment_method_allowed ||
+    resolved.paymentMethod ||
+    resolved.seller?.paymentMethodAllowed ||
+    resolved.seller?.payment_method_allowed ||
     ''
   );
 
@@ -32,6 +45,7 @@ export const getProductPaymentRestrictions = (product) => {
     (pma.includes('online') && !pma.includes('cod') && !pma.includes('both'))
   ) {
     acceptsCod = false;
+    acceptsOnline = true;
   } else if (
     pma === 'codonly' ||
     pma === 'cashonly' ||
@@ -40,6 +54,7 @@ export const getProductPaymentRestrictions = (product) => {
     (pma.includes('cod') && !pma.includes('online') && !pma.includes('both'))
   ) {
     acceptsOnline = false;
+    acceptsCod = true;
   } else if (
     pma === 'none' ||
     pma === 'disabled' ||
@@ -52,43 +67,43 @@ export const getProductPaymentRestrictions = (product) => {
   }
 
   if (
-    product.acceptsCod === false ||
-    product.sellerAcceptsCod === false ||
-    product.seller?.acceptsCod === false ||
-    product.seller?.paymentMethods?.cod === false ||
-    product.isCodAvailable === false ||
-    product.codAvailable === false ||
-    product.isCodAllowed === false ||
-    product.codAllowed === false ||
-    product.allowCod === false ||
-    product.isPrepaidOnly === true ||
-    product.prepaidOnly === true ||
-    product.isOnlineOnly === true ||
-    product.onlineOnly === true
+    resolved.acceptsCod === false ||
+    resolved.sellerAcceptsCod === false ||
+    resolved.seller?.acceptsCod === false ||
+    resolved.seller?.paymentMethods?.cod === false ||
+    resolved.isCodAvailable === false ||
+    resolved.codAvailable === false ||
+    resolved.isCodAllowed === false ||
+    resolved.codAllowed === false ||
+    resolved.allowCod === false ||
+    resolved.isPrepaidOnly === true ||
+    resolved.prepaidOnly === true ||
+    resolved.isOnlineOnly === true ||
+    resolved.onlineOnly === true
   ) {
     acceptsCod = false;
   }
 
   if (
-    product.acceptsOnline === false ||
-    product.sellerAcceptsOnline === false ||
-    product.seller?.acceptsOnline === false ||
-    product.seller?.paymentMethods?.online === false ||
-    product.isOnlineAvailable === false ||
-    product.onlineAvailable === false ||
-    product.isOnlineAllowed === false ||
-    product.onlineAllowed === false ||
-    product.allowOnline === false
+    resolved.acceptsOnline === false ||
+    resolved.sellerAcceptsOnline === false ||
+    resolved.seller?.acceptsOnline === false ||
+    resolved.seller?.paymentMethods?.online === false ||
+    resolved.isOnlineAvailable === false ||
+    resolved.onlineAvailable === false ||
+    resolved.isOnlineAllowed === false ||
+    resolved.onlineAllowed === false ||
+    resolved.allowOnline === false
   ) {
     acceptsOnline = false;
   }
 
   const allowedMethodsArray = (
-    Array.isArray(product.paymentMethodsAllowed) ? product.paymentMethodsAllowed :
-    Array.isArray(product.acceptedPaymentMethods) ? product.acceptedPaymentMethods :
-    Array.isArray(product.paymentMethods) ? product.paymentMethods :
-    Array.isArray(product.seller?.paymentMethodsAllowed) ? product.seller.paymentMethodsAllowed :
-    Array.isArray(product.seller?.paymentMethods) ? product.seller.paymentMethods :
+    Array.isArray(resolved.paymentMethodsAllowed) ? resolved.paymentMethodsAllowed :
+    Array.isArray(resolved.acceptedPaymentMethods) ? resolved.acceptedPaymentMethods :
+    Array.isArray(resolved.paymentMethods) ? resolved.paymentMethods :
+    Array.isArray(resolved.seller?.paymentMethodsAllowed) ? resolved.seller.paymentMethodsAllowed :
+    Array.isArray(resolved.seller?.paymentMethods) ? resolved.seller.paymentMethods :
     null
   );
 
@@ -105,12 +120,6 @@ export const getProductPaymentRestrictions = (product) => {
     }
   }
 
-  // Priority Override Rule: Online/Prepaid payment is universally accepted across all catalog items
-  // even if an item is marked COD-Only. Only set acceptsOnline to false if all payments are explicitly blocked.
-  if (acceptsCod || acceptsOnline) {
-    acceptsOnline = true;
-  }
-
   return {
     acceptsCod,
     acceptsOnline,
@@ -120,8 +129,9 @@ export const getProductPaymentRestrictions = (product) => {
 
 /**
  * Evaluates payment restrictions across an entire cart array.
+ * Supports cross-referencing with catalogProducts to reflect latest live settings.
  */
-export const getCartPaymentRestrictions = (cartItems = []) => {
+export const getCartPaymentRestrictions = (cartItems = [], catalogProducts = []) => {
   let isCodDisabled = false;
   let isOnlineDisabled = false;
   let disabledCodReasonItem = null;
@@ -132,7 +142,7 @@ export const getCartPaymentRestrictions = (cartItems = []) => {
     // Only check active/selected items
     if (item.selected === false) continue;
 
-    const { acceptsCod, acceptsOnline } = getProductPaymentRestrictions(item);
+    const { acceptsCod, acceptsOnline } = getProductPaymentRestrictions(item, catalogProducts);
 
     if (!acceptsCod) {
       isCodDisabled = true;

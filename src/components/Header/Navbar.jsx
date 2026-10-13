@@ -199,21 +199,12 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
   } = useCart();
   const { locationLabel, userSubdistrict, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen, requestBrowserLocation, isLocating } = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [categoriesTree, setCategoriesTree] = useState(() => {
-    try {
-      const saved = localStorage.getItem('bv_cached_categories_tree');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return [];
-  });
+  const [categoriesTree, setCategoriesTree] = useState([]);
 
   useEffect(() => {
     fetchCategoryTreeFromBackend()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setCategoriesTree(data);
         }
       })
