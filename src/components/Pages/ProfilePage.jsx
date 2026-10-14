@@ -3250,16 +3250,57 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                         );
                       });
                       const statusLower = (order.status || '').toLowerCase().trim();
-                      const isProcessedOrder = ['accepted', 'quote_accepted', 'packed', 'out for delivery', 'received'].includes(statusLower);
 
-                      const getStepNumber = (st) => {
-                        if (st === 'received') return 4;
-                        if (st === 'out for delivery') return 3;
-                        if (st === 'packed') return 2;
-                        if (st === 'accepted' || st === 'quote_accepted') return 1;
-                        return 0;
-                      };
-                      const currentStepNum = getStepNumber(statusLower);
+                      // Dynamic, robust status hierarchy resolution
+                      const isDelivered = Boolean(
+                        order.deliveryDetails?.deliveredAt ||
+                        order.remainingPaymentStatus === 'paid' ||
+                        ['received', 'delivered', 'completed', 'fulfilled'].includes(statusLower)
+                      );
+
+                      const isOutForDelivery = Boolean(
+                        !isDelivered && (
+                          ['out for delivery', 'out_for_delivery'].includes(statusLower) ||
+                          Boolean(order.deliveryDetails?.dispatchedAt)
+                        )
+                      );
+
+                      const isPacked = Boolean(!isDelivered && !isOutForDelivery && statusLower === 'packed');
+
+                      const isConfirmed = Boolean(
+                        !isDelivered && !isOutForDelivery && !isPacked && (
+                          order.advancePaymentStatus === 'paid' ||
+                          ['confirmed', 'advance_paid', 'in_production', 'processing'].includes(statusLower)
+                        )
+                      );
+
+                      const isAccepted = Boolean(
+                        !isDelivered && !isOutForDelivery && !isPacked && !isConfirmed && (
+                          ['accepted', 'quote_accepted', 'buyer_accepted'].includes(statusLower) ||
+                          Boolean(winningQuote && (winningQuote.status === 'approved' || winningQuote.status === 'buyer_accepted' || winningQuote.negotiationStage === 'approved'))
+                        )
+                      );
+
+                      const isQuoted = Boolean(
+                        !isDelivered && !isOutForDelivery && !isPacked && !isConfirmed && !isAccepted && (
+                          statusLower === 'quoted' || (Array.isArray(order.quotations) && order.quotations.length > 0)
+                        )
+                      );
+
+                      const isAssigned = Boolean(
+                        !isDelivered && !isOutForDelivery && !isPacked && !isConfirmed && !isAccepted && !isQuoted && (
+                          statusLower === 'assigned' || Boolean(order.sellerId)
+                        )
+                      );
+
+                      const isPublished = Boolean(
+                        !isDelivered && !isOutForDelivery && !isPacked && !isConfirmed && !isAccepted && !isQuoted && !isAssigned && (
+                          statusLower === 'published' || order.isGlobalRfq || order.assignmentMode === 'broadcast'
+                        )
+                      );
+
+                      const isProcessedOrder = isDelivered || isOutForDelivery || isPacked || isConfirmed || isAccepted;
+                      const currentStepNum = isDelivered ? 4 : isOutForDelivery ? 3 : isPacked ? 2 : (isConfirmed || isAccepted) ? 1 : 0;
 
                       return (
                         <div key={order.id || order._id || order.referenceId || `bulk-order-${idx}`} className="border border-gray-200 rounded-2xl p-5 hover:border-brand-teal/40 transition-all space-y-4 bg-gray-50/50">
@@ -3279,26 +3320,28 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                             </div>
 
                             <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                              statusLower === 'received'
+                              isDelivered
                                 ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                                : statusLower === 'out for delivery'
+                                : isOutForDelivery
                                 ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
-                                : statusLower === 'packed'
+                                : isPacked
                                 ? 'bg-cyan-100 text-cyan-900 border-cyan-300'
-                                : statusLower === 'accepted' || statusLower === 'quote_accepted'
+                                : isConfirmed || isAccepted
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : statusLower === 'published'
-                                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                : statusLower === 'assigned'
+                                : isQuoted
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : isPublished || isAssigned
                                 ? 'bg-blue-50 text-blue-800 border-blue-200'
                                 : 'bg-amber-50 text-amber-800 border-amber-200'
                             }`}>
-                              {statusLower === 'received' ? 'Consignment Received & Delivered' :
-                               statusLower === 'out for delivery' ? 'Out for Delivery (Store Self Delivery)' :
-                               statusLower === 'packed' ? 'Consignment Packed' :
-                               statusLower === 'accepted' || statusLower === 'quote_accepted' ? 'Order Accepted by Vendor' :
-                               statusLower === 'published' ? 'Marketplace RFQ Live' :
-                               statusLower === 'assigned' ? 'Assigned to Authorized Vendor' : 'Pending Admin Review'}
+                              {isDelivered ? 'Consignment Received & Delivered' :
+                               isOutForDelivery ? 'Out for Delivery (Store Self Delivery)' :
+                               isPacked ? 'Consignment Packed' :
+                               isConfirmed ? 'Order Confirmed & Prepayment Secured' :
+                               isAccepted ? 'Vendor Quotation Approved' :
+                               isQuoted ? 'Quotation Received (Review Open)' :
+                               isPublished ? 'Marketplace RFQ Live' :
+                               isAssigned ? 'Assigned to Authorized Vendor' : 'Pending Admin Review'}
                             </span>
                           </div>
 
@@ -3355,9 +3398,9 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               <div className="flex items-center justify-between text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                                 <span>Order Fulfillment Progress</span>
                                 <span className="text-brand-teal font-extrabold normal-case">
-                                  {statusLower === 'received' ? 'Order Completed' :
-                                   statusLower === 'out for delivery' ? 'Out for Delivery' :
-                                   statusLower === 'packed' ? 'Consignment Packed' : 'Order Confirmed'}
+                                  {isDelivered ? 'Order Completed & Delivered' :
+                                   isOutForDelivery ? 'Out for Delivery' :
+                                   isPacked ? 'Consignment Packed' : 'Order Confirmed'}
                                 </span>
                               </div>
 
@@ -3440,13 +3483,13 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 </div>
                               </div>
 
-                              {statusLower === 'out for delivery' && (
+                              {isOutForDelivery && (
                                 <div className="text-[11px] text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-2 border border-indigo-100">
                                   <Clock size={13} className="text-indigo-600 shrink-0" />
                                   <span>Consignment is out for self-delivery. The delivery executive will contact the institutional representative at delivery.</span>
                                 </div>
                               )}
-                              {statusLower === 'received' && (
+                              {isDelivered && (
                                 <div className="text-[11px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg font-medium flex items-center gap-2 border border-emerald-100">
                                   <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
                                   <span>Consignment was safely received and verified at institutional campus.</span>
