@@ -227,22 +227,40 @@ export function parseStateInfo(sourceObj, fallbackString = '') {
 export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
 
-  const rawStatus = String(order.overallStatus || order.status || '').toLowerCase().trim();
+  const rawStatus = String(order.overallStatus || order.status || order.deliveryStatus || '').toLowerCase().trim();
   const normStatus = rawStatus.replace(/[\s-]+/g, '_');
   const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || order.isCancelled || Boolean(order.cancelledAt);
+
+  const isBulkOrder = Boolean(
+    order.isBulkOrder ||
+    order.isSchoolOrder ||
+    Array.isArray(order.requirements) ||
+    order.bulkOrderId ||
+    order.schoolName ||
+    order.institutionName ||
+    String(order.id || order.orderId || order._id || order.referenceId || '').toUpperCase().startsWith('BULK-')
+  );
+
   const isPaymentVerified = String(order.paymentStatus || '').toLowerCase() === 'paid' ||
     String(order.advancePaymentStatus || '').toLowerCase() === 'paid' ||
-    Number(order.advancePaidAmount || 0) > 0;
+    String(order.remainingPaymentStatus || '').toLowerCase() === 'paid' ||
+    Number(order.advancePaidAmount || 0) > 0 ||
+    isBulkOrder;
+
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
-  const isPending = !normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus);
+  const isPending = !isBulkOrder && (!normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus));
 
   const isOrderConfirmedStatus = [
+    'assigned',
+    'accepted',
     'confirmed',
     'quote_accepted',
     'buyer_accepted',
     'seller_accepted',
+    'seller_accepted_counter',
     'processing',
     'production',
+    'in_production',
     'packed',
     'packed_and_sealed',
     'shipped',
@@ -251,6 +269,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     'out_for_delivery',
     'delivered',
     'completed',
+    'fulfilled',
     'delivered_to_customer',
     'order_delivered',
     'return_requested',
@@ -263,19 +282,18 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     'refunded',
     'cancelled',
     'canceled'
-  ].includes(normStatus) || (!isPending && normStatus.length > 0);
-
-  const hasPendingProduct = isPending || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
-    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-    return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
-  }));
+  ].includes(normStatus) || (isBulkOrder && normStatus.length > 0) || (!isPending && normStatus.length > 0) || isPaymentVerified;
 
   const hasConfirmedItem = Array.isArray(order.items) && order.items.some(it => {
-    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-    return itStatus && !['pending', 'placed', 'unconfirmed'].includes(itStatus);
+    const itStatus = String(it.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    return itStatus && !['pending', 'placed', 'unconfirmed', 'draft'].includes(itStatus);
   });
 
-  const confirmed = !hasPendingProduct && (isCancelled || isOrderConfirmedStatus || hasConfirmedItem);
+  const isOrderStrictlyPending = isPending && !isPaymentVerified && !isOrderConfirmedStatus;
+
+  const confirmed = isBulkOrder
+    ? (isOrderConfirmedStatus || isPaymentVerified || normStatus.length > 0)
+    : (isCancelled || isOrderConfirmedStatus || isPaymentVerified || hasConfirmedItem || !isOrderStrictlyPending);
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
@@ -520,7 +538,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   };
 
   const resolveSeller = () => {
-    const primaryName = getItemSellerName(items[0]);
+    const allSellerNames = [
+      ...new Set(
+        items.map(it => getItemSellerName(it)).filter(Boolean)
+      )
+    ];
+    const primaryName = allSellerNames.length > 1
+      ? allSellerNames.join(', ')
+      : (allSellerNames[0] || getItemSellerName(items[0]));
     const primaryGst = [
       order.sellerDetails?.gstNumber,
       order.sellerDetails?.gst,

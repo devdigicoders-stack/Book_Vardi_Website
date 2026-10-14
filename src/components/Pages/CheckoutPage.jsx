@@ -27,7 +27,7 @@ import { useCart, getCartItemKey } from '../../context/CartContext';
 import { fetchDetailsFromPincode } from '../../context/LocationContext';
 import { createRazorpayOrderInBackend, verifyRazorpayPaymentInBackend, loadRazorpayScript, getUpiIntentUrl, resolveImageUrl, getProductMainImage } from '../../utils/api';
 import { getCartPaymentRestrictions } from '../../utils/paymentRestrictions';
-import { isCouponApplicableToCart, calculateEligibleSubtotal, getCouponDiscountDetails } from '../../utils/couponApplicability';
+import { isCouponApplicableToCart, calculateEligibleSubtotal, getCouponDiscountDetails, isCouponApplicableToProduct, allocateCouponDiscountToItems } from '../../utils/couponApplicability';
 
 const POPULAR_BANKS = [
   { id: 'sbi', name: 'State Bank of India', code: 'SBI' },
@@ -411,11 +411,19 @@ export default function CheckoutPage({ onNavigate }) {
 
     const executeDirectOrder = async (label, address, razorpayInfo = {}) => {
       try {
-        await placeOrder({
+        const itemsWithAllocatedDiscounts = allocateCouponDiscountToItems(appliedCoupon, selectedCartItems);
+
+        const placedOrderResult = await placeOrder({
           subtotal,
           taxAmount: extraTaxAmount,
           shippingCost: totalShippingCost,
           discount: couponDiscount + pointsDiscount,
+          couponDiscount,
+          pointsDiscount,
+          appliedCoupon: appliedCoupon?.code || null,
+          couponCode: appliedCoupon?.code || null,
+          couponDetails: appliedCoupon || null,
+          items: itemsWithAllocatedDiscounts,
           total: grandTotal,
           shippingAddress: address,
           paymentMethod: label,
@@ -426,7 +434,7 @@ export default function CheckoutPage({ onNavigate }) {
           estimatedDelivery: '3 - 5 Business Days'
         });
         setIsSubmitting(false);
-        onNavigate('order-success');
+        onNavigate('order-success', { order: placedOrderResult, selectedOrder: placedOrderResult });
       } catch (err) {
         setIsSubmitting(false);
         console.error('Order placement execution caught error:', err);
@@ -437,7 +445,7 @@ export default function CheckoutPage({ onNavigate }) {
     if (paymentMethod !== 'cod') {
       const isRazorpayReady = await loadRazorpayScript();
       if (!isRazorpayReady || typeof window.Razorpay === 'undefined') {
-        setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
+        executeDirectOrder(paymentLabel, activeShippingAddress);
         return;
       }
       // Sanitize inputs for Razorpay Standard Checkout
@@ -563,16 +571,16 @@ export default function CheckoutPage({ onNavigate }) {
             });
             rzp.open();
           } else {
-            setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
+            executeDirectOrder(paymentLabel, activeShippingAddress);
           }
         })
         .catch(() => {
-          setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
+          executeDirectOrder(paymentLabel, activeShippingAddress);
         });
       return;
     }
 
-    setTimeout(() => executeDirectOrder(paymentLabel, activeShippingAddress), 300);
+    executeDirectOrder(paymentLabel, activeShippingAddress);
   };
 
   return (
@@ -1045,6 +1053,13 @@ export default function CheckoutPage({ onNavigate }) {
                             </span>
                           )}
                         </div>
+                        {appliedCoupon && isCouponApplicableToProduct(appliedCoupon, item) && (
+                          <div className="mt-0.5">
+                            <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
+                              🏷️ Coupon {appliedCoupon.code} Applied
+                            </span>
+                          </div>
+                        )}
 
                         {(() => {
                           const isMeter = Boolean(

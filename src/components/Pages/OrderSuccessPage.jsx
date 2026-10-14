@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   CheckCircle2,
   Package,
@@ -153,7 +153,20 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
     })
   }));
 
-  const order = selectedOrder || lastPlacedOrder || (userProfile?.orders && userProfile.orders[0]) || fallbackOrder;
+  const isLastOrderMatchingUser = useMemo(() => {
+    if (!lastPlacedOrder) return false;
+    if (!isAuthenticated) return true;
+    const currentPhone = String(userProfile?.phone || '').replace(/\D/g, '').slice(-10);
+    const orderPhone = String(lastPlacedOrder.customer?.phone || lastPlacedOrder.shippingAddress?.phone || lastPlacedOrder.phone || '').replace(/\D/g, '').slice(-10);
+    const currentUserId = String(userProfile?.id || userProfile?._id || '');
+    const orderUserId = String(lastPlacedOrder.userId || '');
+    if (currentUserId && orderUserId && currentUserId === orderUserId) return true;
+    if (currentPhone && orderPhone && currentPhone === orderPhone) return true;
+    return false;
+  }, [lastPlacedOrder, isAuthenticated, userProfile?.phone, userProfile?.id, userProfile?._id]);
+
+  const validLastPlacedOrder = isLastOrderMatchingUser ? lastPlacedOrder : null;
+  const order = selectedOrder || validLastPlacedOrder || (userProfile?.orders && userProfile.orders[0]) || fallbackOrder;
   const shippingFee = order.shippingFee !== undefined
     ? order.shippingFee
     : (order.shippingCost !== undefined ? order.shippingCost : 0);
@@ -418,10 +431,16 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
         {/* ========================================================================= */}
         {(() => {
           const isSelfDelivery = order.deliveryMode === 'self_delivery' ||
-            order.deliveryType === 'self_delivery' ||
-            order.deliveryType === 'self' ||
-            Boolean(order.selfDeliveryDetails?.deliveryPartnerToken) ||
-            order.items?.some(it => it.deliveryType === 'self' || it.deliveryType === 'self_delivery' || it.selfDeliveryDetails?.deliveryPartnerToken);
+            Boolean(order.selfDeliveryDetails?.deliveryPersonName || order.selfDeliveryDetails?.deliveryPartnerToken) ||
+            order.items?.some(it => (it.deliveryType === 'self' || it.deliveryType === 'self_delivery') && Boolean(it.selfDeliveryDetails?.deliveryPersonName || it.selfDeliveryDetails?.deliveryPartnerToken));
+
+          const isThirdParty = !isSelfDelivery && (
+            order.deliveryMode === 'third_party' ||
+            Boolean(order.courierName && order.courierName !== 'N/A' && order.courierName !== '') ||
+            Boolean(order.shipmentDetails?.courierPartnerName)
+          );
+
+          const isPendingDelivery = !isSelfDelivery && !isThirdParty;
 
           const selfDetails = order.selfDeliveryDetails ||
             order.items?.find(it => it.selfDeliveryDetails)?.selfDeliveryDetails ||
@@ -455,7 +474,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
           const isReturnRejected = retReqStatus.includes('reject') || statusLower.includes('reject');
           const isReturnOtpActive = isReturnOrExchangeOrRefund && !isExchange && !isReturnCompleted && !isReturnRejected && !isCancelled;
 
-          const isRegularDeliveryOtpActive = !isCancelled && !isReturnOrExchangeOrRefund && statusLower !== 'delivered' && statusLower !== 'completed';
+          const isRegularDeliveryOtpActive = isSelfDelivery && !isCancelled && !isReturnOrExchangeOrRefund && statusLower !== 'delivered' && statusLower !== 'completed';
 
           const shouldShowOtpInSuccessPage = Boolean(deliveryOtp && !isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
 
@@ -658,7 +677,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                           </>
                         )}
                       </>
-                    ) : (
+                    ) : isThirdParty ? (
                       <>
                         <span className="inline-flex items-center gap-1 font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/80">
                           <Truck size={13} className="text-blue-700" />
@@ -672,6 +691,17 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                             </span>
                           </>
                         )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200/80">
+                          <Clock size={13} className="text-amber-700" />
+                          Awaiting Dispatch Assignment
+                        </span>
+                        <span className="text-gray-400 font-bold">•</span>
+                        <span className="text-xs text-gray-600 font-medium">
+                          Store will assign Direct Delivery or Courier upon fulfillment
+                        </span>
                       </>
                     )}
                   </div>

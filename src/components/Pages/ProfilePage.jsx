@@ -2014,7 +2014,6 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                       const handleViewOrder = (e) => {
                         e.stopPropagation();
-                        setLastPlacedOrder(order);
                         onNavigate('order-success', { isDetailsOnly: true, order });
                       };
 

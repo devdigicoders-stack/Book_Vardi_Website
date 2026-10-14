@@ -892,7 +892,8 @@ export default function BulkOrderPreviewModal({
           quantity: Number(r.quantity || 1),
           price: Number(r.sellerPricePerUnit || (winningQuote?.itemPrices?.find(ip => String(ip.itemId || ip.itemName) === String(r._id || r.itemName))?.pricePerUnit) || avgPrice || 100),
           sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
-          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller'
+          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
+          status: order.deliveryStatus || order.status || 'delivered'
         }))
       : [{
           id: 1,
@@ -901,12 +902,16 @@ export default function BulkOrderPreviewModal({
           quantity: totalQty,
           price: avgPrice,
           sellerName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
-          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller'
+          sellerStoreName: winningQuote?.sellerStoreName || winningQuote?.sellerName || 'Verified Institutional Seller',
+          status: order.deliveryStatus || order.status || 'delivered'
         }];
 
     return {
       id: order.referenceId || order.id || order._id || 'BULK-PO',
       orderId: order.referenceId || order.id || order._id || 'BULK-PO',
+      referenceId: order.referenceId || order.id || order._id || 'BULK-PO',
+      isBulkOrder: true,
+      isSchoolOrder: true,
       date: new Date(order.createdAt || Date.now()).toLocaleDateString('en-GB'),
       customerName: order.institutionName || order.contactName || 'School Administrator',
       customerPhone: order.contactPhone || 'N/A',
@@ -920,6 +925,9 @@ export default function BulkOrderPreviewModal({
       school: order.institutionName || 'Institutional Order',
       paymentMethod: 'School PO / Bank Transfer',
       paymentStatus: 'paid',
+      advancePaymentStatus: order.advancePaymentStatus || 'paid',
+      remainingPaymentStatus: order.remainingPaymentStatus || 'paid',
+      advancePaidAmount: order.advancePaidAmount || 0,
       status: order.deliveryStatus || order.status || 'confirmed',
       overallStatus: order.deliveryStatus || order.status || 'confirmed',
       deliveryMode: order.deliveryMode || '',

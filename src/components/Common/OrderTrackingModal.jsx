@@ -255,12 +255,18 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedOtp, setCopiedOtp] = useState(false);
 
-  // Check if self-delivery vs 3rd-party
+  // Check if self-delivery vs 3rd-party vs pending choice
   const isSelfDelivery = order.deliveryMode === 'self_delivery' ||
-    order.deliveryType === 'self_delivery' ||
-    order.deliveryType === 'self' ||
-    Boolean(order.selfDeliveryDetails?.deliveryPartnerToken) ||
-    order.items?.some(it => it.deliveryType === 'self' || it.deliveryType === 'self_delivery' || it.selfDeliveryDetails?.deliveryPartnerToken);
+    Boolean(order.selfDeliveryDetails?.deliveryPersonName || order.selfDeliveryDetails?.deliveryPartnerToken) ||
+    order.items?.some(it => (it.deliveryType === 'self' || it.deliveryType === 'self_delivery') && Boolean(it.selfDeliveryDetails?.deliveryPersonName || it.selfDeliveryDetails?.deliveryPartnerToken));
+
+  const isThirdParty = !isSelfDelivery && (
+    order.deliveryMode === 'third_party' ||
+    Boolean(order.courierName && order.courierName !== 'N/A' && order.courierName !== '') ||
+    Boolean(order.shipmentDetails?.courierPartnerName)
+  );
+
+  const isPendingDelivery = !isSelfDelivery && !isThirdParty;
 
   const selfDetails = order.selfDeliveryDetails ||
     trackingData?.selfDeliveryDetails ||
@@ -291,9 +297,11 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
   const courierPartnerName = isSelfDelivery
     ? (sellerStoreName ? `${sellerStoreName} Direct Fleet` : 'Direct Store Delivery')
-    : (order.courierName || trackingData?.courierPartnerName || order.shipmentDetails?.courierPartnerName || (rawTracking ? 'Courier Partner' : 'Standard Logistics'));
+    : isThirdParty
+    ? (order.courierName || trackingData?.courierPartnerName || order.shipmentDetails?.courierPartnerName || (rawTracking ? 'Courier Partner' : 'Standard Logistics'))
+    : 'Awaiting Carrier Assignment';
 
-  const awbNumber = isSelfDelivery ? selfToken : (rawTracking || trackingData?.awbNumber || '');
+  const awbNumber = isSelfDelivery ? selfToken : (isThirdParty ? (rawTracking || trackingData?.awbNumber || '') : '');
 
   // Carrier tracking URL builder
   const resolveCarrierUrl = (courier, tracking) => {
@@ -347,6 +355,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
   const currentStatus = String(order.overallStatus || order.status || 'pending').toLowerCase().trim();
   const isCancelled = currentStatus === 'cancelled';
+  const isReturnOrExchangeOrRefund = isOrderRefundedOrReturnOrExchange(order);
   const isRefundCompleted = (
     currentStatus === 'refunded' ||
     currentStatus === 'refund_completed' ||
@@ -370,7 +379,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
   const isReturnRejected = retReqStatus.includes('reject') || currentStatus.includes('reject');
   const isReturnOtpActive = isReturnOrExchangeOrRefund && !isExchange && !isReturnCompleted && !isReturnRejected && !isCancelled;
 
-  const isRegularDeliveryOtpActive = !isCancelled && !isReturnOrExchangeOrRefund && currentStatus !== 'delivered' && currentStatus !== 'completed';
+  const isRegularDeliveryOtpActive = isSelfDelivery && !isCancelled && !isReturnOrExchangeOrRefund && currentStatus !== 'delivered' && currentStatus !== 'completed';
 
   const shouldShowOtpBanner = Boolean(deliveryOtp && !isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
 
@@ -435,11 +444,11 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     { key: 'delivered', label: 'Delivered', desc: 'Handed over', icon: ShieldCheck }
   ];
 
-  let activeIndex = 3;
-  if (currentStatus === 'placed' || currentStatus === 'pending') activeIndex = 0;
+  let activeIndex = 0;
+  if (currentStatus === 'placed' || currentStatus === 'pending' || currentStatus === 'unconfirmed') activeIndex = 0;
   else if (currentStatus === 'confirmed') activeIndex = 1;
-  else if (currentStatus === 'packed') activeIndex = 2;
-  else if (currentStatus === 'shipped' || currentStatus === 'in_transit' || currentStatus === 'in transit') activeIndex = 3;
+  else if (currentStatus === 'packed' || currentStatus === 'processing' || currentStatus === 'manifested') activeIndex = 2;
+  else if (currentStatus === 'shipped' || currentStatus === 'in_transit' || currentStatus === 'in transit' || currentStatus === 'dispatched') activeIndex = 3;
   else if (currentStatus === 'out_for_delivery' || currentStatus === 'out for delivery') activeIndex = 4;
   else if (currentStatus === 'delivered' || currentStatus === 'completed') activeIndex = 5;
 
@@ -470,7 +479,11 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                     ? '❌ Order Cancelled'
                     : isReturnOrExchangeOrRefund
                     ? (isRefunded ? '💳 Refund & Return Tracking' : '🔄 Return & Exchange Tracking')
-                    : (isSelfDelivery ? '🛵 Direct Store Delivery' : '🚚 Courier Network Delivery')}
+                    : isSelfDelivery
+                    ? '🛵 Direct Store Delivery'
+                    : isThirdParty
+                    ? '🚚 Courier Network Delivery'
+                    : '⏳ Awaiting Dispatch Assignment'}
                 </span>
               </div>
               <h3 className="font-display font-extrabold text-sm sm:text-base text-white leading-tight mt-0.5">
@@ -513,55 +526,55 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
               <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
                 <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-amber-900">
                   <RotateCcw size={16} className="text-amber-700" />
-                  <span>{order.returnRequest.requestType === 'exchange' ? '🔄 Product Exchange Tracking' : '📦 Return & Refund Tracking'}</span>
+                  <span>{(order.returnRequest?.requestType || order.returnRequest?.type) === 'exchange' ? '🔄 Product Exchange Tracking' : '📦 Return & Refund Tracking'}</span>
                 </div>
                 <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
-                  order.returnRequest.status?.includes('approved') ? 'bg-blue-100 text-blue-900 border-blue-300' :
-                  order.returnRequest.status?.includes('completed') || order.returnRequest.status === 'exchanged' || order.returnRequest.status === 'refund_completed' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
-                  order.returnRequest.status === 'rejected' ? 'bg-rose-100 text-rose-900 border-rose-300' :
+                  order.returnRequest?.status?.includes('approved') ? 'bg-blue-100 text-blue-900 border-blue-300' :
+                  order.returnRequest?.status?.includes('completed') || order.returnRequest?.status === 'exchanged' || order.returnRequest?.status === 'refund_completed' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
+                  order.returnRequest?.status === 'rejected' ? 'bg-rose-100 text-rose-900 border-rose-300' :
                   'bg-amber-100 text-amber-900 border-amber-300'
                 }`}>
-                  {order.returnRequest.status?.replace(/_/g, ' ')}
+                  {(order.returnRequest?.status || order.status || '').replace(/_/g, ' ')}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-800">
-                {(order.returnRequest.targetSize || order.returnRequest.exchangeSize || order.returnRequest.exchangeLength) && (
+                {(order.returnRequest?.targetSize || order.returnRequest?.exchangeSize || order.returnRequest?.exchangeLength) && (
                   <div>
                     <strong>
-                      {order.returnRequest.exchangeLength || order.returnRequest.isMeterBased
+                      {order.returnRequest?.exchangeLength || order.returnRequest?.isMeterBased
                         ? 'Requested Length:'
-                        : String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('kids')
+                        : String(order.returnRequest?.exchangeSize || order.returnRequest?.targetSize || '').toLowerCase().includes('kids')
                         ? 'Requested Shoe Size:'
-                        : String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('waist') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').includes('"')
+                        : String(order.returnRequest?.exchangeSize || order.returnRequest?.targetSize || '').toLowerCase().includes('waist') || String(order.returnRequest?.exchangeSize || order.returnRequest?.targetSize || '').includes('"')
                         ? 'Requested Waist Size:'
-                        : String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('line') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('pack') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('class') || String(order.returnRequest.exchangeSize || order.returnRequest.targetSize || '').toLowerCase().includes('replacement')
+                        : String(order.returnRequest?.exchangeSize || order.returnRequest?.targetSize || '').toLowerCase().includes('line') || String(order.returnRequest?.exchangeSize || order.returnRequest?.targetSize || '').toLowerCase().includes('pack') || String(order.returnRequest?.exchangeSize || order.returnRequest?.targetSize || '').toLowerCase().includes('class') || String(order.returnRequest?.exchangeSize || order.returnRequest?.targetSize || '').toLowerCase().includes('replacement')
                         ? 'Requested Variant:'
                         : 'Requested Size / Variant:'}
                     </strong>{' '}
                     <span className="font-bold text-teal-800">
-                      {order.returnRequest.exchangeLength ? `${order.returnRequest.exchangeLength} Meter(s)` : (order.returnRequest.targetSize || order.returnRequest.exchangeSize)}
+                      {order.returnRequest?.exchangeLength ? `${order.returnRequest.exchangeLength} Meter(s)` : (order.returnRequest?.targetSize || order.returnRequest?.exchangeSize)}
                     </span>
-                    {order.returnRequest.priceAdjustmentType === 'extra_payment' && (
+                    {order.returnRequest?.priceAdjustmentType === 'extra_payment' && (
                       <span className="ml-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
-                        +₹{order.returnRequest.priceDifference} Extra
+                        +₹{order.returnRequest?.priceDifference} Extra
                       </span>
                     )}
-                    {order.returnRequest.priceAdjustmentType === 'partial_refund' && (
+                    {order.returnRequest?.priceAdjustmentType === 'partial_refund' && (
                       <span className="ml-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                        ₹{Math.abs(order.returnRequest.priceDifference)} Refund
+                        ₹{Math.abs(order.returnRequest?.priceDifference || 0)} Refund
                       </span>
                     )}
                   </div>
                 )}
-                {order.returnRequest.rejectionReason && <div className="text-rose-800 font-bold"><strong>Rejection:</strong> {order.returnRequest.rejectionReason}</div>}
-                {order.returnRequest.pickupDate && <div><strong>Scheduled Pickup:</strong> {new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}</div>}
-                {order.returnRequest.refundTxnId && <div><strong>Refund Ref:</strong> <span className="font-mono font-bold text-emerald-800">{order.returnRequest.refundTxnId}</span></div>}
-                {order.returnRequest.exchangeAwb && <div><strong>Replacement AWB:</strong> <span className="font-mono font-bold text-blue-800">{order.returnRequest.exchangeAwb}</span></div>}
+                {order.returnRequest?.rejectionReason && <div className="text-rose-800 font-bold"><strong>Rejection:</strong> {order.returnRequest.rejectionReason}</div>}
+                {order.returnRequest?.pickupDate && <div><strong>Scheduled Pickup:</strong> {new Date(order.returnRequest.pickupDate).toLocaleDateString('en-IN')}</div>}
+                {order.returnRequest?.refundTxnId && <div><strong>Refund Ref:</strong> <span className="font-mono font-bold text-emerald-800">{order.returnRequest.refundTxnId}</span></div>}
+                {order.returnRequest?.exchangeAwb && <div><strong>Replacement AWB:</strong> <span className="font-mono font-bold text-blue-800">{order.returnRequest.exchangeAwb}</span></div>}
               </div>
 
               {/* Event Timeline Log */}
-              {Array.isArray(order.returnRequest.timeline) && order.returnRequest.timeline.length > 0 && (
+              {Array.isArray(order.returnRequest?.timeline) && order.returnRequest.timeline.length > 0 && (
                 <div className="pt-2 border-t border-amber-200/60 space-y-1">
                   <div className="font-bold text-[10px] text-amber-900 uppercase tracking-wider">
                     Status Timeline Log
@@ -704,7 +717,11 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                     ? 'Order Terminated'
                     : isReturnOrExchangeOrRefund
                     ? (isExchange ? 'Exchange Fulfillment Process' : 'Return & Refund Processing')
-                    : (isSelfDelivery ? 'Direct Delivery Mode' : 'Courier Network Mode')}
+                    : isSelfDelivery
+                    ? 'Direct Store Delivery Mode'
+                    : isThirdParty
+                    ? 'Courier Network Mode'
+                    : 'Dispatch Assignment Pending'}
                 </span>
                 <h4 className="font-display font-extrabold text-base text-white mt-1">
                   {isCancelled
@@ -742,7 +759,9 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                       ))
                     : (isSelfDelivery
                         ? `Merchant Store: ${sellerStoreName}`
-                        : `${steps[activeIndex]?.desc} • Carrier: ${courierPartnerName}`)}
+                        : isThirdParty
+                        ? `${steps[activeIndex]?.desc} • Carrier: ${courierPartnerName}`
+                        : 'Store is preparing order. Carrier or store rider will be assigned upon packing.')}
                 </p>
               </div>
             </div>
@@ -805,18 +824,18 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   Replacement Exchange Dispatch Details
                 </span>
                 <span className="text-[10px] font-mono font-bold bg-white text-indigo-900 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                  AWB: {order.returnRequest.exchangeAwb}
+                  AWB: {order.returnRequest?.exchangeAwb}
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="bg-white p-3 rounded-xl border border-indigo-100">
                   <span className="text-[10px] text-gray-400 font-bold uppercase block">Courier Partner</span>
-                  <span className="font-extrabold text-gray-900 block mt-0.5">{order.returnRequest.exchangeCourier || 'Express Courier'}</span>
+                  <span className="font-extrabold text-gray-900 block mt-0.5">{order.returnRequest?.exchangeCourier || 'Express Courier'}</span>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-indigo-100">
                   <span className="text-[10px] text-gray-400 font-bold uppercase block">Live Tracking</span>
                   <a
-                    href={resolveCarrierUrl(order.returnRequest.exchangeCourier, order.returnRequest.exchangeAwb)}
+                    href={resolveCarrierUrl(order.returnRequest?.exchangeCourier, order.returnRequest?.exchangeAwb)}
                     target="_blank"
                     rel="noreferrer"
                     className="font-extrabold text-indigo-700 hover:underline block mt-0.5 flex items-center gap-1"
@@ -829,8 +848,27 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
             </div>
           )}
 
+          {/* Dispatch Assignment Pending Card (Shown while seller has not chosen delivery mode) */}
+          {(!isCancelled && !isReturnOrExchangeOrRefund && isPendingDelivery) && (
+            <div className="bg-amber-50/80 border border-amber-200/90 p-4 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-amber-950 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Clock size={15} className="text-amber-700" />
+                  Delivery Partner Assignment Pending
+                </span>
+                <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300">
+                  Awaiting Seller Choice
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                The seller (<strong>{sellerStoreName}</strong>) is currently verifying and packing your order.
+                Upon packing, the merchant will confirm whether your items will be dispatched via <strong>Direct Store Fleet Delivery</strong> (with doorstep security OTP) or a <strong>3rd-Party Courier Partner</strong> (with tracking AWB).
+              </p>
+            </div>
+          )}
+
           {/* Direct Delivery Executive / Courier Carrier Details Card (Forward Order only) */}
-          {(!isCancelled && !isReturnOrExchangeOrRefund && (isSelfDelivery || awbNumber)) && (
+          {(!isCancelled && !isReturnOrExchangeOrRefund && (isSelfDelivery || (isThirdParty && awbNumber))) && (
             <div className="bg-blue-50/70 border border-blue-200 p-4 rounded-2xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-blue-950 flex items-center gap-1.5 uppercase tracking-wider">

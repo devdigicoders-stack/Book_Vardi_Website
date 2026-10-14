@@ -54,7 +54,7 @@ export default function BulkOrderTrackingModal({ isOpen, onClose, order }) {
   const riderName = delDetails.deliveryBoyName || delDetails.deliveryPersonName || 'Direct Store Fleet Executive';
   const riderPhone = delDetails.deliveryBoyPhone || delDetails.deliveryPersonPhone || '';
   const vehicleNo = delDetails.vehicleNumber || 'Store Delivery Fleet';
-  const deliveryOtp = delDetails.deliveryOtp || '1234';
+  const deliveryOtp = delDetails.deliveryOtp || '';
   const partnerToken = delDetails.deliveryPartnerToken || delDetails.trackingId || refId;
   const trackingUrl = delDetails.trackingUrl || `/#delivery-partner?token=${encodeURIComponent(partnerToken)}`;
 

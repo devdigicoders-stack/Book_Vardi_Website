@@ -338,3 +338,103 @@ export const getCouponDiscountDetails = (coupon, subtotalOrItems) => {
     meetsMinPurchase: true
   };
 };
+
+/**
+ * Calculates item-level discount allocation so discounts are strictly preserved on the
+ * eligible product(s) without being split or leaked to non-eligible items in a combine offer.
+ *
+ * @param {Object} coupon - The coupon object
+ * @param {Array} cartItems - Array of cart item objects
+ * @returns {Array} Array of items with item-level `offerDiscount`, `discount`, `finalPrice`, and `isEligibleForCoupon`
+ */
+export const allocateCouponDiscountToItems = (coupon, cartItems = []) => {
+  if (!Array.isArray(cartItems) || cartItems.length === 0) return [];
+  if (!coupon) {
+    return cartItems.map((item) => ({
+      ...item,
+      offerDiscount: 0,
+      discount: 0,
+      finalPrice: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
+      isEligibleForCoupon: false
+    }));
+  }
+
+  const { discountAmount } = getCouponDiscountDetails(coupon, cartItems);
+  if (discountAmount <= 0) {
+    return cartItems.map((item) => ({
+      ...item,
+      offerDiscount: 0,
+      discount: 0,
+      finalPrice: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
+      isEligibleForCoupon: false
+    }));
+  }
+
+  // Identify which items are eligible for this coupon
+  const eligibleIndices = [];
+  let eligibleSubtotal = 0;
+
+  cartItems.forEach((item, idx) => {
+    if (isCouponApplicableToProduct(coupon, item)) {
+      eligibleIndices.push(idx);
+      const price = Number(item.price ?? item.sellingPrice ?? item.finalPrice ?? 0);
+      const qty = Number(item.quantity ?? 1);
+      eligibleSubtotal += (price * qty);
+    }
+  });
+
+  if (eligibleIndices.length === 0 || eligibleSubtotal <= 0) {
+    return cartItems.map((item) => ({
+      ...item,
+      offerDiscount: 0,
+      discount: 0,
+      finalPrice: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
+      isEligibleForCoupon: false
+    }));
+  }
+
+  let accumulatedDiscount = 0;
+
+  return cartItems.map((item, idx) => {
+    const isEligible = eligibleIndices.includes(idx);
+    if (!isEligible) {
+      return {
+        ...item,
+        offerDiscount: 0,
+        discount: 0,
+        finalPrice: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
+        isEligibleForCoupon: false
+      };
+    }
+
+    const price = Number(item.price ?? item.sellingPrice ?? item.finalPrice ?? 0);
+    const qty = Number(item.quantity ?? 1);
+    const itemGross = price * qty;
+    const isLastEligible = idx === eligibleIndices[eligibleIndices.length - 1];
+
+    let itemDiscount = 0;
+    if (isLastEligible) {
+      itemDiscount = Math.max(0, Math.round((discountAmount - accumulatedDiscount) * 100) / 100);
+    } else {
+      const ratio = itemGross / eligibleSubtotal;
+      itemDiscount = Math.min(itemGross, Math.round((discountAmount * ratio) * 100) / 100);
+    }
+    itemDiscount = Math.min(itemGross, itemDiscount);
+    accumulatedDiscount += itemDiscount;
+
+    const unitDiscount = qty > 0 ? (itemDiscount / qty) : itemDiscount;
+    const itemFinalPrice = Math.max(0, Math.round((price - unitDiscount) * 100) / 100);
+
+    return {
+      ...item,
+      offerDiscount: itemDiscount,
+      discount: itemDiscount,
+      couponCode: coupon.code,
+      appliedCouponCode: coupon.code,
+      finalPrice: itemFinalPrice,
+      total: Math.max(0, Math.round((itemGross - itemDiscount) * 100) / 100),
+      isEligibleForCoupon: true
+    };
+  });
+};
+

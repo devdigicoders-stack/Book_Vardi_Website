@@ -29,18 +29,23 @@ function ProductCard({ product }) {
   const subtitle = product?.subtitle || product?.description || product?.category || '';
   const basePrice = product?.price || 0;
   const sizeVariants = Array.isArray(product?.sizeVariants) && product.sizeVariants.length > 0 ? product.sizeVariants : [];
-  const variantPrices = sizeVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
-  const allPrices = [basePrice, ...variantPrices].filter(p => !isNaN(p) && p > 0);
+  const cleanSizeVariants = sizeVariants.filter(v => 
+    !v.isBase && 
+    String(v.size || '').trim().toLowerCase() !== 'base product' && 
+    String(v.measureValue || '').trim().toLowerCase() !== 'base product'
+  );
+  const variantPrices = cleanSizeVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+  const allPrices = cleanSizeVariants.length > 0 ? (variantPrices.length > 0 ? variantPrices : [basePrice]) : [basePrice];
   const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : basePrice;
   const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : basePrice;
   const hasPriceRange = minPrice < maxPrice;
 
-  const availableSizes = sizeVariants.length > 0
-    ? ['Base Product', ...sizeVariants.map(v => v.size)]
-    : (Array.isArray(product?.sizes) ? product.sizes : []);
+  const availableSizes = cleanSizeVariants.length > 0
+    ? cleanSizeVariants.map(v => v.size || v.measureValue)
+    : (Array.isArray(product?.sizes) ? product.sizes.filter(s => String(s).trim().toLowerCase() !== 'base product') : []);
 
-  const totalStock = sizeVariants.length > 0
-    ? sizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 0))), 0)
+  const totalStock = cleanSizeVariants.length > 0
+    ? cleanSizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 0))), 0)
     : Number(product?.stock !== undefined ? product.stock : (product?.stockQuantity !== undefined ? product.stockQuantity : 50));
   const isOutOfStock = totalStock <= 0;
 

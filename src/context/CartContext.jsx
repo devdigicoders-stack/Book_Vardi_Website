@@ -247,7 +247,21 @@ export function CartProvider({ children }) {
   const [lastPlacedOrder, setLastPlacedOrder] = useState(() => {
     try {
       const saved = localStorage.getItem('book_vardi_last_order');
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      const userProfileStr = localStorage.getItem('book_vardi_user_profile');
+      if (userProfileStr) {
+        const u = JSON.parse(userProfileStr);
+        const uPhone = String(u.phone || '').replace(/\D/g, '').slice(-10);
+        const oPhone = String(parsed?.customer?.phone || parsed?.shippingAddress?.phone || parsed?.phone || '').replace(/\D/g, '').slice(-10);
+        const uId = String(u.id || u._id || '');
+        const oId = String(parsed?.userId || '');
+        if ((uPhone && oPhone && uPhone !== oPhone) || (uId && oId && uId !== oId)) {
+          localStorage.removeItem('book_vardi_last_order');
+          return null;
+        }
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -1573,6 +1587,14 @@ export function CartProvider({ children }) {
 
         setIsAuthenticated(true);
         setUserProfile(resolvedProfile);
+        setLastPlacedOrder((prev) => {
+          if (!prev) return null;
+          const oPhone = String(prev.customer?.phone || prev.shippingAddress?.phone || prev.phone || '').replace(/\D/g, '').slice(-10);
+          const uPhone = String(resolvedProfile?.phone || '').replace(/\D/g, '').slice(-10);
+          if (oPhone && uPhone && oPhone === uPhone) return prev;
+          try { localStorage.removeItem('book_vardi_last_order'); } catch (e) {}
+          return null;
+        });
         closeAuthModal();
         showToast(`Welcome back${resolvedProfile.name ? `, ${resolvedProfile.name}` : ''}! ✨`);
         return true;
@@ -1608,6 +1630,14 @@ export function CartProvider({ children }) {
     }
 
     setUserProfile(resolvedProfile);
+    setLastPlacedOrder((prev) => {
+      if (!prev) return null;
+      const oPhone = String(prev.customer?.phone || prev.shippingAddress?.phone || prev.phone || '').replace(/\D/g, '').slice(-10);
+      const uPhone = String(resolvedProfile?.phone || '').replace(/\D/g, '').slice(-10);
+      if (oPhone && uPhone && oPhone === uPhone) return prev;
+      try { localStorage.removeItem('book_vardi_last_order'); } catch (e) {}
+      return null;
+    });
     closeAuthModal();
     showToast(`Welcome back${resolvedProfile.name ? `, ${resolvedProfile.name}` : ''}! ✨`);
     return true;
@@ -1620,6 +1650,14 @@ export function CartProvider({ children }) {
     if (target) {
       setIsAuthenticated(true);
       setUserProfile({ ...EMPTY_USER_PROFILE, ...target });
+      setLastPlacedOrder((prev) => {
+        if (!prev) return null;
+        const oPhone = String(prev.customer?.phone || prev.shippingAddress?.phone || prev.phone || '').replace(/\D/g, '').slice(-10);
+        const uPhone = String(target?.phone || '').replace(/\D/g, '').slice(-10);
+        if (oPhone && uPhone && oPhone === uPhone) return prev;
+        try { localStorage.removeItem('book_vardi_last_order'); } catch (e) {}
+        return null;
+      });
       showToast(`Switched account to ${target.name} (${target.role}) 🔄`);
       return true;
     }
@@ -1683,6 +1721,10 @@ export function CartProvider({ children }) {
         setRegisteredUsers((prev) => [...prev, freshProfile]);
         setIsAuthenticated(true);
         setUserProfile(freshProfile);
+        setLastPlacedOrder(null);
+        try {
+          localStorage.removeItem('book_vardi_last_order');
+        } catch (e) {}
         if (!options?.keepModalOpen) {
           closeAuthModal();
         }
@@ -1725,9 +1767,11 @@ export function CartProvider({ children }) {
     }
     setWishlist([]);
     setCartItems([]);
+    setLastPlacedOrder(null);
     try {
       localStorage.removeItem('book_vardi_wishlist_v2');
       localStorage.removeItem('book_vardi_items_v2');
+      localStorage.removeItem('book_vardi_last_order');
     } catch (e) {}
     showToast(`🎉 Registration successful! Welcome, ${freshProfile.name || 'Student'}! ✨`);
     return freshProfile;
@@ -1738,6 +1782,7 @@ export function CartProvider({ children }) {
     setUserProfile(EMPTY_USER_PROFILE);
     setWishlist([]);
     setCartItems([]);
+    setLastPlacedOrder(null);
     try {
       localStorage.removeItem('book_vardi_user_profile');
       localStorage.removeItem('book_vardi_is_authenticated');
@@ -1745,6 +1790,7 @@ export function CartProvider({ children }) {
       localStorage.removeItem('book_vardi_items_v2');
       localStorage.removeItem('book_vardi_auth_token');
       localStorage.removeItem('token');
+      localStorage.removeItem('book_vardi_last_order');
       localStorage.removeItem('bv_customer_bulk_orders');
       localStorage.removeItem('bv_sync_school_orders');
       localStorage.removeItem('admin_school_orders');
@@ -2072,7 +2118,9 @@ export function CartProvider({ children }) {
       timeZone: 'Asia/Kolkata'
     });
 
-    let itemsToBuy = cartItems.filter((item) => item.selected !== false);
+    let itemsToBuy = Array.isArray(orderData?.items) && orderData.items.length > 0
+      ? orderData.items
+      : cartItems.filter((item) => item.selected !== false);
     if (itemsToBuy.length === 0 && cartItems.length > 0) {
       itemsToBuy = [...cartItems];
     }
@@ -2084,7 +2132,7 @@ export function CartProvider({ children }) {
 
     const isCod = /cod|cash\s*on\s*delivery/i.test(String(orderData.paymentMethod || ''));
     const initialPaymentStatus = orderData.paymentStatus || (isCod ? 'Pending' : 'Paid');
-    const customerDeliveryOtp = String(orderData.deliveryOtp || Math.floor(1000 + Math.random() * 9000));
+    const customerDeliveryOtp = orderData.deliveryOtp ? String(orderData.deliveryOtp) : '';
     const customerPhone = userProfile?.phone || orderData?.shippingAddress?.phone || '';
     const customerEmail = userProfile?.email || orderData?.shippingAddress?.email || '';
     const customerName = userProfile?.name || orderData?.shippingAddress?.name || orderData?.shippingAddress?.fullName || 'Student Customer';
@@ -2098,8 +2146,8 @@ export function CartProvider({ children }) {
       status: 'Pending',
       overallStatus: 'Pending',
       statusColor: 'amber',
-      trackingNumber: randomTracking,
-      courierName: orderData.courierName || 'N/A',
+      trackingNumber: orderData.trackingNumber || '',
+      courierName: orderData.courierName || '',
       deliveryMode: orderData.deliveryMode || 'pending_choice',
       paymentMethod: orderData.paymentMethod || (isCod ? 'Cash on Delivery (COD)' : 'UPI'),
       paymentStatus: initialPaymentStatus,
@@ -2110,7 +2158,7 @@ export function CartProvider({ children }) {
         phone: customerPhone
       },
       sellerDetails: orderData.sellerDetails || null,
-      selfDeliveryDetails: orderData.selfDeliveryDetails ? { ...orderData.selfDeliveryDetails, deliveryOtp: customerDeliveryOtp } : { deliveryOtp: customerDeliveryOtp },
+      selfDeliveryDetails: orderData.selfDeliveryDetails || null,
       items: itemsToBuy.map((item) => {
         const catProd = (products || []).find((p) => String(p.id || p._id) === String(item.productId || item.id || item._id));
         
@@ -2132,8 +2180,18 @@ export function CartProvider({ children }) {
         const resolvedSellerId = item.sellerId || item.seller?._id || item.seller?.id || catProd?.sellerId || catProd?.seller?._id || catProd?.seller?.id || (typeof catProd?.seller === 'string' ? catProd.seller : null) || null;
         const resolvedStoreName = item.storeName || item.sellerStoreName || item.sellerName || catProd?.sellerStoreName || catProd?.storeName || catProd?.sellerName || "BookVardi Verified Seller";
 
+        const itemOfferDiscount = Number(item.offerDiscount !== undefined ? item.offerDiscount : (item.discount || 0)) || 0;
+        const basePrice = Number(item.price !== undefined ? item.price : item.finalPrice) || 0;
+        const itemQty = Math.max(1, Number(item.quantity) || 1);
+        const itemGross = Math.round(basePrice * itemQty * 100) / 100;
+        const itemFinalPrice = Number(item.finalPrice !== undefined ? item.finalPrice : Math.max(0, basePrice - (itemOfferDiscount / itemQty))) || basePrice;
+        const itemTotal = Math.max(0, Math.round((itemGross - itemOfferDiscount) * 100) / 100);
+
         return {
           ...item,
+          offerDiscount: itemOfferDiscount,
+          discount: itemOfferDiscount,
+          couponCode: item.couponCode || appliedCoupon?.code || orderData?.couponCode || null,
           image: cleanImg,
           images: undefined,
           productId: catProd?._id || catProd?.id || item.productId || item.id || item._id,
@@ -2142,9 +2200,10 @@ export function CartProvider({ children }) {
           sellerName: resolvedStoreName,
           storeName: resolvedStoreName,
           sellerStoreName: resolvedStoreName,
-          price: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
-          finalPrice: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
-          quantity: Math.max(1, Number(item.quantity) || 1),
+          price: basePrice,
+          finalPrice: itemFinalPrice,
+          total: itemTotal,
+          quantity: itemQty,
           size: typeof item.selectedSize === "object" ? (item.selectedSize?.size || "") : String(item.selectedSize || item.size || ""),
           color: typeof item.selectedColor === "object" ? (item.selectedColor?.name || "") : String(item.selectedColor || item.color || ""),
           isGstInclusive: item.isGstInclusive !== undefined ? item.isGstInclusive : (catProd?.isGstInclusive !== false),
@@ -2162,7 +2221,10 @@ export function CartProvider({ children }) {
       shippingAddress: orderData.shippingAddress,
       deliverySpeed: orderData.deliverySpeed || 'Standard Delivery',
       estimatedDelivery: orderData.estimatedDelivery || '3-5 Business Days',
-      appliedCoupon: appliedCoupon?.code || null,
+      appliedCoupon: appliedCoupon?.code || orderData?.appliedCoupon || orderData?.couponCode || null,
+      couponCode: appliedCoupon?.code || orderData?.couponCode || orderData?.appliedCoupon || null,
+      couponDiscount: orderData?.couponDiscount !== undefined ? orderData.couponDiscount : (orderData?.discount || 0),
+      pointsDiscount: orderData?.pointsDiscount || 0,
       razorpayPaymentId: orderData.razorpayPaymentId || null,
       razorpayOrderId: orderData.razorpayOrderId || null
     };
@@ -2247,15 +2309,8 @@ export function CartProvider({ children }) {
         throw new Error(err.response?.data?.message || err.message || 'Failed to place order in database. Please check your network and try again.');
       }
 
-      // Clear cart in backend database
-      try {
-        await clearCartInBackend(customerPhone || userProfile?.phone || '', userId || userProfile?.id || '');
-        console.log('🌐 [FRONTEND API] Backend cart cleared successfully');
-      } catch (err) {
-        console.warn('Backend cart clear warning:', err);
-      }
-
-      // Sync user profile orders from backend database in background
+      // Non-blocking background cart clear (backend createOrder already auto-cleared MongoDB cart)
+      clearCartInBackend(customerPhone || userProfile?.phone || '', userId || userProfile?.id || '').catch(() => {});
       fetchUserOrders(customerPhone || userProfile?.phone || '').catch(() => {});
     }
 

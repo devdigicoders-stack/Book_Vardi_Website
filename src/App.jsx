@@ -357,7 +357,7 @@ function MainStore() {
             <OrderSuccessPage
               onNavigate={navigateTo}
               isDetailsOnly={Boolean(orderSuccessOptions?.isDetailsOnly)}
-              selectedOrder={orderSuccessOptions?.order || null}
+              selectedOrder={orderSuccessOptions?.order || orderSuccessOptions?.selectedOrder || null}
             />
           )}
 

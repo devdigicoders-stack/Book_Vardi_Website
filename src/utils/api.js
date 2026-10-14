@@ -124,6 +124,27 @@ export function parseSizeVariants(product) {
     }
   }
 
+  // Filter out any artificial / legacy "Base Product" options if other variants exist
+  if (parsed.length > 1) {
+    const withoutBase = parsed.filter(v => 
+      !v.isBase && 
+      String(v.size || '').trim().toLowerCase() !== 'base product' && 
+      String(v.measureValue || '').trim().toLowerCase() !== 'base product' && 
+      !String(v.id || '').startsWith('base_option_')
+    );
+    if (withoutBase.length > 0) {
+      parsed = withoutBase;
+    }
+  } else if (parsed.length === 1) {
+    const single = parsed[0];
+    if (single.isBase || 
+        String(single.size || '').trim().toLowerCase() === 'base product' || 
+        String(single.measureValue || '').trim().toLowerCase() === 'base product' || 
+        String(single.id || '').startsWith('base_option_')) {
+      parsed = [];
+    }
+  }
+
   // Return parsed variants cleanly without prepending an artificial "Base Product" option
   return parsed;
 }
