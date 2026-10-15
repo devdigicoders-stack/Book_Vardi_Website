@@ -36,7 +36,7 @@ import OrderTrackingModal, { getOrderDeliveryOtp, isOrderRefundedOrReturnOrExcha
 import CancelOrderModal from '../Common/CancelOrderModal';
 import ReturnExchangeModal from '../Common/ReturnExchangeModal';
 import { isItemReturnable, isItemExchangeable, getReturnExchangeAvailability } from '../../utils/orderReturnPolicy';
-import { trackAwbApi } from '../../utils/api';
+import { trackAwbApi, downloadInvoiceApi } from '../../utils/api';
 
 export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, selectedOrder = null }) {
   const { lastPlacedOrder, userProfile, isAuthenticated } = useCart();
