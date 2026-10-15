@@ -2132,7 +2132,7 @@ export function CartProvider({ children }) {
 
     const isCod = /cod|cash\s*on\s*delivery/i.test(String(orderData.paymentMethod || ''));
     const initialPaymentStatus = orderData.paymentStatus || (isCod ? 'Pending' : 'Paid');
-    const customerDeliveryOtp = orderData.deliveryOtp ? String(orderData.deliveryOtp) : '';
+    const customerDeliveryOtp = '';
     const customerPhone = userProfile?.phone || orderData?.shippingAddress?.phone || '';
     const customerEmail = userProfile?.email || orderData?.shippingAddress?.email || '';
     const customerName = userProfile?.name || orderData?.shippingAddress?.name || orderData?.shippingAddress?.fullName || 'Student Customer';

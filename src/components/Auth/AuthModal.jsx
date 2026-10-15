@@ -235,12 +235,11 @@ export default function AuthModal() {
         console.warn('Backend send OTP warning:', err);
       }
 
-      const otpValue = response?.otp || '1234';
-      setGeneratedOtp(otpValue);
+      setGeneratedOtp('');
       setLoginOtpSent(true);
-      setLoginOtp(otpValue);
+      setLoginOtp('');
       setLoginOtpTimer(30);
-      showToast(`📲 OTP sent to +91 ${phone} • Test OTP: ${otpValue}`);
+      showToast(`📲 OTP sent to +91 ${phone}! Please enter the 4-digit code received on your mobile.`);
     } catch (error) {
       showToast(error.message || '⚠️ Unable to send OTP. Please try again.');
     } finally {
@@ -272,14 +271,7 @@ export default function AuthModal() {
 
     setIsLoading(true);
     try {
-      let verificationResponse = null;
-      try {
-        verificationResponse = await verifyOtpWithBackend(phone, loginOtp.trim());
-      } catch (err) {
-        if (loginOtp.trim() !== generatedOtp && loginOtp.trim() !== '3123' && loginOtp.trim() !== '1234') {
-          throw new Error('⚠️ Invalid OTP. Please try again.');
-        }
-      }
+      const verificationResponse = await verifyOtpWithBackend(phone, loginOtp.trim());
 
       const verifiedUser = verificationResponse?.user;
       const isNewUser = Boolean(
@@ -360,13 +352,12 @@ export default function AuthModal() {
         console.warn('Backend send OTP warning:', err);
       }
 
-      const otpValue = response?.otp || '1234';
-      setGeneratedOtp(otpValue);
+      setGeneratedOtp('');
       setRegisterStep('otp');
       setRegisterOtpSent(true);
-      setRegisterOtp(otpValue);
+      setRegisterOtp('');
       setRegisterOtpTimer(30);
-      showToast(`📲 OTP sent to +91 ${phone} • Test OTP: ${otpValue}`);
+      showToast(`📲 OTP sent to +91 ${phone}! Please enter the 4-digit code received on your mobile.`);
     } catch (error) {
       showToast(error.message || '⚠️ Unable to send OTP. Please try again.');
     } finally {
@@ -417,14 +408,7 @@ export default function AuthModal() {
 
       setIsLoading(true);
       try {
-        let verificationResponse = null;
-        try {
-          verificationResponse = await verifyOtpWithBackend(phone, registerOtp.trim());
-        } catch (e) {
-          if (registerOtp.trim() !== generatedOtp && registerOtp.trim() !== '3123' && registerOtp.trim() !== '1234') {
-            throw new Error('⚠️ Invalid OTP. Please try again.');
-          }
-        }
+        const verificationResponse = await verifyOtpWithBackend(phone, registerOtp.trim());
 
         // If user already exists in DB, log them in directly!
         if (verificationResponse?.user && !verificationResponse?.isNewUser) {
@@ -871,17 +855,6 @@ export default function AuthModal() {
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
                     Enter OTP
                   </label>
-                  {generatedOtp && (
-                    <div className="mb-2.5 flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 shadow-2xs">
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-amber-600" />
-                        <span>Generated OTP (Testing):</span>
-                      </span>
-                      <span className="font-mono text-sm tracking-widest bg-white px-2.5 py-0.5 rounded-md border border-amber-300 font-extrabold text-brand-teal shadow-2xs">
-                        {generatedOtp}
-                      </span>
-                    </div>
-                  )}
                   <div className="relative">
                     <Lock
                       size={16}

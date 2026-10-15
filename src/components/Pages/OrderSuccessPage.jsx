@@ -304,6 +304,13 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                 : <>Thank you for shopping with <span className="font-bold text-brand-teal">BookVardi</span>. We’ve received your order and our campus dispatch team is packing your stationery!</>}
             </p>
 
+            {!isCancelled && (
+              <div className="mt-3.5 inline-flex items-center gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-4 py-1.5 rounded-full font-medium shadow-2xs">
+                <span>📲</span>
+                <span>Confirmation SMS dispatched to <strong>+91 {(order.customer?.phone || order.customerPhone || order.shippingAddress?.phone || order.phone || '').replace(/\D/g, '').slice(-10)}</strong> via Book Vardi</span>
+              </div>
+            )}
+
             {/* Cancellation & Refund Alert Card */}
             {isCancelled && (
               <div className="mt-6 max-w-xl mx-auto bg-rose-50/90 border border-rose-200 rounded-2xl p-4 text-left space-y-3 shadow-xs">
@@ -476,7 +483,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
 
           const isRegularDeliveryOtpActive = isSelfDelivery && !isCancelled && !isReturnOrExchangeOrRefund && statusLower !== 'delivered' && statusLower !== 'completed';
 
-          const shouldShowOtpInSuccessPage = Boolean(deliveryOtp && !isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
+          const shouldShowOtpInSuccessPage = Boolean(!isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
 
           const returnExchangeSteps = isExchange ? [
             { id: 1, title: 'Exchange Requested', desc: 'Replacement requested', icon: RotateCcw },
@@ -955,30 +962,25 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                             </div>
                           </div>
 
-                          <div className={`bg-white border-2 px-4 py-2.5 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-sm flex sm:flex-col items-center justify-between sm:justify-center gap-2 ${
-                            isReturnOtpActive ? 'border-cyan-500' : isExchangeOtpActive ? 'border-purple-500' : 'border-emerald-500'
+                          <div className={`bg-white border-2 px-4 py-3 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-xs flex items-center justify-center gap-3 ${
+                            isReturnOtpActive ? 'border-cyan-400 bg-cyan-50/50' : isExchangeOtpActive ? 'border-purple-400 bg-purple-50/50' : 'border-emerald-400 bg-emerald-50/50'
                           }`}>
-                            <div>
-                              <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                                {isReturnOtpActive ? 'Pickup OTP' : isExchangeOtpActive ? 'Exchange OTP' : 'Delivery OTP'}
+                            <div className="w-10 h-10 rounded-xl bg-white shadow-xs border border-gray-100 flex items-center justify-center text-xl shrink-0">
+                              📲
+                            </div>
+                            <div className="text-left">
+                              <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider">
+                                {isReturnOtpActive ? 'Return Pickup OTP' : isExchangeOtpActive ? 'Exchange Handover OTP' : 'Doorstep Delivery OTP'}
                               </div>
-                              <div className={`font-mono text-2xl font-black tracking-widest leading-none mt-0.5 ${
-                                isReturnOtpActive ? 'text-cyan-800' : isExchangeOtpActive ? 'text-purple-800' : 'text-emerald-700'
+                              <div className={`text-xs font-black ${
+                                isReturnOtpActive ? 'text-cyan-950' : isExchangeOtpActive ? 'text-purple-950' : 'text-emerald-950'
                               }`}>
-                                {deliveryOtp}
+                                Sent via SMS to Mobile
+                              </div>
+                              <div className="text-[10px] text-gray-600 font-medium">
+                                Share 4-digit code verbally with executive upon arrival
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={handleCopyOtp}
-                              className={`px-2.5 py-1 font-bold text-[10px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
-                                isReturnOtpActive ? 'bg-cyan-100 hover:bg-cyan-200 text-cyan-900' : isExchangeOtpActive ? 'bg-purple-100 hover:bg-purple-200 text-purple-900' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                              }`}
-                              title="Copy OTP"
-                            >
-                              {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
-                              <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
-                            </button>
                           </div>
                         </div>
                       )}
@@ -1070,31 +1072,17 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                                   ? 'Exchange Handover Security OTP'
                                   : 'Handshake Security OTP'}
                               </span>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className={`font-mono text-base font-black tracking-widest bg-white px-2 py-0.5 rounded-lg border shadow-2xs ${
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className={`text-xs font-black px-2.5 py-1 rounded-lg border shadow-2xs flex items-center gap-1.5 ${
                                   isReturnOtpActive
-                                    ? 'text-cyan-950 border-cyan-300'
+                                    ? 'bg-cyan-100/90 text-cyan-950 border-cyan-300'
                                     : isExchangeOtpActive
-                                    ? 'text-purple-950 border-purple-300'
-                                    : 'text-emerald-950 border-emerald-300'
+                                    ? 'bg-purple-100/90 text-purple-950 border-purple-300'
+                                    : 'bg-emerald-100/90 text-emerald-950 border-emerald-300'
                                 }`}>
-                                  {deliveryOtp}
+                                  <span>📲</span>
+                                  <span>Sent via SMS to Mobile</span>
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={handleCopyOtp}
-                                  className={`text-[11px] font-bold px-2 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1 ${
-                                    isReturnOtpActive
-                                      ? 'text-cyan-800 bg-cyan-100/80 hover:bg-cyan-100'
-                                      : isExchangeOtpActive
-                                      ? 'text-purple-800 bg-purple-100/80 hover:bg-purple-100'
-                                      : 'text-emerald-800 bg-emerald-100/80 hover:bg-emerald-100'
-                                  }`}
-                                  title="Copy OTP"
-                                >
-                                  {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
-                                  <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
-                                </button>
                               </div>
                               <span className={`text-[10px] mt-1 block ${
                                 isReturnOtpActive ? 'text-cyan-700' : isExchangeOtpActive ? 'text-purple-700' : 'text-emerald-700'

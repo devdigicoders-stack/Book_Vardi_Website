@@ -122,7 +122,7 @@ export default function BulkOrderTrackingModal({ isOpen, onClose, order }) {
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 text-xs text-gray-800">
 
           {/* Handover OTP Highlight Banner (when Out for Delivery or Dispatched) */}
-          {isPacked && !isDelivered && deliveryOtp && (
+          {isPacked && !isDelivered && (
             <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
@@ -143,21 +143,21 @@ export default function BulkOrderTrackingModal({ isOpen, onClose, order }) {
                 </div>
               </div>
 
-              <div className="bg-white border-2 border-emerald-500 px-4 py-2.5 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-sm flex sm:flex-col items-center justify-between sm:justify-center gap-2">
-                <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase">Delivery OTP</div>
-                  <div className="font-mono text-2xl font-black text-emerald-700 tracking-widest leading-none mt-0.5">
-                    {deliveryOtp}
+              <div className="bg-white border-2 border-emerald-400 bg-emerald-50/50 px-4 py-3 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-xs flex items-center justify-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white shadow-xs border border-gray-100 flex items-center justify-center text-xl shrink-0">
+                  📲
+                </div>
+                <div className="text-left">
+                  <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider">
+                    Campus Delivery OTP
+                  </div>
+                  <div className="text-xs font-black text-emerald-950">
+                    Sent via SMS to Mobile
+                  </div>
+                  <div className="text-[10px] text-gray-600 font-medium">
+                    Share verbally at campus gate
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(deliveryOtp, 'otp')}
-                  className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-[10px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                >
-                  {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
-                  <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
-                </button>
               </div>
             </div>
           )}

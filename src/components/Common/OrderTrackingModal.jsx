@@ -381,7 +381,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
   const isRegularDeliveryOtpActive = isSelfDelivery && !isCancelled && !isReturnOrExchangeOrRefund && currentStatus !== 'delivered' && currentStatus !== 'completed';
 
-  const shouldShowOtpBanner = Boolean(deliveryOtp && !isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
+  const shouldShowOtpBanner = Boolean(!isCancelled && (isRegularDeliveryOtpActive || isReturnOtpActive || isExchangeOtpActive));
 
   const returnSteps = isExchange ? [
     { key: 'exchange_requested', label: 'Exchange Requested', desc: 'Replacement requested', icon: RotateCcw },
@@ -651,42 +651,33 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                 </div>
               </div>
 
-              <div className={`bg-white border-2 px-4 py-2.5 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-sm flex sm:flex-col items-center justify-between sm:justify-center gap-2 ${
+              <div className={`bg-white border-2 px-4 py-3 rounded-2xl text-center self-stretch sm:self-center shrink-0 shadow-xs flex items-center justify-center gap-3 ${
                 isReturnOtpActive
-                  ? 'border-cyan-500'
+                  ? 'border-cyan-400 bg-cyan-50/50'
                   : isExchangeOtpActive
-                  ? 'border-purple-500'
-                  : 'border-emerald-500'
+                  ? 'border-purple-400 bg-purple-50/50'
+                  : 'border-emerald-400 bg-emerald-50/50'
               }`}>
-                <div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                <div className="w-10 h-10 rounded-xl bg-white shadow-xs border border-gray-100 flex items-center justify-center text-xl shrink-0">
+                  📲
+                </div>
+                <div className="text-left">
+                  <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider">
                     {isReturnOtpActive ? 'Pickup OTP' : isExchangeOtpActive ? 'Exchange OTP' : 'Delivery OTP'}
                   </div>
-                  <div className={`font-mono text-2xl font-black tracking-widest leading-none mt-0.5 ${
+                  <div className={`text-xs font-black ${
                     isReturnOtpActive
-                      ? 'text-cyan-800'
+                      ? 'text-cyan-950'
                       : isExchangeOtpActive
-                      ? 'text-purple-800'
-                      : 'text-emerald-700'
+                      ? 'text-purple-950'
+                      : 'text-emerald-950'
                   }`}>
-                    {deliveryOtp}
+                    Sent via SMS to Mobile
+                  </div>
+                  <div className="text-[10px] text-gray-600 font-medium">
+                    Share 4-digit code verbally upon arrival
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(deliveryOtp, 'otp')}
-                  className={`px-2.5 py-1 font-bold text-[10px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
-                    isReturnOtpActive
-                      ? 'bg-cyan-100 hover:bg-cyan-200 text-cyan-900'
-                      : isExchangeOtpActive
-                      ? 'bg-purple-100 hover:bg-purple-200 text-purple-900'
-                      : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                  }`}
-                  title="Copy OTP"
-                >
-                  {copiedOtp ? <Check size={12} className="text-emerald-700" /> : <Copy size={12} />}
-                  <span>{copiedOtp ? 'Copied' : 'Copy'}</span>
-                </button>
               </div>
             </div>
           )}

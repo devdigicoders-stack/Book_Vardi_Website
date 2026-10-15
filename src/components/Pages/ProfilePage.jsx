@@ -2305,47 +2305,34 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                               {/* Active Return Pickup or Exchange Handover OTP Badge */}
                               {(() => {
-                                const retOtp = order.deliveryOtp || order.selfDeliveryDetails?.deliveryOtp || order.deliveryDetails?.deliveryOtp || order.returnRequest?.deliveryOtp;
+                                const hasReturnReq = Boolean(order.returnRequest?.type && !['none', 'n/a', ''].includes(String(order.returnRequest.type).toLowerCase()));
+                                if (!hasReturnReq) return null;
                                 const isEx = order.returnRequest?.type === 'exchange';
                                 const isDone = isEx
                                   ? (currentStatus === 'exchanged' || order.returnRequest?.status === 'exchanged')
                                   : (['product_received', 'product_return_received', 'returned', 'refund_completed', 'refunded'].includes(currentStatus) || ['product_received', 'product_return_received', 'returned', 'refund_completed', 'refunded'].includes(order.returnRequest?.status));
-                                if (!retOtp || isDone || currentStatus.includes('reject')) return null;
+                                if (isDone || currentStatus.includes('reject')) return null;
 
                                 return (
                                   <div className={`flex items-center justify-between p-2.5 rounded-xl border ${
                                     isEx ? 'bg-purple-50/90 border-purple-300 text-purple-950' : 'bg-cyan-50/90 border-cyan-300 text-cyan-950'
                                   }`}>
-                                    <div className="flex items-center gap-2">
-                                      <Key size={15} className={isEx ? 'text-purple-700 shrink-0' : 'text-cyan-700 shrink-0'} />
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="text-base shrink-0">📲</span>
                                       <div>
                                         <span className="text-[10px] font-black uppercase tracking-wider block">
                                           {isEx ? 'Exchange Handover Security OTP' : 'Return Pickup Security OTP'}
                                         </span>
                                         <span className="text-[10px] text-gray-600">
-                                          {isEx ? 'Share with rider upon replacement delivery' : 'Share with rider upon item collection'}
+                                          4-Digit Security OTP sent to registered mobile via SMS. Share verbally with rider upon arrival.
                                         </span>
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className={`font-mono text-sm font-black px-2 py-0.5 rounded-md border shadow-2xs ${
-                                        isEx ? 'bg-white text-purple-950 border-purple-400' : 'bg-white text-cyan-950 border-cyan-400'
-                                      }`}>
-                                        {retOtp}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          navigator.clipboard?.writeText(String(retOtp));
-                                          alert(`Copied ${isEx ? 'Exchange' : 'Return'} OTP: ${retOtp}`);
-                                        }}
-                                        className="p-1 rounded bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 cursor-pointer"
-                                        title="Copy OTP"
-                                      >
-                                        <Copy size={12} />
-                                      </button>
-                                    </div>
+                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-md border shadow-2xs shrink-0 ${
+                                      isEx ? 'bg-white text-purple-950 border-purple-300' : 'bg-white text-cyan-950 border-cyan-300'
+                                    }`}>
+                                      📲 SMS Dispatched
+                                    </span>
                                   </div>
                                 );
                               })()}

@@ -873,6 +873,20 @@ export async function registerSellerInBackend(formData) {
   return res.data;
 }
 
+export async function sendSellerPhoneOtpApi(phone, isRegistration = true) {
+  return requestApi('/seller/auth/send-otp', {
+    method: 'POST',
+    data: { phone, isRegistration }
+  });
+}
+
+export async function verifySellerPhoneOtpApi(phone, otp, isRegistration = true) {
+  return requestApi('/seller/auth/verify-otp', {
+    method: 'POST',
+    data: { phone, otp, isRegistration }
+  });
+}
+
 export async function submitSchoolBulkOrderInBackend(payload) {
   const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
   const userProfileStr = localStorage.getItem('book_vardi_user_profile');
