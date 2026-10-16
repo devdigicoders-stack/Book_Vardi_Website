@@ -113,20 +113,21 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     if (!order) return;
     const sentAt = order.selfDeliveryDetails?.otpLastSentAt;
     const expiresAt = order.selfDeliveryDetails?.otpExpiresAt;
+    const now = Date.now();
+
     if (sentAt) {
-      const now = Date.now();
       const sentMs = new Date(sentAt).getTime();
       const elapsedSec = Math.floor((now - sentMs) / 1000);
       const remainingCooldown = Math.max(0, 60 - elapsedSec);
       setResendCooldown(remainingCooldown);
+    }
 
-      if (expiresAt) {
-        const remainingExp = Math.max(0, Math.floor((new Date(expiresAt).getTime() - now) / 1000));
-        setExpirySeconds(remainingExp);
-      } else {
-        const remainingExp = Math.max(0, 600 - elapsedSec); // 10 min window
-        setExpirySeconds(remainingExp);
-      }
+    if (expiresAt) {
+      const remainingExp = Math.max(0, Math.floor((new Date(expiresAt).getTime() - now) / 1000));
+      setExpirySeconds(remainingExp);
+    } else {
+      // Keep OTP active (24-hour validity) while delivery/exchange is active
+      setExpirySeconds(86400);
     }
   }, [order]);
 
@@ -397,8 +398,12 @@ export default function DeliveryPartnerPage({ onNavigate }) {
   const customerPhone = String(order?.customer?.phone || order?.shippingAddress?.phone || order?.phone || '').trim();
 
   const formatTimeRemaining = (seconds) => {
-    const mins = Math.floor(seconds / 60);
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
+    if (hrs > 0) {
+      return `${hrs}h ${String(mins).padStart(2, '0')}m`;
+    }
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
@@ -416,7 +421,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
       if (res && res.success) {
         setResendMsg(res.message || `📲 Fresh OTP sent to customer (${order?.customer?.phone || ''})`);
         setResendCooldown(res.cooldownSeconds || 60);
-        setExpirySeconds(600); // 10 minutes active validity
+        setExpirySeconds(86400); // 24 hours live validity
         setOrder((prev) => prev ? {
           ...prev,
           selfDeliveryDetails: {
@@ -448,10 +453,6 @@ export default function DeliveryPartnerPage({ onNavigate }) {
     }
     setIsOtpModalOpen(true);
     setOtpError('');
-    const sentAt = order?.selfDeliveryDetails?.otpLastSentAt;
-    if (!sentAt && resendCooldown <= 0 && !resending) {
-      handleResendOtp();
-    }
   };
 
   const handleDigitChange = (index, value) => {
@@ -482,7 +483,7 @@ export default function DeliveryPartnerPage({ onNavigate }) {
       return;
     }
 
-    if (expirySeconds === 0 && order?.selfDeliveryDetails?.otpLastSentAt) {
+    if (expirySeconds === 0 && order?.selfDeliveryDetails?.otpExpiresAt && new Date(order.selfDeliveryDetails.otpExpiresAt).getTime() < Date.now()) {
       setOtpError('Delivery OTP has expired. Please click "Resend OTP" to get a fresh PIN.');
       return;
     }
@@ -512,9 +513,56 @@ export default function DeliveryPartnerPage({ onNavigate }) {
           paymentStatus: isReturnOrder ? prev.paymentStatus : 'paid',
           returnRequest: prev.returnRequest ? { ...prev.returnRequest, status: finalStatus } : null
         } : prev));
-        window.dispatchEvent(new CustomEvent('bv_orders_updated'));
+
+        // Sync bulk orders across all local caches (Customer, Seller, Admin)
         try {
-          localStorage.setItem('bv_order_sync_timestamp', Date.now().toString());
+          const targetRefId = res?.orderId || order?.referenceId || order?.id || order?._id || token;
+          const cleanToken = String(token || '');
+
+          ['bv_customer_bulk_orders', 'bv_sync_school_orders', 'admin_school_orders'].forEach((storageKey) => {
+            const raw = localStorage.getItem(storageKey);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                let updated = false;
+                const nextList = list.map((item) => {
+                  const itemToken = item.deliveryDetails?.deliveryPartnerToken || item.deliveryDetails?.trackingId || '';
+                  const itemRef = item.referenceId || item.id || item._id || '';
+                  const matches = (targetRefId && (String(itemRef) === String(targetRefId) || String(item._id) === String(targetRefId))) ||
+                    (cleanToken && (String(itemToken) === cleanToken || String(itemRef).includes(cleanToken.replace('BV-SLF-', ''))));
+                  if (matches) {
+                    updated = true;
+                    return {
+                      ...item,
+                      status: 'delivered',
+                      deliveryStatus: 'delivered',
+                      overallStatus: 'Delivered',
+                      remainingPaymentStatus: 'paid',
+                      deliveryDetails: {
+                        ...(item.deliveryDetails || {}),
+                        status: 'Delivered',
+                        deliveredAt: new Date().toISOString()
+                      }
+                    };
+                  }
+                  return item;
+                });
+                if (updated) {
+                  localStorage.setItem(storageKey, JSON.stringify(nextList));
+                }
+              }
+            }
+          });
+        } catch (e) {}
+
+        window.dispatchEvent(new CustomEvent('bv_orders_updated'));
+        window.dispatchEvent(new CustomEvent('bv_school_orders_updated', {
+          detail: { orderId: res?.orderId || order?.referenceId || token, status: 'delivered' }
+        }));
+        try {
+          const nowStr = Date.now().toString();
+          localStorage.setItem('bv_order_sync_timestamp', nowStr);
+          localStorage.setItem('bv_school_sync_timestamp', nowStr);
         } catch (e) {}
       } else {
         const defaultErr = isReturnOrder
@@ -1320,14 +1368,14 @@ export default function DeliveryPartnerPage({ onNavigate }) {
               <div className="flex items-center gap-1.5">
                 <Clock size={15} className={expirySeconds > 0 ? (expirySeconds <= 60 ? 'text-amber-600' : 'text-teal-700') : 'text-rose-600'} />
                 <span>
-                  {expirySeconds > 0 ? 'OTP Expiry Time:' : 'OTP Status:'}
+                  {expirySeconds > 0 ? 'Live PIN Status:' : 'OTP Status:'}
                 </span>
               </div>
               <div className="font-mono text-sm tracking-wider font-extrabold">
                 {expirySeconds > 0 ? (
-                  formatTimeRemaining(expirySeconds)
+                  <span className="text-teal-800 text-xs font-bold">Active ({formatTimeRemaining(expirySeconds)})</span>
                 ) : (
-                  <span className="text-rose-600 text-xs">EXPIRED</span>
+                  <span className="text-rose-600 text-xs font-bold">EXPIRED</span>
                 )}
               </div>
             </div>

@@ -94,6 +94,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
   const [activeTab, setActiveTab] = useState(initialTab); // 'profile' | 'wishlist' | 'orders' | 'cart' | 'addresses' | 'seller-data' | 'bulk-orders'
   const [customerBulkOrders, setCustomerBulkOrders] = useState([]);
+  const [isLoadingBulkOrders, setIsLoadingBulkOrders] = useState(true);
   const [selectedBulkOrder, setSelectedBulkOrder] = useState(null);
   const [selectedBulkOrderTab, setSelectedBulkOrderTab] = useState('specs');
   const [isRefreshingOrders, setIsRefreshingOrders] = useState(false);
@@ -356,6 +357,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
   useEffect(() => {
     const loadBulkOrders = () => {
+      setIsLoadingBulkOrders(true);
       const myId = String(userProfile?.id || userProfile?._id || '');
       const myPhone = String(userProfile?.phone || userProfile?.mobile || '').replace(/\D/g, '').slice(-10);
       const myEmail = String(userProfile?.email || '').trim().toLowerCase();
@@ -469,6 +471,8 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
           const privateOrders = merged.filter(belongsToMe);
           setCustomerBulkOrders(privateOrders);
         } catch {}
+      }).finally(() => {
+        setIsLoadingBulkOrders(false);
       });
     };
 
@@ -1992,7 +1996,41 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                 </div>
 
                 {/* Orders List */}
-                {filteredOrders.length > 0 ? (
+                {isRefreshingOrders && filteredOrders.length === 0 ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-teal-50/70 rounded-2xl border border-teal-200/80 flex items-center justify-between gap-3 text-xs text-brand-teal shadow-2xs">
+                      <div className="flex items-center gap-2.5 font-bold">
+                        <div className="w-4 h-4 border-2 border-brand-teal border-t-transparent rounded-full animate-spin shrink-0" />
+                        <span>Syncing live orders and consignment status from database...</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-teal-700 bg-white px-2 py-0.5 rounded border border-teal-200 shrink-0">
+                        Live Sync
+                      </span>
+                    </div>
+
+                    {[1, 2, 3].map((n) => (
+                      <div key={n} className="border border-gray-200/80 rounded-2xl p-5 bg-white space-y-4 animate-pulse shadow-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-4 w-32 bg-gray-200 rounded-md" />
+                            <div className="h-4 w-24 bg-gray-100 rounded-md" />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="h-6 w-28 bg-gray-200 rounded-full" />
+                            <div className="h-5 w-16 bg-gray-300 rounded-md" />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="w-16 h-16 bg-gray-200 rounded-xl shrink-0" />
+                          <div className="space-y-2 flex-1">
+                            <div className="h-4 w-3/4 bg-gray-200 rounded" />
+                            <div className="h-3 w-1/3 bg-gray-100 rounded" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : filteredOrders.length > 0 ? (
                   <div className="space-y-4">
                     {filteredOrders.map((order, idx) => {
                       const currentStatus = resolveOrderLifecycleStatus(order);
@@ -2337,38 +2375,22 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 );
                               })()}
 
-                              {/* Direct Statutory PDF Action Buttons */}
-                              <div className="pt-2 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-2">
-                                {(order.returnRequest?.type === 'return' || ['refund_completed', 'refunded', 'product_received', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus)) && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
-                                    }}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-lg border border-rose-200 transition-colors cursor-pointer shadow-2xs"
-                                    title="Download Statutory GST Credit Note under Section 34 of CGST Act"
-                                  >
-                                    <FileText size={13} className="text-rose-600" />
-                                    <span>Download GST Credit Note</span>
-                                  </button>
-                                )}
+                              {/* Direct Statutory PDF Action Buttons: Exchange gets Exchange Tax Invoice ONLY; Returns get Credit Note */}
+                              {(() => {
+                                const isExchangeReq = order.returnRequest?.type === 'exchange' ||
+                                  order.returnRequest?.requestType === 'exchange' ||
+                                  ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
+                                  String(currentStatus).includes('exchange');
 
-                                {(order.returnRequest?.type === 'exchange' || ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus)) && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
-                                      }}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-lg border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
-                                      title="Download GST Exchange Tax Invoice & Replacement Slip"
-                                    >
-                                      <FileText size={13} className="text-indigo-600" />
-                                      <span>Download Exchange Invoice</span>
-                                    </button>
-                                    {order.returnRequest?.priceAdjustmentType === 'partial_refund' && (
+                                const isReturnReq = !isExchangeReq && (
+                                  order.returnRequest?.type === 'return' ||
+                                  ['refund_completed', 'refunded', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus) ||
+                                  (currentStatus === 'product_received' && order.returnRequest?.type === 'return')
+                                );
+
+                                return (
+                                  <div className="pt-2 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-2">
+                                    {isReturnReq && (
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -2376,15 +2398,30 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                           downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
                                         }}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-lg border border-rose-200 transition-colors cursor-pointer shadow-2xs"
-                                        title="Download GST Credit Note for partial refund adjustment"
+                                        title="Download Statutory GST Credit Note under Section 34 of CGST Act"
                                       >
                                         <FileText size={13} className="text-rose-600" />
-                                        <span>Download Credit Note (Refund)</span>
+                                        <span>Download GST Credit Note</span>
                                       </button>
                                     )}
-                                  </>
-                                )}
-                              </div>
+
+                                    {isExchangeReq && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
+                                        }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-lg border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
+                                        title="Download GST Exchange Tax Invoice & Replacement Slip"
+                                      >
+                                        <FileText size={13} className="text-indigo-600" />
+                                        <span>Download Exchange Invoice</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
 
@@ -2453,40 +2490,57 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 </button>
                               )}
 
-                              {/* Quick Document Download Buttons for Customer */}
-                              {(isOrderRefundedOrReturnOrExchange(order) || currentStatus === 'cancelled') ? (
-                                <>
-                                  {(order.returnRequest?.type === 'return' || currentStatus === 'cancelled' || ['refund_completed', 'refunded', 'product_received', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus)) && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
-                                      }}
-                                      className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
-                                      title="Download GST Credit Note"
-                                    >
-                                      <FileText size={13} />
-                                      <span>Credit Note</span>
-                                    </button>
-                                  )}
-                                  {(order.returnRequest?.type === 'exchange' || ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus)) && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
-                                      }}
-                                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
-                                      title="Download Exchange Invoice"
-                                    >
-                                      <FileText size={13} />
-                                      <span>Exchange Invoice</span>
-                                    </button>
-                                  )}
-                                </>
-                              ) : (
-                                ['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) && (
+                              {/* Quick Document Download Buttons for Customer: Strictly Exchange Invoice for exchange, Credit Note for return/cancel */}
+                              {(() => {
+                                const isExchangeReq = order.returnRequest?.type === 'exchange' ||
+                                  order.returnRequest?.requestType === 'exchange' ||
+                                  ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
+                                  String(currentStatus).includes('exchange');
+
+                                const isReturnReq = !isExchangeReq && (
+                                  order.returnRequest?.type === 'return' ||
+                                  currentStatus === 'cancelled' ||
+                                  ['refund_completed', 'refunded', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus) ||
+                                  (currentStatus === 'product_received' && order.returnRequest?.type === 'return')
+                                );
+
+                                if (isOrderRefundedOrReturnOrExchange(order) || currentStatus === 'cancelled') {
+                                  return (
+                                    <>
+                                      {isReturnReq && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
+                                          }}
+                                          className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                                          title="Download GST Credit Note"
+                                        >
+                                          <FileText size={13} />
+                                          <span>Credit Note</span>
+                                        </button>
+                                      )}
+                                      {isExchangeReq && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
+                                          }}
+                                          className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                                          title="Download Exchange Invoice"
+                                        >
+                                          <FileText size={13} />
+                                          <span>Exchange Invoice</span>
+                                        </button>
+                                      )}
+                                    </>
+                                  );
+                                }
+                              })()}
+
+                              {['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) ? (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -2499,8 +2553,15 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                     <FileText size={13} />
                                     <span>Invoice</span>
                                   </button>
-                                )
-                              )}
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded-xl"
+                                    title="Official Tax Invoice will be generated once order status is confirmed by seller"
+                                  >
+                                    <Lock size={11} className="text-amber-600" />
+                                    <span>Invoice (Pending Confirmation)</span>
+                                  </span>
+                                )}
 
                               {(() => {
                                 const isRefundOrExchange = isOrderRefundedOrReturnOrExchange(order);
@@ -3191,7 +3252,55 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                   </button>
                 </div>
 
-                {customerBulkOrders.length === 0 ? (
+                {isLoadingBulkOrders ? (
+                  <div className="space-y-4">
+                    {/* Live Sync Banner */}
+                    <div className="p-4 bg-teal-50/70 rounded-2xl border border-teal-200/80 flex items-center justify-between gap-3 text-xs text-brand-teal shadow-2xs">
+                      <div className="flex items-center gap-2.5 font-bold">
+                        <div className="w-4 h-4 border-2 border-brand-teal border-t-transparent rounded-full animate-spin shrink-0" />
+                        <span>Loading your Institutional Bulk Supply Inquiries & Proposals...</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-teal-700 bg-white px-2 py-0.5 rounded border border-teal-200 shrink-0">
+                        Live Database Sync
+                      </span>
+                    </div>
+
+                    {/* Skeletons */}
+                    {[1, 2].map((n) => (
+                      <div key={n} className="bg-white border border-gray-200/90 rounded-2xl p-6 shadow-xs space-y-5 animate-pulse">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-5 w-28 bg-gray-200 rounded-md" />
+                              <div className="h-5 w-44 bg-gray-200 rounded-md" />
+                            </div>
+                            <div className="h-3.5 w-60 bg-gray-100 rounded" />
+                          </div>
+                          <div className="h-7 w-48 bg-emerald-100/70 rounded-full" />
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-gray-50/80 p-4 rounded-xl">
+                          {[1, 2, 3, 4].map((i) => (
+                            <div key={i} className="space-y-2">
+                              <div className="h-3 w-20 bg-gray-200 rounded" />
+                              <div className="h-4 w-28 bg-gray-300 rounded" />
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="space-y-2 pt-1">
+                          <div className="flex justify-between">
+                            <div className="h-3 w-32 bg-gray-200 rounded" />
+                            <div className="h-3 w-24 bg-gray-200 rounded" />
+                          </div>
+                          <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-teal-200 w-2/3 rounded-full" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : customerBulkOrders.length === 0 ? (
                   <div className="p-10 text-center text-gray-500 space-y-3">
                     <Building2 size={40} className="mx-auto text-gray-300" />
                     <h4 className="font-bold text-gray-800 text-sm">No Active Bulk Supply Inquiries</h4>

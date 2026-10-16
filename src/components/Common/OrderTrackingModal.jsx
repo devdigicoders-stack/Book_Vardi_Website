@@ -665,16 +665,39 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider">
                     {isReturnOtpActive ? 'Pickup OTP' : isExchangeOtpActive ? 'Exchange OTP' : 'Delivery OTP'}
                   </div>
-                  <div className={`text-xs font-black ${
-                    isReturnOtpActive
-                      ? 'text-cyan-950'
-                      : isExchangeOtpActive
-                      ? 'text-purple-950'
-                      : 'text-emerald-950'
-                  }`}>
-                    Sent via SMS to Mobile
-                  </div>
-                  <div className="text-[10px] text-gray-600 font-medium">
+                  {deliveryOtp ? (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`font-mono text-base font-black tracking-widest px-2.5 py-0.5 rounded-lg border ${
+                        isReturnOtpActive
+                          ? 'text-cyan-950 bg-cyan-100 border-cyan-300'
+                          : isExchangeOtpActive
+                          ? 'text-purple-950 bg-purple-100 border-purple-300'
+                          : 'text-emerald-950 bg-emerald-100 border-emerald-300'
+                      }`}>
+                        {deliveryOtp}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(deliveryOtp, 'otp')}
+                        className={`text-xs font-bold underline cursor-pointer ${
+                          isReturnOtpActive ? 'text-cyan-800' : isExchangeOtpActive ? 'text-purple-800' : 'text-emerald-800'
+                        }`}
+                      >
+                        {copiedOtp ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className={`text-xs font-black ${
+                      isReturnOtpActive
+                        ? 'text-cyan-950'
+                        : isExchangeOtpActive
+                        ? 'text-purple-950'
+                        : 'text-emerald-950'
+                    }`}>
+                      Sent via SMS to Mobile
+                    </div>
+                  )}
+                  <div className="text-[10px] text-gray-600 font-medium mt-0.5">
                     Share 4-digit code verbally upon arrival
                   </div>
                 </div>
@@ -1081,20 +1104,23 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
         {/* Modal Footer matching Bulk Order Tracker */}
         <div className="border-t border-gray-200 p-4 bg-gray-50 flex items-center justify-between text-xs shrink-0">
           <div className="flex flex-wrap items-center gap-2">
-            {/* Credit Note for Return, Refund, or Cancelled Orders */}
+            {/* Credit Note for Return, Refund, or Cancelled Orders; Exchange Tax Invoice for Exchanges */}
             {(() => {
-              const isReturnOrRefund =
-                isCancelled ||
-                ['refund_completed', 'refunded', 'product_received', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved', 'pickup_scheduled'].includes(currentStatus) ||
-                order.returnRequest?.type === 'return' ||
-                order.paymentStatus === 'refunded' ||
-                order.refundStatus === 'Refund Completed';
-
               const isExchangeReq =
                 order.returnRequest?.requestType === 'exchange' ||
                 order.returnRequest?.type === 'exchange' ||
                 ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) ||
-                ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus);
+                ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
+                String(currentStatus).includes('exchange');
+
+              const isReturnOrRefund =
+                !isExchangeReq &&
+                (isCancelled ||
+                ['refund_completed', 'refunded', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus) ||
+                (currentStatus === 'product_received' && order.returnRequest?.type === 'return') ||
+                order.returnRequest?.type === 'return' ||
+                order.paymentStatus === 'refunded' ||
+                order.refundStatus === 'Refund Completed');
 
               return (
                 <>
@@ -1111,28 +1137,15 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   )}
 
                   {isExchangeReq && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'exchange-invoice')}
-                        className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                        title="Download GST Exchange Tax Invoice & Replacement Slip"
-                      >
-                        <FileText size={14} className="text-indigo-600" />
-                        <span>Download Exchange Invoice</span>
-                      </button>
-                      {order.returnRequest?.priceAdjustmentType === 'partial_refund' && (
-                        <button
-                          type="button"
-                          onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'credit-note')}
-                          className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                          title="Download GST Credit Note for partial refund adjustment"
-                        >
-                          <FileText size={14} className="text-rose-600" />
-                          <span>Credit Note (Refund)</span>
-                        </button>
-                      )}
-                    </>
+                    <button
+                      type="button"
+                      onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'exchange-invoice')}
+                      className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                      title="Download GST Exchange Tax Invoice & Replacement Slip"
+                    >
+                      <FileText size={14} className="text-indigo-600" />
+                      <span>Download Exchange Invoice</span>
+                    </button>
                   )}
 
                   {/* Original Forward Tax Invoice */}

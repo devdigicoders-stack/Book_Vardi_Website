@@ -120,7 +120,25 @@ export default function ProductDetailPage({ onNavigate }) {
     fetchActivePromotions
   } = useCart();
 
-  const [quantity, setQuantity] = useState(1);
+  const isMeterProduct = Boolean(
+    selectedProduct?.isMeterBased ||
+    selectedProduct?.unit === 'meter' ||
+    String(selectedProduct?.category || '').toLowerCase().includes('unstitched') ||
+    String(selectedProduct?.subCategory || '').toLowerCase().includes('unstitched') ||
+    String(selectedProduct?.name || '').toLowerCase().includes('unstitched')
+  );
+  const minMeter = isMeterProduct ? (Number(selectedProduct?.minMeter) > 0 ? Number(selectedProduct.minMeter) : 0.5) : 1;
+  const meterStep = isMeterProduct ? (Number(selectedProduct?.meterStep) > 0 ? Number(selectedProduct.meterStep) : 0.5) : 1;
+
+  const presetLengths = isMeterProduct ? Array.from(new Set([
+    minMeter,
+    Math.round((minMeter + meterStep * 2) * 100) / 100,
+    Math.round((minMeter + meterStep * 4) * 100) / 100,
+    Math.round((minMeter + meterStep * 6) * 100) / 100,
+    Math.round((minMeter + meterStep * 10) * 100) / 100
+  ])).filter(val => val > 0) : [];
+
+  const [quantity, setQuantity] = useState(() => (isMeterProduct ? minMeter : 1));
   const [activeTab, setActiveTab] = useState('desc'); // 'desc' | 'specs' | 'details'
   const [helpfulVotes, setHelpfulVotes] = useState({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -135,15 +153,31 @@ export default function ProductDetailPage({ onNavigate }) {
 
   const handleAddToCartWithLoader = () => {
     if (isAddingToCart) return;
+    const finalQty = isMeterProduct
+      ? Math.max(minMeter, Math.round(Number(quantity) * 100) / 100)
+      : Math.max(1, Number(quantity) || 1);
+    if (isMeterProduct && Number(quantity) < minMeter) {
+      showToast(`⚠️ Minimum fabric length is ${minMeter} meter(s). Setting quantity to ${minMeter}m.`);
+      setQuantity(minMeter);
+      return;
+    }
     setIsAddingToCart(true);
-    addToCart(finalProductPayload, quantity);
+    addToCart(finalProductPayload, finalQty);
     setTimeout(() => setIsAddingToCart(false), 400);
   };
 
   const handleBuyNowWithLoader = () => {
     if (isBuyingNow) return;
+    const finalQty = isMeterProduct
+      ? Math.max(minMeter, Math.round(Number(quantity) * 100) / 100)
+      : Math.max(1, Number(quantity) || 1);
+    if (isMeterProduct && Number(quantity) < minMeter) {
+      showToast(`⚠️ Minimum fabric length is ${minMeter} meter(s). Setting quantity to ${minMeter}m.`);
+      setQuantity(minMeter);
+      return;
+    }
     setIsBuyingNow(true);
-    addToCart(finalProductPayload, quantity);
+    addToCart(finalProductPayload, finalQty);
     setIsCartOpen(true);
     setTimeout(() => setIsBuyingNow(false), 500);
   };
@@ -211,24 +245,6 @@ export default function ProductDetailPage({ onNavigate }) {
     : Number(selectedProduct?.stock !== undefined ? selectedProduct.stock : (selectedProduct?.stockQuantity !== undefined ? selectedProduct.stockQuantity : 50));
 
   const sizeVariants = rawSizeVariants.length > 0 ? rawSizeVariants : [];
-
-  const isMeterProduct = Boolean(
-    selectedProduct?.isMeterBased ||
-    selectedProduct?.unit === 'meter' ||
-    String(selectedProduct?.category || '').toLowerCase().includes('unstitched') ||
-    String(selectedProduct?.subCategory || '').toLowerCase().includes('unstitched') ||
-    String(selectedProduct?.name || '').toLowerCase().includes('unstitched')
-  );
-  const minMeter = isMeterProduct ? (Number(selectedProduct?.minMeter) > 0 ? Number(selectedProduct.minMeter) : 0.5) : 1;
-  const meterStep = isMeterProduct ? (Number(selectedProduct?.meterStep) > 0 ? Number(selectedProduct.meterStep) : 0.5) : 1;
-
-  const presetLengths = isMeterProduct ? Array.from(new Set([
-    minMeter,
-    Math.round((minMeter + meterStep * 2) * 100) / 100,
-    Math.round((minMeter + meterStep * 4) * 100) / 100,
-    Math.round((minMeter + meterStep * 6) * 100) / 100,
-    Math.round((minMeter + meterStep * 10) * 100) / 100
-  ])).filter(val => val > 0) : [];
 
   const [selectedSize, setSelectedSize] = useState(() => sizeVariants[0]?.size || null);
   const [variantImageOverride, setVariantImageOverride] = useState(null);
@@ -306,6 +322,10 @@ export default function ProductDetailPage({ onNavigate }) {
     mrp: currentMrp,
     stock: currentVariantStock,
     stockQuantity: currentVariantStock,
+    isMeterBased: isMeterProduct,
+    minMeter: isMeterProduct ? minMeter : undefined,
+    meterStep: isMeterProduct ? meterStep : undefined,
+    unit: isMeterProduct ? 'meter' : (selectedProduct?.unit || 'piece'),
     selectedSize: isMeterProduct ? undefined : (selectedSize || undefined),
     variantName: isMeterProduct ? undefined : (selectedSize || undefined),
     image: variantImageOverride || activeVariant?.image || selectedProduct?.image
@@ -619,7 +639,11 @@ export default function ProductDetailPage({ onNavigate }) {
 
   useEffect(() => {
     if (selectedProduct) {
-      setQuantity(1);
+      if (isMeterProduct) {
+        setQuantity(minMeter);
+      } else {
+        setQuantity(1);
+      }
       setShowReviewForm(false);
       setActiveImageIndex(0);
       window.scrollTo(0, 0);
@@ -634,7 +658,7 @@ export default function ProductDetailPage({ onNavigate }) {
         setSelectedBundleItems([]);
       }
     }
-  }, [selectedProduct]);
+  }, [selectedProduct, isMeterProduct, minMeter]);
 
   useEffect(() => {
     if (!promotions || promotions.length === 0) {
@@ -776,6 +800,9 @@ export default function ProductDetailPage({ onNavigate }) {
   };
 
   const handleBuyNow = () => {
+    const finalQty = isMeterProduct
+      ? Math.max(minMeter, Math.round(Number(quantity) * 100) / 100)
+      : (Number(quantity) || 1);
     if (selectedProduct.category === 'kits' && selectedProduct.kitItems) {
       if (selectedBundleItems.length > 0) {
         const selectedProducts = selectedProduct.kitItems.filter((item) => selectedBundleItems.includes(item.id));
@@ -787,12 +814,12 @@ export default function ProductDetailPage({ onNavigate }) {
           price: bundlePrice,
           kitItems: selectedProducts,
           bundleType: 'kit'
-        }, quantity);
+        }, finalQty);
       } else {
-        addToCart({ ...selectedProduct, bundleType: 'kit' }, quantity);
+        addToCart({ ...selectedProduct, bundleType: 'kit' }, finalQty);
       }
     } else {
-      addToCart(productPayload, quantity);
+      addToCart(productPayload, finalQty);
     }
     setIsCartOpen(true);
   };
@@ -1458,18 +1485,28 @@ export default function ProductDetailPage({ onNavigate }) {
                         <Tag size={14} className="text-teal-700" />
                         <span>Fabric Length (Meters):</span>
                       </span>
-                      <span className="text-xs font-bold text-teal-800 font-mono">
-                        ₹{Number(currentPrice).toFixed(2)} / meter
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-extrabold text-teal-900 bg-teal-100/90 px-2 py-0.5 rounded-full border border-teal-300">
+                          Min Order: {Number(minMeter).toFixed(2)}m
+                        </span>
+                        <span className="text-xs font-bold text-teal-800 font-mono">
+                          ₹{Number(currentPrice).toFixed(2)} / meter
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex items-center border border-teal-300 rounded-xl bg-white p-1">
                         <button
                           type="button"
+                          disabled={Number(quantity) <= minMeter}
                           onClick={() => setQuantity((q) => Math.max(minMeter, Math.round((Number(q) - meterStep) * 100) / 100))}
-                          className="h-8 px-2.5 flex items-center justify-center rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold cursor-pointer text-xs"
-                          title={`Decrease by ${Number(meterStep).toFixed(2)}m`}
+                          className={`h-8 px-2.5 flex items-center justify-center rounded-lg font-bold text-xs transition-colors ${
+                            Number(quantity) <= minMeter
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                              : 'bg-teal-50 hover:bg-teal-100 text-teal-800 cursor-pointer'
+                          }`}
+                          title={Number(quantity) <= minMeter ? `Minimum length is ${Number(minMeter).toFixed(2)}m` : `Decrease by ${Number(meterStep).toFixed(2)}m`}
                         >
                           -{Number(meterStep).toFixed(2)}m
                         </button>
@@ -1484,6 +1521,11 @@ export default function ProductDetailPage({ onNavigate }) {
                               setQuantity(minMeter);
                             } else {
                               setQuantity(Math.max(minMeter, Math.round(val * 100) / 100));
+                            }
+                          }}
+                          onBlur={() => {
+                            if (Number(quantity) < minMeter) {
+                              setQuantity(minMeter);
                             }
                           }}
                           className="w-20 text-center font-extrabold text-sm text-teal-950 focus:outline-hidden bg-transparent font-mono"
@@ -1518,7 +1560,12 @@ export default function ProductDetailPage({ onNavigate }) {
                     </div>
 
                     <div className="text-right pt-1 border-t border-teal-200/60 flex items-center justify-between">
-                      <span className="text-xs text-teal-800 font-medium">Selected: <strong>{Number(quantity).toFixed(2)} Meters</strong></span>
+                      <span className="text-xs text-teal-800 font-medium">
+                        Selected: <strong>{Number(quantity).toFixed(2)} Meters</strong>
+                        {Number(quantity) < minMeter && (
+                          <span className="text-rose-600 font-bold ml-1.5">(Min {minMeter}m required)</span>
+                        )}
+                      </span>
                       <div>
                         <span className="text-[10px] text-gray-500 block">Total Fabric Cost:</span>
                         <span className="font-display font-extrabold text-xl text-brand-teal font-mono">

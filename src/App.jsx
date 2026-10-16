@@ -276,9 +276,21 @@ function MainStore() {
       {/* Main Storefront Views */}
       <main className="flex-grow">
         <Suspense fallback={
-          <div className="w-full py-12 flex flex-col items-center justify-center transition-opacity duration-200">
-            <div className="w-6 h-6 border-2 border-brand-teal/20 border-t-brand-teal rounded-full animate-spin mb-2" />
-            <span className="text-[11px] font-semibold text-gray-400">Loading view...</span>
+          <div className="w-full min-h-[45vh] flex flex-col items-center justify-center py-16 px-4 animate-in fade-in duration-300">
+            <div className="relative flex items-center justify-center mb-4">
+              <div className="w-14 h-14 rounded-2xl bg-brand-teal/10 border border-brand-teal/20 flex items-center justify-center text-brand-teal shadow-xs animate-pulse">
+                <span className="font-display font-black text-xl tracking-tighter text-brand-teal">BV</span>
+              </div>
+              <div className="absolute -inset-1.5 rounded-2xl border-2 border-brand-teal border-t-transparent animate-spin" />
+            </div>
+            <div className="flex items-center gap-2 text-xs font-extrabold text-brand-teal tracking-wide mb-1">
+              <span>BookVardi Storefront</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-yellow animate-ping" />
+            </div>
+            <span className="text-[11px] font-semibold text-gray-400">Loading page & catalog data...</span>
+            <div className="w-36 h-1 bg-gray-100 rounded-full mt-3 overflow-hidden">
+              <div className="h-full bg-linear-to-r from-brand-teal to-brand-yellow rounded-full animate-pulse w-3/4" />
+            </div>
           </div>
         }>
           <PageErrorBoundary>

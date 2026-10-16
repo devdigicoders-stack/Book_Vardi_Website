@@ -383,6 +383,25 @@ export default function CheckoutPage({ onNavigate }) {
       return;
     }
 
+    // Validate minimum fabric length for meter-based products
+    const invalidMeterItem = selectedCartItems.find((it) => {
+      const isMeter = Boolean(
+        it.isMeterBased ||
+        it.unit === 'meter' ||
+        String(it.category || '').toLowerCase().includes('unstitched') ||
+        String(it.subCategory || '').toLowerCase().includes('unstitched') ||
+        String(it.name || '').toLowerCase().includes('unstitched')
+      );
+      const minMeter = isMeter ? (Number(it.minMeter) > 0 ? Number(it.minMeter) : 0.5) : 1;
+      return isMeter && Number(it.quantity) < minMeter;
+    });
+
+    if (invalidMeterItem) {
+      const minRequired = Number(invalidMeterItem.minMeter) > 0 ? Number(invalidMeterItem.minMeter) : 0.5;
+      showToast(`⚠️ "${invalidMeterItem.name}" requires a minimum order length of ${minRequired} meter(s). Please adjust before proceeding.`);
+      return;
+    }
+
     // Validate delivery address & contact
     let activeShippingAddress = null;
     if (isAuthenticated) {
@@ -1069,21 +1088,29 @@ export default function CheckoutPage({ onNavigate }) {
                             String(item.subCategory || '').toLowerCase().includes('unstitched') ||
                             String(item.name || '').toLowerCase().includes('unstitched')
                           );
+                          const minMeter = isMeter ? (Number(item.minMeter) > 0 ? Number(item.minMeter) : 0.5) : 1;
                           const meterStep = isMeter ? (Number(item.meterStep) > 0 ? Number(item.meterStep) : 0.5) : 1;
                           return (
                             <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
-                              <span className="text-[11px] font-extrabold text-brand-teal font-mono">
-                                ₹{Number(item.price).toFixed(2)}{isMeter ? '/m' : ''} {variantText ? `• ${variantText}` : ''}
+                              <span className="text-[11px] font-extrabold text-brand-teal font-mono flex items-center gap-1.5 flex-wrap">
+                                <span>₹{Number(item.price).toFixed(2)}{isMeter ? '/m' : ''}</span>
+                                {isMeter && (
+                                  <span className="text-[9px] font-bold text-teal-800 bg-teal-50 px-1 py-0.2 rounded border border-teal-200">
+                                    Min: {minMeter}m
+                                  </span>
+                                )}
+                                {variantText ? <span>• {variantText}</span> : null}
                               </span>
 
                               {/* Stepper with count increment and decrement buttons */}
                               <div className="flex items-center border border-gray-200 rounded-md bg-gray-50 overflow-hidden shadow-2xs shrink-0">
                                 <button
                                   type="button"
-                                  className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
+                                  disabled={isMeter && Number(item.quantity) <= minMeter}
+                                  className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                                   onClick={() => updateQuantity(itemKey, isMeter ? -meterStep : -1)}
                                   aria-label="Decrease quantity"
-                                  title={isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity"}
+                                  title={isMeter && Number(item.quantity) <= minMeter ? `Minimum order is ${minMeter}m` : (isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity")}
                                 >
                                   <Minus size={10} strokeWidth={2.5} />
                                 </button>

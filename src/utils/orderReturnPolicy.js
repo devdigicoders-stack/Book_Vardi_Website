@@ -6,14 +6,73 @@
 
 export const isItemUnstitched = (item) => {
   if (!item) return false;
+
+  const prod = (typeof item.product === 'object' && item.product !== null)
+    ? item.product
+    : ((typeof item.productId === 'object' && item.productId !== null) ? item.productId : {});
+
+  const isMeterFlag = Boolean(
+    item.isMeterBased === true ||
+    item.isMeterBased === 'true' ||
+    prod.isMeterBased === true ||
+    prod.isMeterBased === 'true'
+  );
+
+  const rawUnit = String(
+    item.unit ||
+    prod.unit ||
+    item.measureScale ||
+    prod.measureScale ||
+    item.measureUnit ||
+    prod.measureUnit ||
+    ''
+  ).toLowerCase().trim();
+
+  const isMeterUnit = (
+    rawUnit === 'meter' ||
+    rawUnit === 'meters' ||
+    rawUnit === 'mtr' ||
+    rawUnit === 'm' ||
+    rawUnit.includes('meter')
+  );
+
+  const cand = [
+    item.category,
+    prod.category,
+    item.subCategory,
+    prod.subCategory,
+    item.name,
+    prod.name,
+    item.title,
+    prod.title,
+    rawUnit
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const hasFabricKeyword = (
+    cand.includes('unstitched') ||
+    cand.includes('unstiched') ||
+    cand.includes('cloth') ||
+    cand.includes('fabric') ||
+    cand.includes('shirting') ||
+    cand.includes('suiting') ||
+    cand.includes('kapda') ||
+    cand.includes('than') ||
+    cand.includes('dress material')
+  );
+
+  const rawQty = Number(item.quantity ?? item.qty);
+  const isDecimalQuantity = !isNaN(rawQty) && (rawQty % 1 !== 0);
+  const hasMeterRules = Boolean(
+    Number(item.minMeter || prod.minMeter) > 0 ||
+    Number(item.meterStep || prod.meterStep) > 0
+  );
+
   return Boolean(
-    item.isMeterBased ||
-    item.product?.isMeterBased ||
-    item.unit === 'meter' ||
-    item.product?.unit === 'meter' ||
-    String(item.category || item.product?.category || '').toLowerCase().includes('unstitched') ||
-    String(item.subCategory || item.product?.subCategory || '').toLowerCase().includes('unstitched') ||
-    String(item.name || item.product?.name || '').toLowerCase().includes('unstitched')
+    isMeterFlag ||
+    isMeterUnit ||
+    hasFabricKeyword ||
+    isDecimalQuantity ||
+    hasMeterRules
   );
 };
 

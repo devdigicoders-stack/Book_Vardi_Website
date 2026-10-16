@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2, AlertCircle, Sparkles } from 'lucide-react';
+import { X, RotateCcw, ArrowRightLeft, CheckCircle2, Loader2, Calendar, ShieldCheck, CreditCard, Building2, AlertCircle, Sparkles, Ruler } from 'lucide-react';
 import { requestReturnExchangeApi, fetchProductByIdFromBackend } from '../../utils/api';
 import {
   isItemReturnable,
@@ -63,7 +64,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
 
   const isFabricItem = Boolean(isUnstitched);
   const currentQuantity = Number(activeItem.quantity || 1);
-  const ratePerMeter = Number(activeItem.price || (activeItem.total / (currentQuantity || 1)) || 0);
+  const effectiveUnitPrice = Number(activeItem.finalPrice ?? (activeItem.total && currentQuantity ? activeItem.total / currentQuantity : activeItem.price) ?? activeItem.price ?? 0);
+  const ratePerMeter = effectiveUnitPrice;
+  const meterStep = Number(fetchedProduct?.meterStep || activeItem?.meterStep || 0.25);
+  const minMeter = Number(fetchedProduct?.minMeter || activeItem?.minMeter || 0.5);
 
   // Category Configuration and Tabs
   const replacementOptionsConfig = getCategoryReplacementOptions(activeItem, fetchedProduct);
@@ -550,11 +554,16 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                       Select Required Replacement Length (in Meters) *
                     </label>
                     <span className="text-[11px] text-gray-500 font-medium">
-                      Current Cut: <strong className="text-gray-800 font-mono">{currentQuantity.toFixed(2)}m</strong>
+                      Current Cut: <strong className="text-gray-800 font-mono">{currentQuantity % 1 === 0 ? currentQuantity.toFixed(1) : currentQuantity}m</strong>
                     </span>
                   </div>
 
                   <div className="bg-gray-50/80 border border-gray-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-teal-900 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-xl">
+                      <Ruler size={14} className="text-teal-700 shrink-0" />
+                      <span>Cloth Measure: Exchanged strictly in Meters according to original purchase unit ({currentQuantity % 1 === 0 ? currentQuantity.toFixed(1) : currentQuantity}m).</span>
+                    </div>
+
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gray-700">Fabric Rate:</span>
                       <span className="text-xs font-mono font-extrabold text-teal-800">₹{ratePerMeter.toFixed(2)} / meter</span>
@@ -564,7 +573,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
-                        onClick={() => setExchangeLength(prev => Math.max(0.5, Math.round((Number(prev || 1) - 0.5) * 10) / 10))}
+                        onClick={() => setExchangeLength(prev => Math.max(minMeter, Math.round((Number(prev || currentQuantity) - meterStep) * 100) / 100))}
                         className="w-10 h-10 rounded-xl bg-white border border-gray-300 hover:border-brand-teal text-gray-800 font-bold text-lg flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
                       >
                         -
@@ -572,8 +581,8 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                       <div className="flex-1 relative">
                         <input
                           type="number"
-                          step="0.25"
-                          min="0.5"
+                          step={meterStep}
+                          min={minMeter}
                           max="50"
                           value={exchangeLength}
                           onChange={(e) => setExchangeLength(parseFloat(e.target.value) || '')}
@@ -583,7 +592,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                       </div>
                       <button
                         type="button"
-                        onClick={() => setExchangeLength(prev => Math.round((Number(prev || 1) + 0.5) * 10) / 10)}
+                        onClick={() => setExchangeLength(prev => Math.round((Number(prev || currentQuantity) + meterStep) * 100) / 100)}
                         className="w-10 h-10 rounded-xl bg-white border border-gray-300 hover:border-brand-teal text-gray-800 font-bold text-lg flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
                       >
                         +
@@ -594,7 +603,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                     <div className="space-y-1">
                       <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Quick Presets:</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0].map((preset) => (
+                        {Array.from(new Set([
+                          Number(currentQuantity),
+                          1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0
+                        ])).filter(val => !isNaN(val) && val >= minMeter).sort((a, b) => a - b).map((preset) => (
                           <button
                             key={preset}
                             type="button"
@@ -607,7 +619,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                                 : 'bg-white text-gray-700 border-gray-200 hover:border-brand-teal'
                             }`}
                           >
-                            {preset.toFixed(1)}m {Number(currentQuantity) === preset && '(Current)'}
+                            {preset % 1 === 0 ? preset.toFixed(1) : preset}m {Number(currentQuantity) === preset && '(Current)'}
                           </button>
                         ))}
                       </div>

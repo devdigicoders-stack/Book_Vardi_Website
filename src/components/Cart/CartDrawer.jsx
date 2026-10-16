@@ -177,6 +177,7 @@ export default function CartDrawer({ onNavigate }) {
               const itemKey = item.cartItemId || getCartItemKey(item);
               const variantText = item.variantName || item.selectedSize || item.selectedColor || '';
               const isMeter = isUnstitchedItem(item);
+              const minMeter = isMeter ? (Number(item.minMeter) > 0 ? Number(item.minMeter) : 0.5) : 1;
               const meterStep = isMeter ? (Number(item.meterStep) > 0 ? Number(item.meterStep) : 0.5) : 1;
               const itemTotal = (Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2);
 
@@ -212,6 +213,11 @@ export default function CartDrawer({ onNavigate }) {
                     </div>
                     <div className="text-xs font-extrabold text-brand-teal mt-0.5 flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono">₹{Number(item.price).toFixed(2)}{isMeter ? '/m' : ''}</span>
+                      {isMeter && (
+                        <span className="text-[10px] font-bold text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                          Min: {minMeter}m
+                        </span>
+                      )}
                       {isMeter && (
                         <span className="text-[11px] font-mono text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">
                           Total: ₹{itemTotal}

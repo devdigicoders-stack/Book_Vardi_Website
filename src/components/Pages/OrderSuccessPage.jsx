@@ -242,10 +242,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
     currentStatus.includes('exchange');
   const isRefundTypeRequest = !isExchangeOrder;
   const isRefunded = isRefundTypeRequest;
-  const hasPendingItems = !currentStatus || ['pending', 'placed', 'unconfirmed'].includes(currentStatus) || (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
-    const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-    return !itStatus || ['pending', 'placed', 'unconfirmed'].includes(itStatus);
-  }));
+  const isOrderConfirmed = Boolean(
+    (currentStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(currentStatus)) ||
+    (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
+      const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+      return itStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(itStatus);
+    }))
+  );
+  const hasPendingItems = !isOrderConfirmed;
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
   const isPaidOnline = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
   const isPaymentVerified = isPaidOnline;
@@ -888,7 +892,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
 
                       {/* Direct Statutory PDF Action Buttons */}
                       <div className="pt-2 border-t border-amber-200/60 flex flex-wrap items-center gap-2">
-                        {(!isExchange || order.returnRequest?.priceAdjustmentType === 'partial_refund') && (
+                        {!isExchange && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -972,12 +976,35 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                               <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider">
                                 {isReturnOtpActive ? 'Return Pickup OTP' : isExchangeOtpActive ? 'Exchange Handover OTP' : 'Doorstep Delivery OTP'}
                               </div>
-                              <div className={`text-xs font-black ${
-                                isReturnOtpActive ? 'text-cyan-950' : isExchangeOtpActive ? 'text-purple-950' : 'text-emerald-950'
-                              }`}>
-                                Sent via SMS to Mobile
-                              </div>
-                              <div className="text-[10px] text-gray-600 font-medium">
+                              {deliveryOtp ? (
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={`font-mono text-base font-black tracking-widest px-2.5 py-0.5 rounded-lg border ${
+                                    isReturnOtpActive
+                                      ? 'text-cyan-950 bg-cyan-100 border-cyan-300'
+                                      : isExchangeOtpActive
+                                      ? 'text-purple-950 bg-purple-100 border-purple-300'
+                                      : 'text-emerald-950 bg-emerald-100 border-emerald-300'
+                                  }`}>
+                                    {deliveryOtp}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={handleCopyOtp}
+                                    className={`text-xs font-bold underline cursor-pointer ${
+                                      isReturnOtpActive ? 'text-cyan-800' : isExchangeOtpActive ? 'text-purple-800' : 'text-emerald-800'
+                                    }`}
+                                  >
+                                    {copiedOtp ? 'Copied!' : 'Copy'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className={`text-xs font-black ${
+                                  isReturnOtpActive ? 'text-cyan-950' : isExchangeOtpActive ? 'text-purple-950' : 'text-emerald-950'
+                                }`}>
+                                  Sent via SMS to Mobile
+                                </div>
+                              )}
+                              <div className="text-[10px] text-gray-600 font-medium mt-0.5">
                                 Share 4-digit code verbally with executive upon arrival
                               </div>
                             </div>
@@ -1073,16 +1100,37 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                                   : 'Handshake Security OTP'}
                               </span>
                               <div className="flex items-center gap-2 mt-1">
-                                <span className={`text-xs font-black px-2.5 py-1 rounded-lg border shadow-2xs flex items-center gap-1.5 ${
-                                  isReturnOtpActive
-                                    ? 'bg-cyan-100/90 text-cyan-950 border-cyan-300'
-                                    : isExchangeOtpActive
-                                    ? 'bg-purple-100/90 text-purple-950 border-purple-300'
-                                    : 'bg-emerald-100/90 text-emerald-950 border-emerald-300'
-                                }`}>
-                                  <span>📲</span>
-                                  <span>Sent via SMS to Mobile</span>
-                                </span>
+                                {deliveryOtp ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-mono text-sm font-black tracking-wider px-2.5 py-1 rounded-lg border shadow-2xs ${
+                                      isReturnOtpActive
+                                        ? 'bg-cyan-100 text-cyan-950 border-cyan-300'
+                                        : isExchangeOtpActive
+                                        ? 'bg-purple-100 text-purple-950 border-purple-300'
+                                        : 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                                    }`}>
+                                      {deliveryOtp}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={handleCopyOtp}
+                                      className="text-xs font-bold underline text-gray-700 hover:text-black cursor-pointer"
+                                    >
+                                      {copiedOtp ? 'Copied!' : 'Copy'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className={`text-xs font-black px-2.5 py-1 rounded-lg border shadow-2xs flex items-center gap-1.5 ${
+                                    isReturnOtpActive
+                                      ? 'bg-cyan-100/90 text-cyan-950 border-cyan-300'
+                                      : isExchangeOtpActive
+                                      ? 'bg-purple-100/90 text-purple-950 border-purple-300'
+                                      : 'bg-emerald-100/90 text-emerald-950 border-emerald-300'
+                                  }`}>
+                                    <span>📲</span>
+                                    <span>Sent via SMS to Mobile</span>
+                                  </span>
+                                )}
                               </div>
                               <span className={`text-[10px] mt-1 block ${
                                 isReturnOtpActive ? 'text-cyan-700' : isExchangeOtpActive ? 'text-purple-700' : 'text-emerald-700'
@@ -1419,18 +1467,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200">
           <button
             type="button"
-            disabled={hasPendingItems}
-            onClick={() => {
-              if (hasPendingItems) return;
-              setIsInvoiceModalOpen(true);
-            }}
-            title={hasPendingItems ? "Tax invoice locked until order is confirmed by seller" : ""}
-            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 font-extrabold text-xs transition-colors ${
+            onClick={() => setIsInvoiceModalOpen(true)}
+            title={hasPendingItems ? "Tax invoice locked until order is confirmed by seller" : "View & Download Tax Invoice"}
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border-2 font-extrabold text-xs transition-colors cursor-pointer ${
               hasPendingItems
-                ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                ? 'border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800'
                 : isCancelled
-                ? 'border-rose-600 text-rose-600 hover:bg-rose-50 cursor-pointer'
-                : 'border-brand-teal text-brand-teal hover:bg-brand-teal/5 cursor-pointer'
+                ? 'border-rose-600 text-rose-600 hover:bg-rose-50'
+                : 'border-brand-teal text-brand-teal hover:bg-brand-teal/5'
             }`}
           >
             {hasPendingItems ? (

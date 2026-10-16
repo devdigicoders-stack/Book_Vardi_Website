@@ -248,7 +248,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     isBulkOrder;
 
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
-  const isPending = !isBulkOrder && (!normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus));
+  const isPendingOrder = !isBulkOrder && (!normStatus || ['pending', 'placed', 'unconfirmed', 'created', 'draft'].includes(normStatus));
 
   const isOrderConfirmedStatus = [
     'assigned',
@@ -282,18 +282,18 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     'refunded',
     'cancelled',
     'canceled'
-  ].includes(normStatus) || (isBulkOrder && normStatus.length > 0) || (!isPending && normStatus.length > 0) || isPaymentVerified;
+  ].includes(normStatus) || (isBulkOrder && normStatus.length > 0) || (!isPendingOrder && normStatus.length > 0);
 
   const hasConfirmedItem = Array.isArray(order.items) && order.items.some(it => {
     const itStatus = String(it.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-    return itStatus && !['pending', 'placed', 'unconfirmed', 'draft'].includes(itStatus);
+    return itStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(itStatus);
   });
 
-  const isOrderStrictlyPending = isPending && !isPaymentVerified && !isOrderConfirmedStatus;
-
+  // Tax Invoice generates when order status is confirmed (or processing, packed, shipped, delivered, completed)
+  // Payment status does NOT block invoice generation (e.g. COD orders are generated upon order confirmation)
   const confirmed = isBulkOrder
-    ? (isOrderConfirmedStatus || isPaymentVerified || normStatus.length > 0)
-    : (isCancelled || isOrderConfirmedStatus || isPaymentVerified || hasConfirmedItem || !isOrderStrictlyPending);
+    ? (isOrderConfirmedStatus || normStatus.length > 0)
+    : (isCancelled || isOrderConfirmedStatus || hasConfirmedItem || !isPendingOrder || isPaymentVerified);
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
@@ -319,8 +319,21 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     }
   ];
 
-  let itemsTaxableValue = 0;
-  let itemsTaxAmount = 0;
+  const rawSubtotal = Number(order.subtotal || 0);
+  const shippingCost = Number(order.shippingCost ?? order.shippingFee ?? 0);
+  const discount = Number(order.discount ?? order.discountAmount ?? order.couponDiscount ?? 0);
+  const pointsDiscount = Number(order.pointsDiscount || 0);
+  const totalDiscounts = discount + pointsDiscount;
+
+  const itemsSum = items.reduce((acc, it) => acc + (Number(it.originalPrice ?? it.price ?? it.finalPrice ?? 0) * Number(it.quantity || 1)), 0);
+  const isItemPriceAlreadyDiscounted = rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
+
+  const subtotal = rawSubtotal > 0 ? rawSubtotal : itemsSum;
+  const grandTotal = Number(order.total || order.totalAmount || Math.max(0, subtotal + shippingCost - totalDiscounts));
+  const discountRatio = subtotal > 0 ? Math.min(1, totalDiscounts / subtotal) : 0;
+
+  let totalTaxableValue = 0;
+  let totalTaxAmount = 0;
 
   const itemBreakdowns = items.map((item) => {
     const isUnstitched = Boolean(
@@ -343,26 +356,38 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     const rawQty = Number(item.quantity || 1);
     const displayQty = isUnstitched ? rawQty.toFixed(2) : (rawQty % 1 === 0 ? rawQty : rawQty.toFixed(2));
     const qty = rawQty;
-    const unitPrice = Number(item.price || 0);
-    const grossPrice = unitPrice * qty;
+
+    let unitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+    if (isItemPriceAlreadyDiscounted && totalDiscounts > 0 && subtotal > 0) {
+      const proportion = (unitPrice * qty) / itemsSum;
+      const allocDiscount = totalDiscounts * proportion;
+      unitPrice = qty > 0 ? Math.round(((unitPrice * qty + allocDiscount) / qty) * 100) / 100 : unitPrice;
+    }
+
+    const grossPrice = Math.round((unitPrice * qty) * 100) / 100;
     const rate = getProductGstRate(item);
     const isInclusive = item.isGstInclusive !== false && order.isGstInclusive !== false;
 
-    let taxableVal = grossPrice;
+    const itemDiscount = item.offerDiscount !== undefined && item.offerDiscount !== null && !isNaN(Number(item.offerDiscount)) && Number(item.offerDiscount) > 0
+      ? Number(item.offerDiscount)
+      : (discountRatio > 0 ? Math.round(grossPrice * discountRatio * 100) / 100 : 0);
+    const netItemPayable = Math.max(0, Math.round((grossPrice - itemDiscount) * 100) / 100);
+
+    let taxableVal = netItemPayable;
     let taxAmt = 0;
 
     if (rate > 0) {
       if (isInclusive) {
-        taxableVal = Math.round((grossPrice / (1 + rate / 100)) * 100) / 100;
-        taxAmt = Math.round((grossPrice - taxableVal) * 100) / 100;
+        taxableVal = Math.round((netItemPayable / (1 + rate / 100)) * 100) / 100;
+        taxAmt = Math.round((netItemPayable - taxableVal) * 100) / 100;
       } else {
-        taxableVal = grossPrice;
-        taxAmt = Math.round(((grossPrice * rate) / 100) * 100) / 100;
+        taxableVal = netItemPayable;
+        taxAmt = Math.round(((netItemPayable * rate) / 100) * 100) / 100;
       }
     }
 
-    itemsTaxableValue += taxableVal;
-    itemsTaxAmount += taxAmt;
+    totalTaxableValue += taxableVal;
+    totalTaxAmount += taxAmt;
 
     return {
       ...item,
@@ -370,17 +395,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       rawQty,
       unitPrice,
       grossPrice,
+      itemDiscount,
+      netItemPayable,
       rate,
       taxableVal,
       taxAmt
     };
   });
-
-  const subtotal = Number(order.subtotal || items.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0));
-  const shippingCost = Number(order.shippingCost ?? order.shippingFee ?? 0);
-  const discount = Number(order.discount ?? order.discountAmount ?? 0);
-  const pointsDiscount = Number(order.pointsDiscount || 0);
-  const grandTotal = Number(order.total || order.totalAmount || (subtotal + shippingCost - discount - pointsDiscount));
 
   // Delivery service GST (standard 18% GST)
   let shippingTaxable = 0;
@@ -389,19 +410,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     const shippingGstRate = 18;
     shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
     shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+    totalTaxableValue += shippingTaxable;
+    totalTaxAmount += shippingTax;
   }
 
-  // Combined gross values before discount
-  const grossBill = subtotal + shippingCost;
-  const grossTaxAmt = itemsTaxAmount + shippingTax;
-
-  // Proportionally scale tax if discounts applied
-  const totalTaxAmount = (grossBill > 0 && (discount + pointsDiscount) > 0)
-    ? Math.round(grossTaxAmt * (Math.max(0, grandTotal) / grossBill) * 100) / 100
-    : Math.round(grossTaxAmt * 100) / 100;
-
-  // Total Taxable Base Value
-  const totalTaxableValue = Math.round((grandTotal - totalTaxAmount) * 100) / 100;
+  totalTaxableValue = Math.round(totalTaxableValue * 100) / 100;
+  totalTaxAmount = Math.round(totalTaxAmount * 100) / 100;
+  if (Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) > 0 && Math.abs((totalTaxableValue + totalTaxAmount) - grandTotal) <= 0.05) {
+    totalTaxableValue = Math.round((grandTotal - totalTaxAmount) * 100) / 100;
+  }
 
   const handlePrint = () => {
     window.print();
@@ -692,17 +709,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
         {/* Strict Verification Banner */}
         {!confirmed ? (
           <div className="p-8 text-center space-y-4">
-            <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center mx-auto">
+            <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center mx-auto shadow-inner">
               <Lock size={28} />
             </div>
             <div>
               <h4 className="font-display font-extrabold text-lg text-gray-900">Tax Invoice Generation Locked</h4>
-              <p className="text-xs text-gray-500 max-w-md mx-auto mt-1">
-                Official Tax Invoice can only be created strictly after payment status is verified and confirmed.
+              <p className="text-xs text-gray-600 max-w-md mx-auto mt-1 leading-relaxed">
+                Official Tax Invoice will be generated automatically once the order status is confirmed by the seller.
               </p>
             </div>
-            <div className="inline-block bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold px-4 py-2 rounded-xl">
-              Current Payment Status: <span className="uppercase font-black text-amber-950">{order.paymentStatus || 'Pending Verification'}</span>
+            <div className="inline-flex flex-col items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold px-5 py-2.5 rounded-xl shadow-2xs">
+              <div>
+                Current Order Status: <span className="uppercase font-black text-amber-950">{order.overallStatus || order.status || 'Pending Confirmation'}</span>
+              </div>
+              <p className="text-[10px] text-amber-700/90 font-medium">
+                (Payment status does not block invoice generation. Once the order is confirmed, the invoice is generated automatically.)
+              </p>
             </div>
           </div>
         ) : (

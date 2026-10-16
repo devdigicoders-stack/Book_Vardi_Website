@@ -891,9 +891,14 @@ export function CartProvider({ children }) {
     }
 
     const isMeter = isUnstitchedItem(product);
-    const qtyToAdd = typeof quantity === 'number' && quantity > 0
-      ? (isMeter ? Math.round(quantity * 100) / 100 : quantity)
-      : (isMeter ? (Number(product.minMeter) > 0 ? Number(product.minMeter) : 0.5) : 1);
+    const minMeter = isMeter ? (Number(product.minMeter) > 0 ? Number(product.minMeter) : 0.5) : 1;
+    const meterStep = isMeter ? (Number(product.meterStep) > 0 ? Number(product.meterStep) : 0.5) : 1;
+    let qtyToAdd = typeof quantity === 'number' && quantity > 0
+      ? (isMeter ? Math.max(minMeter, Math.round(quantity * 100) / 100) : quantity)
+      : minMeter;
+    if (isMeter && qtyToAdd < minMeter) {
+      qtyToAdd = minMeter;
+    }
     const prodId = product?.id !== undefined ? product.id : product?._id;
     const computedKey = getCartItemKey(product);
     const cartItemId = product?.cartItemId || computedKey;
@@ -923,6 +928,8 @@ export function CartProvider({ children }) {
       stockQuantity: itemStock,
       quantity: qtyToAdd,
       isMeterBased: isMeter ? true : Boolean(product?.isMeterBased),
+      minMeter: isMeter ? minMeter : undefined,
+      meterStep: isMeter ? meterStep : undefined,
       unit: isMeter ? 'meter' : (product?.unit || 'piece'),
       selected: true
     };
@@ -1068,7 +1075,13 @@ export function CartProvider({ children }) {
             if (isMeter && newQty < minMeter && delta < 0) {
               return null;
             }
-            return newQty > 0 ? { ...item, quantity: newQty, isMeterBased: isMeter ? true : Boolean(item.isMeterBased) } : null;
+            return newQty > 0 ? {
+              ...item,
+              quantity: newQty,
+              isMeterBased: isMeter ? true : Boolean(item.isMeterBased),
+              minMeter: isMeter ? minMeter : item.minMeter,
+              meterStep: isMeter ? (Number(item.meterStep) > 0 ? Number(item.meterStep) : 0.5) : item.meterStep
+            } : null;
           }
           return item;
         })
