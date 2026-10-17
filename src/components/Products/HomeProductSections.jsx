@@ -19,14 +19,33 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
   const safeRecentlyViewedIds = Array.isArray(recentlyViewedIds) ? recentlyViewedIds : EMPTY_ARRAY;
   const recentlyViewedKey = safeRecentlyViewedIds.join(',');
   const cacheKey = `${activeCategory || 'all'}_${recentlyViewedKey}`;
-  const initialCached = carouselMemoryCache.get(cacheKey);
+
+  // Read initial cached state from memory or sessionStorage for instant 0ms rendering
+  const getInitialCached = () => {
+    if (carouselMemoryCache.has(cacheKey)) {
+      return carouselMemoryCache.get(cacheKey);
+    }
+    try {
+      const raw = sessionStorage.getItem(`bv_home_carousel_${cacheKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.featuredList) && parsed.featuredList.length > 0) {
+          carouselMemoryCache.set(cacheKey, parsed);
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const initialCached = getInitialCached();
 
   const [recentlyViewed, setRecentlyViewed] = useState(() => initialCached?.recentList || []);
   const [featured, setFeatured] = useState(() => initialCached?.featuredList || []);
   const [specialOffers, setSpecialOffers] = useState(() => initialCached?.specialList || []);
   const [recommended, setRecommended] = useState(() => initialCached?.recommendedList || []);
   const [searchResults, setSearchResults] = useState([]);
-  const [loading, setLoading] = useState(() => !initialCached && contextProducts.length === 0);
+  const [loading, setLoading] = useState(() => !initialCached || !initialCached.featuredList || initialCached.featuredList.length === 0);
 
   // Helper fallback for rotated context products if backend is empty/offline
   const getFallbackProducts = useCallback((offset, count, category = null) => {
@@ -41,14 +60,18 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
 
   // Fetch all 4 carousel rows from Backend
   const loadBackendCarouselData = useCallback(async (isMountedRef) => {
-    if (carouselMemoryCache.has(cacheKey)) {
-      const cached = carouselMemoryCache.get(cacheKey);
+    const cached = getInitialCached();
+    if (cached) {
       if (isMountedRef.current) {
-        setRecentlyViewed(cached.recentList);
-        setFeatured(cached.featuredList);
-        setSpecialOffers(cached.specialList);
-        setRecommended(cached.recommendedList);
+        setRecentlyViewed(cached.recentList || []);
+        setFeatured(cached.featuredList || []);
+        setSpecialOffers(cached.specialList || []);
+        setRecommended(cached.recommendedList || []);
         setLoading(false);
+      }
+    } else {
+      if (isMountedRef.current) {
+        setLoading(true);
       }
     }
 
@@ -80,12 +103,16 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
         });
       };
 
-      const recentList = filterApproved(rawRecent.length > 0 ? rawRecent : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(0, 8, activeCategory)));
-      const featuredList = filterApproved(rawFeatured.length > 0 ? rawFeatured : (rawRecommended.length > 0 ? rawRecommended : getFallbackProducts(2, 8, activeCategory)));
-      const specialList = filterApproved(rawSpecial.length > 0 ? rawSpecial : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(4, 8, activeCategory)));
-      const recommendedList = filterApproved(rawRecommended.length > 0 ? rawRecommended : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(6, 8, activeCategory)));
+      const recentList = filterApproved(rawRecent.length > 0 ? rawRecent : (safeRecentlyViewedIds.length > 0 && rawFeatured.length > 0 ? rawFeatured : []));
+      const featuredList = filterApproved(rawFeatured.length > 0 ? rawFeatured : (rawRecommended.length > 0 ? rawRecommended : getFallbackProducts(0, 8, activeCategory)));
+      const specialList = filterApproved(rawSpecial.length > 0 ? rawSpecial : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(2, 8, activeCategory)));
+      const recommendedList = filterApproved(rawRecommended.length > 0 ? rawRecommended : (rawFeatured.length > 0 ? rawFeatured : getFallbackProducts(4, 8, activeCategory)));
 
-      carouselMemoryCache.set(cacheKey, { recentList, featuredList, specialList, recommendedList });
+      const cacheObj = { recentList, featuredList, specialList, recommendedList };
+      carouselMemoryCache.set(cacheKey, cacheObj);
+      try {
+        sessionStorage.setItem(`bv_home_carousel_${cacheKey}`, JSON.stringify(cacheObj));
+      } catch (e) {}
 
       setRecentlyViewed(recentList);
       setFeatured(featuredList);
@@ -104,7 +131,7 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
         setLoading(false);
       }
     }
-  }, [activeCategory, recentlyViewedKey]);
+  }, [activeCategory, recentlyViewedKey, safeRecentlyViewedIds, getFallbackProducts]);
 
   // Fetch search results when searchQuery is active
   useEffect(() => {
@@ -178,21 +205,24 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
 
   return (
     <div id="bestsellers" className="bg-gray-50/70 pt-8 pb-4 flex flex-col gap-2">
-      {/* Recently Viewed Carousel Row */}
-      <ProductCarouselRow 
-        title="Recently Viewed"
-        products={recentlyViewed}
-        loading={loading}
-        onViewAll={() => onNavigate && onNavigate('products')}
-        autoScroll={true}
-        autoScrollInterval={4000}
-      />
+      {/* Recently Viewed Carousel Row - Only show if customer has actually viewed items or has history */}
+      {(safeRecentlyViewedIds.length > 0 || recentlyViewed.length > 0) && (
+        <ProductCarouselRow 
+          title="Recently Viewed"
+          products={recentlyViewed}
+          loading={loading && recentlyViewed.length === 0}
+          hideIfEmpty={true}
+          onViewAll={() => onNavigate && onNavigate('products')}
+          autoScroll={true}
+          autoScrollInterval={4000}
+        />
+      )}
 
       {/* Featured & Trending Carousel Row */}
       <ProductCarouselRow 
         title="Featured & Trending"
-        products={featured}
-        loading={loading}
+        products={featured.length > 0 ? featured : (contextProducts.length > 0 ? getFallbackProducts(0, 8, activeCategory) : [])}
+        loading={loading && featured.length === 0}
         onViewAll={() => onNavigate && onNavigate('products')}
         autoScroll={true}
         autoScrollInterval={4500}
@@ -201,8 +231,9 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
       {/* Special Offers Carousel Row */}
       <ProductCarouselRow 
         title="Special Offers"
-        products={specialOffers}
-        loading={loading}
+        products={specialOffers.length > 0 ? specialOffers : (featured.length > 0 ? featured : getFallbackProducts(2, 8, activeCategory))}
+        loading={loading && specialOffers.length === 0}
+        hideIfEmpty={true}
         onViewAll={() => onNavigate && onNavigate('products')}
         autoScroll={true}
         autoScrollInterval={3500}
@@ -211,8 +242,9 @@ export default function HomeProductSections({ activeCategory, searchQuery, onNav
       {/* Recommended for You Carousel Row */}
       <ProductCarouselRow 
         title="Recommended for You"
-        products={recommended}
-        loading={loading}
+        products={recommended.length > 0 ? recommended : (featured.length > 0 ? featured : getFallbackProducts(4, 8, activeCategory))}
+        loading={loading && recommended.length === 0}
+        hideIfEmpty={true}
         onViewAll={() => onNavigate && onNavigate('products')}
         autoScroll={true}
         autoScrollInterval={5000}

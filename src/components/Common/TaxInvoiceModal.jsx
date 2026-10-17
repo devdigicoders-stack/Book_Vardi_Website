@@ -54,6 +54,11 @@ export function getProductGstRate(item) {
   if (explicitGst !== undefined && explicitGst !== null && String(explicitGst).trim() !== '' && !isNaN(Number(explicitGst))) {
     return Number(explicitGst);
   }
+  const cat = String(item?.category || item?.productId?.category || '').toLowerCase();
+  const name = String(item?.name || item?.productName || item?.productId?.name || '').toLowerCase();
+  if (cat.includes('book') || name.includes('book') || cat.includes('textbook') || name.includes('textbook')) {
+    return 0;
+  }
   return 5;
 }
 
@@ -289,11 +294,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     return itStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(itStatus);
   });
 
-  // Tax Invoice generates when order status is confirmed (or processing, packed, shipped, delivered, completed)
-  // Payment status does NOT block invoice generation (e.g. COD orders are generated upon order confirmation)
+  // Strict Tax Invoice Lock:
+  // Tax Invoice is ONLY generated when the order is confirmed by seller (or processing, packed, shipped, delivered, completed).
+  // Unconfirmed / Pending orders remain strictly LOCKED, regardless of whether payment was made online (UPI/Razorpay).
+  const isPendingUnconfirmed = isPendingOrder && !hasConfirmedItem;
   const confirmed = isBulkOrder
-    ? (isOrderConfirmedStatus || normStatus.length > 0)
-    : (isCancelled || isOrderConfirmedStatus || hasConfirmedItem || !isPendingOrder || isPaymentVerified);
+    ? (isOrderConfirmedStatus || (normStatus && !isPendingOrder))
+    : (isCancelled || (!isPendingUnconfirmed && (isOrderConfirmedStatus || hasConfirmedItem)));
 
   const shippingAddr = typeof order.shippingAddress === 'object'
     ? order.shippingAddress
@@ -403,13 +410,32 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     };
   });
 
-  // Delivery service GST (standard 18% GST)
+  // Dynamic Product GST Rate for Delivery (Composite Supply under Section 8 of CGST Act: Principal supply rate governs freight/delivery)
+  // Delivery charge GST strictly matches the product's GST rate (e.g., 5% product -> 5% delivery, 0% product -> 0% delivery)
+  const defaultProductGstRate = (() => {
+    const itemRates = itemBreakdowns.map(it => Number(it.rate)).filter(r => !isNaN(r));
+    if (itemRates.length > 0) {
+      return Math.max(...itemRates);
+    }
+    if (order.shippingGstRate !== undefined && order.shippingGstRate !== null && !isNaN(Number(order.shippingGstRate))) {
+      return Number(order.shippingGstRate);
+    }
+    return 5;
+  })();
+
+  const shippingGstRate = defaultProductGstRate;
+
+  // Delivery service GST (Composite supply: rate follows product rate)
   let shippingTaxable = 0;
   let shippingTax = 0;
   if (shippingCost > 0) {
-    const shippingGstRate = 18;
-    shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
-    shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+    if (shippingGstRate > 0) {
+      shippingTaxable = Math.round((shippingCost / (1 + shippingGstRate / 100)) * 100) / 100;
+      shippingTax = Math.round((shippingCost - shippingTaxable) * 100) / 100;
+    } else {
+      shippingTaxable = shippingCost;
+      shippingTax = 0;
+    }
     totalTaxableValue += shippingTaxable;
     totalTaxAmount += shippingTax;
   }

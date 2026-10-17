@@ -2,10 +2,26 @@ import React, { useRef, useEffect } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import ProductCard from './ProductCard';
 
-export default function ProductCarouselRow({ title, products, onViewAll, autoScroll = false, autoScrollInterval = 3000, renderCard, onResetFilter, loading = false, isLoading = false }) {
+export default function ProductCarouselRow({ 
+  title, 
+  products, 
+  onViewAll, 
+  autoScroll = false, 
+  autoScrollInterval = 3000, 
+  renderCard, 
+  onResetFilter, 
+  loading = false, 
+  isLoading = false,
+  hideIfEmpty = false 
+}) {
   const isRowLoading = loading || isLoading;
   const scrollRef = useRef(null);
   const isHoveredRef = useRef(false);
+
+  // If not loading, no products, and requested to hide empty state
+  if (!isRowLoading && (!products || products.length === 0) && hideIfEmpty) {
+    return null;
+  }
 
   const scroll = (direction) => {
     if (scrollRef.current) {
@@ -39,7 +55,7 @@ export default function ProductCarouselRow({ title, products, onViewAll, autoScr
   }, [autoScroll, autoScrollInterval, isRowLoading]);
 
   return (
-    <section className="py-10 bg-white border-b border-gray-100 last:border-b-0">
+    <section className="py-8 sm:py-10 bg-white border-b border-gray-100 last:border-b-0">
       <div 
         className="container mx-auto px-4"
         onMouseEnter={() => isHoveredRef.current = true}
@@ -47,9 +63,17 @@ export default function ProductCarouselRow({ title, products, onViewAll, autoScr
       >
         {/* Section Header */}
         <div className="flex flex-row items-center justify-between gap-2 sm:gap-4 mb-6">
-          <h2 className="font-display text-lg sm:text-xl md:text-2xl font-extrabold tracking-wider uppercase text-brand-teal line-clamp-1">
-            {title}
-          </h2>
+          <div className="flex items-center gap-2.5">
+            <h2 className="font-display text-lg sm:text-xl md:text-2xl font-extrabold tracking-wider uppercase text-brand-teal line-clamp-1">
+              {title}
+            </h2>
+            {isRowLoading && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-brand-teal/10 text-brand-teal animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-teal animate-ping" />
+                Loading
+              </span>
+            )}
+          </div>
           
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
@@ -96,11 +120,33 @@ export default function ProductCarouselRow({ title, products, onViewAll, autoScr
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {[...Array(5)].map((_, idx) => (
-              <div key={idx} className="min-w-[220px] xs:min-w-[250px] sm:min-w-[280px] md:min-w-[300px] max-w-[320px] shrink-0 snap-start bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-3 sm:p-4 animate-pulse">
-                <div className="w-full aspect-square bg-gray-200 rounded-lg sm:rounded-xl mb-3 sm:mb-4" />
-                <div className="h-3.5 sm:h-4 bg-gray-200 rounded w-3/4 mb-2" />
-                <div className="h-2.5 sm:h-3 bg-gray-100 rounded w-1/2 mb-3 sm:mb-4" />
-                <div className="h-4 sm:h-5 bg-gray-200 rounded w-1/3" />
+              <div 
+                key={idx} 
+                className="min-w-[220px] xs:min-w-[250px] sm:min-w-[280px] md:min-w-[300px] max-w-[320px] shrink-0 snap-start bg-white border border-gray-100 rounded-2xl p-3 sm:p-4 shadow-sm relative overflow-hidden"
+              >
+                {/* Image Placeholder */}
+                <div className="w-full aspect-square bg-gradient-to-br from-gray-100 via-gray-200 to-gray-100 rounded-xl mb-3 sm:mb-4 animate-pulse relative">
+                  <div className="absolute top-2 left-2 w-12 h-4 bg-gray-300/70 rounded-md" />
+                  <div className="absolute top-2 right-2 w-7 h-7 bg-gray-300/60 rounded-full" />
+                </div>
+                {/* Category badge skeleton */}
+                <div className="h-3 bg-gray-200/80 rounded w-1/3 mb-2 animate-pulse" />
+                {/* Title skeleton */}
+                <div className="h-4 bg-gray-200 rounded w-4/5 mb-1.5 animate-pulse" />
+                <div className="h-4 bg-gray-100 rounded w-1/2 mb-3 animate-pulse" />
+                {/* Rating stars skeleton */}
+                <div className="flex items-center gap-1 mb-3">
+                  <div className="w-3.5 h-3.5 bg-gray-200 rounded-full animate-pulse" />
+                  <div className="w-8 h-3 bg-gray-200 rounded animate-pulse" />
+                </div>
+                {/* Price and Cart button skeleton */}
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <div className="space-y-1">
+                    <div className="h-5 bg-gray-200 rounded w-20 animate-pulse" />
+                    <div className="h-3 bg-gray-100 rounded w-12 animate-pulse" />
+                  </div>
+                  <div className="w-24 h-8 bg-gray-200 rounded-xl animate-pulse" />
+                </div>
               </div>
             ))}
           </div>
@@ -117,9 +163,9 @@ export default function ProductCarouselRow({ title, products, onViewAll, autoScr
             ))}
           </div>
         ) : (
-          <div className="py-12 text-center bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
-            <p className="text-gray-500 font-bold mb-2">No products found</p>
-            <p className="text-sm text-gray-400">Try adjusting your filters to find what you're looking for.</p>
+          <div className="py-10 text-center bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
+            <p className="text-gray-500 font-bold mb-1">No products found</p>
+            <p className="text-xs text-gray-400">Try adjusting your filters to find what you're looking for.</p>
           </div>
         )}
       </div>
