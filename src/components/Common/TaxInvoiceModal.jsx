@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
   Printer, 
+  Download,
   ShieldCheck, 
   FileText, 
   Lock,
@@ -11,6 +12,7 @@ import {
   Clock
 } from 'lucide-react';
 
+const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
 
 export function numberToWords(amount) {
@@ -232,6 +234,8 @@ export function parseStateInfo(sourceObj, fallbackString = '') {
 export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   if (!isOpen || !order) return null;
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const rawStatus = String(order.overallStatus || order.status || order.deliveryStatus || '').toLowerCase().trim();
   const normStatus = rawStatus.replace(/[\s-]+/g, '_');
   const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || order.isCancelled || Boolean(order.cancelledAt);
@@ -446,10 +450,6 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     totalTaxableValue = Math.round((grandTotal - totalTaxAmount) * 100) / 100;
   }
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   const isPlaceholderName = (name) => {
     if (!name || typeof name !== 'string') return true;
     const lower = name.trim().toLowerCase();
@@ -642,6 +642,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const sgstAmount = isIntraState ? Math.round((totalTaxAmount - cgstAmount) * 100) / 100 : 0;
   const igstAmount = !isIntraState ? totalTaxAmount : 0;
 
+  // Shipping tax split
+  const shippingCgst = shippingTax > 0 && isIntraState ? Math.round((shippingTax / 2) * 100) / 100 : 0;
+  const shippingSgst = shippingTax > 0 && isIntraState ? Math.round((shippingTax - shippingCgst) * 100) / 100 : 0;
+  const shippingIgst = shippingTax > 0 && !isIntraState ? shippingTax : 0;
+
   // Logistics tracking resolution
   const logisticsStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
   const isOut = logisticsStatus === 'out for delivery' || logisticsStatus === 'delivered';
@@ -658,47 +663,164 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
 
   const trackingLinkDisplay = order.trackingUrl || order.selfDeliveryDetails?.trackingUrl || order.thirdPartyDetails?.trackingUrl || '';
 
-  return (
-    <div className="tax-invoice-print-root fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static print:inset-auto print:block">
-      <style>{`
-        @media print {
-          @page {
-            margin: 10mm;
-            size: auto;
-          }
-          body {
-            background: #ffffff !important;
-            color: #000000 !important;
-          }
-          body > * {
-            visibility: hidden !important;
-          }
-          .tax-invoice-print-root,
-          .tax-invoice-print-root * {
-            visibility: visible !important;
-          }
-          .tax-invoice-print-root {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #ffffff !important;
-            display: block !important;
-          }
-          .tax-invoice-print-card {
-            max-width: 100% !important;
-            max-height: none !important;
-            overflow: visible !important;
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            padding: 0 !important;
-          }
+  const handleDownloadPDF = async () => {
+    if (!confirmed) {
+      alert('⚠️ Tax Invoice & Certificate is generated only when an order is confirmed strictly.');
+      return;
+    }
+    try {
+      setIsDownloading(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('bv_user_jwt_token');
+      const rawId = order.id || order.orderId || order._id || '';
+      const orderIdentifier = String(rawId).replace(/^#/, '').trim();
+      const endpoint = isCancelled ? 'credit-note' : 'invoice';
+      const res = await fetch(`${SERVER_URL}/orders/${orderIdentifier}/${endpoint}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         }
-      `}</style>
-      <div className="tax-invoice-print-card bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${isCancelled ? 'CreditNote' : 'Invoice'}_${orderIdentifier}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        return;
+      }
+      throw new Error(`Server returned status ${res.status}`);
+    } catch (err) {
+      console.warn('Backend PDF endpoint unavailable, opening pristine print-to-PDF view:', err);
+      handlePrint();
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    if (!confirmed) {
+      alert('⚠️ Tax Invoice & Certificate is generated only when an order is confirmed strictly.');
+      return;
+    }
+
+    const printContent = document.getElementById('printableTaxInvoiceArea');
+    if (!printContent) {
+      window.print();
+      return;
+    }
+
+    let iframe = document.getElementById('website-invoice-print-iframe');
+    if (iframe) {
+      iframe.remove();
+    }
+    iframe = document.createElement('iframe');
+    iframe.id = 'website-invoice-print-iframe';
+    // Position offscreen with full opacity and size so Chromium compositor fully layouts and paints it
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-9999px';
+    iframe.style.top = '0';
+    iframe.style.width = '1024px';
+    iframe.style.height = '1400px';
+    iframe.style.border = '0';
+    iframe.style.opacity = '1';
+    iframe.style.zIndex = '9999';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+
+    const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(el => {
+        if (el.tagName === 'STYLE' && el.innerHTML.includes('body * { visibility: hidden')) {
+          const cleaned = el.innerHTML.replace(/body\s*\*\s*\{\s*visibility:\s*hidden\s*!important;\s*\}/g, '');
+          return `<style>${cleaned}</style>`;
+        }
+        return el.outerHTML;
+      })
+      .join('\n');
+
+    const rawId = order.id || order.orderId || order._id || 'ORDER';
+    const cleanId = String(rawId).replace(/^#/, '').trim();
+
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${isCancelled ? 'CreditNote' : 'Invoice'}_${cleanId}</title>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          ${styleSheets}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 6mm 8mm;
+            }
+            * {
+              box-sizing: border-box !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #0f172a !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+            }
+            #printableTaxInvoiceArea {
+              width: 100% !important;
+              max-width: 100% !important;
+              margin: 0 auto !important;
+              padding: 4mm 6mm !important;
+              background: #ffffff !important;
+              display: block !important;
+              visibility: visible !important;
+            }
+            #printableTaxInvoiceArea, #printableTaxInvoiceArea * {
+              visibility: visible !important;
+              opacity: 1 !important;
+            }
+            table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+            }
+            @media print {
+              body {
+                background: #ffffff !important;
+              }
+              #printableTaxInvoiceArea {
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+            }
+          </style>
+        </head>
+        <body class="p-2 sm:p-4 bg-white">
+          <div id="printableTaxInvoiceArea">
+            ${printContent.innerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (e) {
+        console.error('Print iframe error:', e);
+        window.print();
+      }
+    }, 400);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:p-0 print:bg-white print:static print:inset-auto">
+      <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
         
         {/* Top Control Bar */}
         <div className="bg-gray-950 text-white px-5 py-3 flex items-center justify-between shrink-0 print:hidden border-b border-gray-800">
@@ -716,12 +838,23 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
 
           <div className="flex items-center gap-2">
             {confirmed && (
-              <button
-                onClick={handlePrint}
-                className={`px-3 py-1.5 ${isCancelled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-brand-teal hover:bg-teal-700'} text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs`}
-              >
-                <Printer size={13} /> {isCancelled ? 'Print Credit Note' : 'Print Invoice'}
-              </button>
+              <>
+                <button
+                  onClick={handleDownloadPDF}
+                  disabled={isDownloading}
+                  className={`px-3 py-1.5 ${isCancelled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50`}
+                  title={`Download Official GST ${isCancelled ? 'Credit Note' : 'Tax Invoice'} PDF`}
+                >
+                  <Download size={13} className={isDownloading ? 'animate-bounce' : ''} />
+                  {isDownloading ? 'Downloading...' : 'Download PDF'}
+                </button>
+                <button
+                  onClick={handlePrint}
+                  className={`px-3 py-1.5 ${isCancelled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-brand-teal hover:bg-teal-700'} text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs`}
+                >
+                  <Printer size={13} /> {isCancelled ? 'Print Credit Note' : 'Print Invoice'}
+                </button>
+              </>
             )}
             <button
               onClick={onClose}
@@ -756,7 +889,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
         ) : (
 
         /* Invoice Sheet / Credit Note Body */
-        <div className="p-6 sm:p-8 space-y-6 overflow-y-auto print:overflow-visible print:p-0">
+        <div id="printableTaxInvoiceArea" className="p-6 sm:p-8 space-y-6 overflow-y-auto print:overflow-visible print:p-0">
           
           {/* Header Section */}
           <div className="flex flex-col sm:flex-row justify-between items-start border-b-2 border-gray-900 pb-5 gap-4">
@@ -849,25 +982,30 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
           })()}
 
           {/* Itemized Table */}
-          <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
-            <table className="w-full text-left border-collapse">
+          <div className="border border-gray-200 rounded-xl overflow-x-auto text-xs">
+            <table className="w-full text-left border-collapse min-w-[660px]">
               <thead>
                 <tr className="bg-gray-100 text-gray-700 border-b border-gray-200 font-extrabold uppercase text-[10px]">
-                  <th className="py-2.5 px-3 w-10 text-center">#</th>
-                  <th className="py-2.5 px-3">{isCancelled ? 'Cancelled Item Details' : 'Item Details'}</th>
-                  <th className="py-2.5 px-3">Sold By (Seller Store)</th>
-                  <th className="py-2.5 px-3 text-center w-14">Qty</th>
-                  <th className="py-2.5 px-3 text-right w-24">Unit Price</th>
-                  <th className="py-2.5 px-3 text-right w-28">{isCancelled ? 'Refunded Gross' : 'Total Price'}</th>
+                  <th className="py-2.5 px-3 min-w-[140px]">{isCancelled ? 'Cancelled Item Details' : 'Item Details'}</th>
+                  <th className="py-2.5 px-3 min-w-[110px]">Sold By (Seller Store)</th>
+                  <th className="py-2.5 px-2 text-center w-10">Qty</th>
+                  <th className="py-2.5 px-2.5 text-right w-20">Unit Price</th>
+                  <th className="py-2.5 px-2.5 text-right w-22">Taxable Val</th>
+                  <th className="py-2.5 px-3 text-right min-w-[130px]">Taxes</th>
+                  <th className="py-2.5 px-3 text-right w-24 pr-3.5">{isCancelled ? 'Refunded Gross' : 'Total Price'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {itemBreakdowns.map((item, idx) => {
                   const sellerName = getItemSellerName(item);
                   const sizeInfo = item.selectedSize || item.size || item.variantName;
+                  const itemCgst = item.rate > 0 && isIntraState ? Math.round((item.taxAmt / 2) * 100) / 100 : 0;
+                  const itemSgst = item.rate > 0 && isIntraState ? Math.round((item.taxAmt - itemCgst) * 100) / 100 : 0;
+                  const itemIgst = item.rate > 0 && !isIntraState ? item.taxAmt : 0;
+                  const displayTotal = item.itemDiscount > 0 ? item.netItemPayable : item.grossPrice;
+
                   return (
                     <tr key={idx} className="hover:bg-gray-50/50">
-                      <td className="py-2.5 px-3 text-center font-bold text-gray-400">{idx + 1}</td>
                       <td className="py-2.5 px-3">
                         <p className="font-bold text-gray-900 leading-snug">{item.name}</p>
                         <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium mt-0.5">
@@ -876,28 +1014,157 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                           )}
                           {sizeInfo && item.category && <span>•</span>}
                           <span>{item.category || 'School Supply'}</span>
-                          <span>•</span>
-                          <span className="text-gray-600 font-semibold">{item.rate}% GST</span>
                         </div>
                       </td>
                       <td className="py-2.5 px-3">
-                        <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[150px]" title={sellerName}>
+                        <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={sellerName}>
                           {sellerName}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center font-bold">{item.qty}</td>
                       <td className="py-2.5 px-3 text-right font-mono">₹{item.unitPrice.toFixed(2)}</td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold">
-                        {isCancelled ? (
-                          <span className="text-rose-700">-₹{item.grossPrice.toFixed(2)}</span>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹{item.taxableVal.toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        {item.rate > 0 ? (
+                          isIntraState ? (
+                            <div className="space-y-1 text-right font-mono text-[10px]">
+                              <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+                                <span className="text-gray-500 font-sans">SGST @{(item.rate / 2)}%:</span>
+                                <span className="font-semibold text-gray-800 min-w-[48px] text-right">₹{itemSgst.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+                                <span className="text-gray-500 font-sans">CGST @{(item.rate / 2)}%:</span>
+                                <span className="font-semibold text-gray-800 min-w-[48px] text-right">₹{itemCgst.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end items-center gap-2 text-right font-mono text-[10px] whitespace-nowrap">
+                              <span className="text-gray-500 font-sans">IGST @{item.rate}%:</span>
+                              <span className="font-semibold text-gray-800 min-w-[48px] text-right">₹{itemIgst.toFixed(2)}</span>
+                            </div>
+                          )
                         ) : (
-                          <span className="text-gray-900">₹{item.grossPrice.toFixed(2)}</span>
+                          <div className="text-right whitespace-nowrap">
+                            <span className="text-gray-500 font-semibold text-[10px] block">0% GST</span>
+                            <span className="text-[9px] text-gray-400 block font-mono">₹0.00 (Exempt)</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold whitespace-nowrap pr-3.5">
+                        {isCancelled ? (
+                          <span className="text-rose-700">-₹{displayTotal.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-gray-900">₹{displayTotal.toFixed(2)}</span>
+                        )}
+                        {item.itemDiscount > 0 && (
+                          <span className="block text-[9px] text-emerald-600 font-normal font-sans">(-₹{item.itemDiscount.toFixed(2)} off)</span>
                         )}
                       </td>
                     </tr>
                   );
                 })}
+
+                {/* Dedicated Delivery Charges Line Item */}
+                {shippingCost > 0 && (
+                  <tr className="hover:bg-gray-50/50 bg-teal-50/15">
+                    <td className="py-2.5 px-3">
+                      <p className="font-bold text-gray-900">Delivery &amp; Shipping Charges</p>
+                      <p className="text-[10px] text-gray-400">Logistics &amp; Freight Services (SAC 9968)</p>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={resolvedSeller.storeName}>
+                        {resolvedSeller.storeName}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-gray-400">NA</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-gray-700">₹{shippingCost.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹{shippingTaxable.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-right">
+                      {shippingGstRate > 0 && shippingTax > 0 ? (
+                        isIntraState ? (
+                          <div className="space-y-1 text-right font-mono text-[10px]">
+                            <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+                              <span className="text-gray-500 font-sans">SGST @{(shippingGstRate / 2)}%:</span>
+                              <span className="font-semibold text-gray-800 min-w-[48px] text-right">₹{shippingSgst.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+                              <span className="text-gray-500 font-sans">CGST @{(shippingGstRate / 2)}%:</span>
+                              <span className="font-semibold text-gray-800 min-w-[48px] text-right">₹{shippingCgst.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end items-center gap-2 text-right font-mono text-[10px] whitespace-nowrap">
+                            <span className="text-gray-500 font-sans">IGST @{shippingGstRate}%:</span>
+                            <span className="font-semibold text-gray-800 min-w-[48px] text-right">₹{shippingIgst.toFixed(2)}</span>
+                          </div>
+                        )
+                      ) : (
+                        <div className="text-right whitespace-nowrap">
+                          <span className="text-gray-500 font-semibold text-[10px] block">0% GST</span>
+                          <span className="text-[9px] text-gray-400 block font-mono">₹0.00 (Exempt)</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold">
+                      {isCancelled ? (
+                        <span className="text-rose-700">-₹{shippingCost.toFixed(2)}</span>
+                      ) : (
+                        <span className="text-gray-900">₹{shippingCost.toFixed(2)}</span>
+                      )}
+                    </td>
+                  </tr>
+                )}
               </tbody>
+              <tfoot className="bg-gray-100/95 font-bold border-t-2 border-gray-300">
+                <tr>
+                  <td colSpan={4} className="py-2.5 px-3 text-right font-black uppercase text-[10px] text-gray-700 tracking-wider">
+                    {isCancelled ? 'Total Reversal:' : 'Total / Order Payable:'}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 text-xs">
+                    ₹{totalTaxableValue.toFixed(2)}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono">
+                    {totalTaxAmount > 0 ? (
+                      isIntraState ? (
+                        <div className="space-y-1 text-right text-[10px]">
+                          <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+                            <span className="text-gray-500 font-sans">SGST:</span>
+                            <span className="font-bold text-brand-teal min-w-[48px] text-right">₹{sgstAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+                            <span className="text-gray-500 font-sans">CGST:</span>
+                            <span className="font-bold text-brand-teal min-w-[48px] text-right">₹{cgstAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-end items-center gap-2 font-black text-brand-teal border-t border-gray-300 pt-0.5 whitespace-nowrap">
+                            <span className="text-gray-400 font-normal font-sans text-[9px]">Total Tax:</span>
+                            <span className="min-w-[48px] text-right">₹{totalTaxAmount.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 text-right text-[10px]">
+                          <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+                            <span className="text-gray-500 font-sans">IGST:</span>
+                            <span className="font-bold text-brand-teal min-w-[48px] text-right">₹{igstAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-end items-center gap-2 font-black text-brand-teal border-t border-gray-300 pt-0.5 whitespace-nowrap">
+                            <span className="text-gray-400 font-normal font-sans text-[9px]">Total Tax:</span>
+                            <span className="min-w-[48px] text-right">₹{totalTaxAmount.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      <span className="text-gray-500 text-[11px]">₹0.00</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono text-base font-black whitespace-nowrap pr-3.5">
+                    {isCancelled ? (
+                      <span className="text-rose-700">-₹{grandTotal.toFixed(2)}</span>
+                    ) : (
+                      <span className="text-gray-900">₹{grandTotal.toFixed(2)}</span>
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
 
@@ -970,14 +1237,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
               </div>
             </div>
 
-            {/* Right Column: Financial Calculation */}
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2.5 text-xs flex flex-col justify-between">
+            {/* Right Column: Place of Supply & Statutory Metadata (Replaces duplicate Price Summary card) */}
+            <div className="bg-gray-50/90 p-4 rounded-xl border border-gray-200 space-y-2.5 text-xs flex flex-col justify-between">
               <div className="space-y-2">
-                <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-                  <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">
-                    {isCancelled ? 'Refund & Credit Breakdown' : 'Price Summary'}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-200 pb-2 gap-1.5">
+                  <span className="text-[10px] uppercase font-black text-gray-700 tracking-wider flex items-center gap-1 shrink-0">
+                    <ShieldCheck size={13} className="text-emerald-700" /> {isCancelled ? 'Place of Supply & Reversal Meta' : 'Place of Supply & Tax Meta'}
                   </span>
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border w-fit shrink-0 ${
                     isIntraState 
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                       : 'bg-indigo-50 text-indigo-700 border-indigo-200'
@@ -986,88 +1253,32 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                   </span>
                 </div>
 
-                <div className="flex justify-between items-center text-gray-600">
-                  <span>{isCancelled ? 'Items Subtotal Reversal:' : 'Items Subtotal:'}</span>
-                  <span className="font-mono font-semibold text-gray-900">₹{subtotal.toFixed(2)}</span>
-                </div>
-
-                <div className="flex justify-between items-center text-gray-600">
-                  <span>{isCancelled ? 'Delivery Adjustment:' : 'Delivery Charges:'}</span>
-                  <span className="font-mono font-semibold text-emerald-700">
-                    {shippingCost === 0 ? 'FREE' : `₹${shippingCost.toFixed(2)}`}
-                  </span>
-                </div>
-
-                {discount > 0 ? (
-                  <div className={`flex justify-between font-bold ${isCancelled ? 'text-rose-700' : 'text-emerald-700'}`}>
-                    <span>{isCancelled ? 'Coupon Reversal:' : 'Offer / Coupon Applied:'}</span>
-                    <span className="font-mono">-₹{discount.toFixed(2)}</span>
+                <div className="space-y-1.5 text-gray-600 text-[11px]">
+                  <div className="flex justify-between items-center">
+                    <span>Payment Mode:</span>
+                    <strong className="text-gray-900 font-sans">{order.paymentMethod || 'Online UPI'} ({order.paymentStatus || (isCancelled ? 'Refunded' : 'Paid')})</strong>
                   </div>
-                ) : (
-                  <div className="flex justify-between text-gray-400">
-                    <span>Offer / Coupon:</span>
-                    <span className="font-mono">None Applied (₹0.00)</span>
+                  <div className="flex justify-between items-center">
+                    <span>Tax on Reverse Charge (RCM):</span>
+                    <strong className="text-gray-900 font-sans">No (Exempt B2C Supply)</strong>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>GST Supply Nature:</span>
+                    <strong className="text-gray-900 font-sans">{shippingGstRate > 0 ? `Composite Supply (${shippingGstRate}% GST)` : 'Exempt Supply (0% GST)'}</strong>
+                  </div>
+                </div>
+
+                {isCancelled && (
+                  <div className="bg-rose-50 rounded-lg p-2 border border-rose-200 text-rose-800 text-[11px]">
+                    <span>Credit Note Status: </span>
+                    <strong className="font-bold">Reversal processed under Section 34 of CGST Act.</strong>
                   </div>
                 )}
-
-                {pointsDiscount > 0 && (
-                  <div className="flex justify-between text-amber-700 font-bold">
-                    <span>{isCancelled ? 'Reward Points Restored:' : 'Reward Points Redeemed:'}</span>
-                    <span className="font-mono">{isCancelled ? `+₹${pointsDiscount.toFixed(2)}` : `-₹${pointsDiscount.toFixed(2)}`}</span>
-                  </div>
-                )}
-
-                {/* Unified GST Breakdown on the Total Bill Amount */}
-                <div className="bg-white rounded-xl p-3 border border-gray-200 space-y-1.5 shadow-2xs mt-2">
-                  <div className="flex justify-between items-center text-gray-600 text-[11px]">
-                    <span className="font-medium">{isCancelled ? 'Taxable Amount Reversal:' : 'Taxable Value (Base Price):'}</span>
-                    <span className="font-mono font-bold text-gray-900">₹{totalTaxableValue.toFixed(2)}</span>
-                  </div>
-
-                  {isIntraState ? (
-                    <>
-                      <div className="flex justify-between items-center text-gray-600 text-[11px]">
-                        <span>{isCancelled ? 'CGST Reversal (Central Tax):' : 'CGST (Central Tax):'}</span>
-                        <span className="font-mono font-semibold text-brand-teal">₹{cgstAmount.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-gray-600 text-[11px]">
-                        <span>{isCancelled ? 'SGST / UTGST Reversal (State Tax):' : 'SGST / UTGST (State Tax):'}</span>
-                        <span className="font-mono font-semibold text-brand-teal">₹{sgstAmount.toFixed(2)}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex justify-between items-center text-gray-600 text-[11px]">
-                      <span>{isCancelled ? 'IGST Reversal (Integrated Tax):' : 'IGST (Integrated Tax):'}</span>
-                      <span className="font-mono font-semibold text-brand-teal">₹{igstAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-
-                  <div className="flex justify-between items-center text-gray-900 text-[11px] pt-1.5 border-t border-gray-100 font-bold">
-                    <span>{isCancelled ? 'Total Tax Reversed (GST):' : 'Total GST Tax (Included):'}</span>
-                    <span className="font-mono text-brand-teal font-extrabold">₹{totalTaxAmount.toFixed(2)}</span>
-                  </div>
-                </div>
               </div>
 
-              {isCancelled ? (
-                <div className="bg-rose-600 text-white rounded-xl p-3 flex items-center justify-between shadow-xs mt-2">
-                  <div>
-                    <span className="text-xs font-black block">Net Refunded Credit Amount:</span>
-                    <span className="text-[10px] text-rose-100 font-normal">(Full Reversal Authorized)</span>
-                  </div>
-                  <span className="font-mono text-lg font-black">₹{grandTotal.toFixed(2)}</span>
-                </div>
-              ) : (
-                <div className="border-t-2 border-gray-300 pt-2.5 mt-2">
-                  <div className="flex justify-between items-baseline">
-                    <div>
-                      <span className="text-xs font-black text-gray-900 block">Gross Order Total:</span>
-                      <span className="text-[10px] text-gray-400 font-normal">(Inclusive of all taxes & GST)</span>
-                    </div>
-                    <span className="font-mono text-base font-black text-brand-teal">₹{grandTotal.toFixed(2)}</span>
-                  </div>
-                </div>
-              )}
+              <div className="pt-2 border-t border-gray-200 text-[10px] text-gray-400 leading-relaxed italic">
+                • {isCancelled ? 'Official statutory credit note' : 'Official electronic tax invoice'} issued under CGST Act, 2017. Does not require physical signature.
+              </div>
             </div>
           </div>
 
