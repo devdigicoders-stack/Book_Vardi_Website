@@ -1270,11 +1270,6 @@ export default function ProductDetailPage({ onNavigate }) {
                         <span className="font-display text-2xl sm:text-3xl font-extrabold text-brand-teal">
                           ₹{effectiveProductPrice}
                         </span>
-                        {selectedProduct.isGstInclusive === false && (
-                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
-                            + {selectedProduct.gst ?? selectedProduct.gstPercentage ?? 5}% GST Extra
-                          </span>
-                        )}
                         {(selectedProduct.paymentMethodAllowed === 'Online_Only' || selectedProduct.isPrepaidOnly) && (
                           <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
                             ⚡ Prepaid Only (No COD)
@@ -1319,11 +1314,7 @@ export default function ProductDetailPage({ onNavigate }) {
 
                   <p className="text-[11px] font-medium text-gray-500 mt-2 flex items-center gap-1">
                     <CheckCircle2 size={13} className="text-emerald-600 inline shrink-0" />
-                    <span>
-                      {selectedProduct.isGstInclusive !== false
-                        ? 'Inclusive of all taxes. Free student doorstep delivery available.'
-                        : `+${selectedProduct.gst ?? selectedProduct.gstPercentage ?? 5}% GST Extra calculated at checkout. Free student doorstep delivery available.`}
-                    </span>
+                    <span>Inclusive of all taxes. Free student doorstep delivery available.</span>
                   </p>
                 </div>
 
