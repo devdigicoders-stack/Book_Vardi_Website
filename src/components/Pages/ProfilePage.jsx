@@ -2540,7 +2540,14 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 }
                               })()}
 
-                              {['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) && !(Array.isArray(order.items) && order.items.some(it => ['pending', 'placed', 'unconfirmed', 'draft', ''].includes(String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_')))) ? (
+                              {(() => {
+                                const hasConfirmedOrFulfilledItem = Array.isArray(order.items) && order.items.some(it => {
+                                  const s = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                                  return s && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(s);
+                                });
+                                const isInvoiceAvailable = ['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) || hasConfirmedOrFulfilledItem;
+
+                                return isInvoiceAvailable ? (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -2561,7 +2568,8 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                     <Lock size={11} className="text-amber-600" />
                                     <span>Invoice (Pending Confirmation)</span>
                                   </span>
-                                )}
+                                );
+                              })()}
 
                               {(() => {
                                 const isRefundOrExchange = isOrderRefundedOrReturnOrExchange(order);

@@ -528,6 +528,22 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   // The active items to display and calculate strictly belong to the active seller
   const items = activeSellerGroup ? activeSellerGroup.items : allOrderItems;
 
+  const activeSellerStatusRaw = (
+    items.find(i => {
+      const s = String(i.status || '').toLowerCase().trim();
+      return s && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(s);
+    })?.status ||
+    items[0]?.status ||
+    order.overallStatus ||
+    order.status ||
+    'Confirmed'
+  );
+  const activeSellerStatusLabel = String(activeSellerStatusRaw)
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+
   const allOrderItemsSum = allOrderItems.reduce((acc, it) => acc + (Number(it.originalPrice ?? it.price ?? it.finalPrice ?? 0) * Number(it.quantity || 1)), 0);
   const itemsSum = items.reduce((acc, it) => acc + (Number(it.originalPrice ?? it.price ?? it.finalPrice ?? 0) * Number(it.quantity || 1)), 0);
 
@@ -980,6 +996,18 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
             <div className="flex items-center gap-2">
               {sellerGroups.map((grp) => {
                 const isSelected = activeSellerGroup?.key === grp.key;
+                const grpStatusRaw = (
+                  grp.items.find(i => {
+                    const s = String(i.status || '').toLowerCase().trim();
+                    return s && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(s);
+                  })?.status ||
+                  grp.items[0]?.status ||
+                  (grp.hasConfirmedItems ? 'Confirmed' : 'Pending')
+                );
+                const grpStatusLabel = grpStatusRaw
+                  ? String(grpStatusRaw).replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+                  : (grp.hasConfirmedItems ? 'Confirmed' : 'Pending');
+
                 return (
                   <button
                     key={grp.key}
@@ -994,7 +1022,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                     <span>{grp.storeName}</span>
                     {grp.hasConfirmedItems ? (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                        Confirmed ({grp.items.length})
+                        {grpStatusLabel} ({grp.items.length})
                       </span>
                     ) : (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-0.5">
@@ -1122,7 +1150,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                   </span>
                   <p className="font-extrabold text-gray-900 text-sm">{typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || 'Customer')}</p>
                   <p className="text-gray-600 mt-0.5">{formattedAddressStr}</p>
-                  <p className="text-gray-500 mt-1">Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId}</strong> | Payment: <strong>{order.paymentMethod || 'Online UPI'}</strong></p>
+                  <p className="text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                    <span>Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId}</strong></span>
+                    <span>•</span>
+                    <span>Payment: <strong>{order.paymentMethod || 'Online UPI'}</strong></span>
+                    <span>•</span>
+                    <span>Status: <strong className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px]">{activeSellerStatusLabel}</strong></span>
+                  </p>
                 </div>
               </div>
             );
@@ -1161,6 +1195,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                           )}
                           {sizeInfo && item.category && <span>•</span>}
                           <span>{item.category || 'School Supply'}</span>
+                          {item.status && (
+                            <>
+                              <span>•</span>
+                              <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px]">
+                                {String(item.status).replace(/_/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </td>
                       <td className="py-2.5 px-3">
@@ -1401,6 +1443,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                 </div>
 
                 <div className="space-y-1.5 text-gray-600 text-[11px]">
+                  <div className="flex justify-between items-center">
+                    <span>Order / Fulfillment Status:</span>
+                    <strong className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-[11px]">{activeSellerStatusLabel}</strong>
+                  </div>
                   <div className="flex justify-between items-center">
                     <span>Payment Mode:</span>
                     <strong className="text-gray-900 font-sans">{order.paymentMethod || 'Online UPI'} ({order.paymentStatus || (isCancelled ? 'Refunded' : 'Paid')})</strong>
