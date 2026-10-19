@@ -2540,7 +2540,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 }
                               })()}
 
-                              {['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) ? (
+                              {['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'completed'].includes(currentStatus) && !(Array.isArray(order.items) && order.items.some(it => ['pending', 'placed', 'unconfirmed', 'draft', ''].includes(String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_')))) ? (
                                   <button
                                     type="button"
                                     onClick={(e) => {

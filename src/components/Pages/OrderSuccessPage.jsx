@@ -242,14 +242,15 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
     currentStatus.includes('exchange');
   const isRefundTypeRequest = !isExchangeOrder;
   const isRefunded = isRefundTypeRequest;
-  const isOrderConfirmed = Boolean(
-    (currentStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(currentStatus)) ||
+  const hasPendingItems = Boolean(
+    !currentStatus ||
+    ['pending', 'placed', 'unconfirmed', 'draft', ''].includes(currentStatus) ||
     (Array.isArray(order.items) && order.items.length > 0 && order.items.some(it => {
       const itStatus = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-      return itStatus && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(itStatus);
+      return !itStatus || ['pending', 'placed', 'unconfirmed', 'draft'].includes(itStatus);
     }))
   );
-  const hasPendingItems = !isOrderConfirmed;
+  const isOrderConfirmed = !hasPendingItems;
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
   const isPaidOnline = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
   const isPaymentVerified = isPaidOnline;

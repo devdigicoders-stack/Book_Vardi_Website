@@ -127,14 +127,14 @@ export const INITIAL_FORM_STATE = {
   highestStepReached: 1,
   submissionStatus: 'draft'
 };
-
 export default function SellerRegistrationModal({ isOpen, onClose, isPage = false }) {
   const { 
     sellerStatus, 
     setSellerStatus, 
     submitSellerApplication, 
     approveSellerApplication,
-    showToast 
+    showToast,
+    userProfile
   } = useCart();
 
   const [step, setStep] = useState(() => {
@@ -647,18 +647,29 @@ function dataURLtoBlob(dataurl, filename = 'file') {
     try {
       if (backendEnabled) {
         const formPayload = new FormData();
-        formPayload.append('name', formData.sellerName || formData.ownerFullName || 'New Merchant');
-        formPayload.append('storeName', formData.storeName || formData.tradeName || 'New Store');
-        formPayload.append('email', formData.sellerEmail || '');
-        formPayload.append('phone', formData.sellerPhone || '');
+        const sellerNameVal = formData.sellerName || formData.ownerFullName || userProfile?.name || 'New Merchant';
+        const sellerEmailVal = formData.sellerEmail || userProfile?.email || '';
+        const sellerPhoneVal = formData.sellerPhone || userProfile?.phone || '';
+        const storeNameVal = formData.storeName || formData.tradeName || `${sellerNameVal}'s Store`;
+        const userDefaultAddr = userProfile?.addresses?.[0] || {};
+        const fallbackAddr = [userDefaultAddr.addressLine, userDefaultAddr.street, userDefaultAddr.landmark].filter(Boolean).join(", ");
+        const addressVal = `${formData.addressLine1 || ''} ${formData.addressLine2 || ''}`.trim() || fallbackAddr || 'Main Store';
+        const cityVal = formData.city || userDefaultAddr.city || 'Mirzapur';
+        const stateVal = formData.state || userDefaultAddr.state || 'Uttar Pradesh';
+        const pincodeVal = formData.pincode || userDefaultAddr.pincode || '231301';
+
+        formPayload.append('name', sellerNameVal);
+        formPayload.append('storeName', storeNameVal);
+        formPayload.append('email', sellerEmailVal);
+        formPayload.append('phone', sellerPhoneVal);
         formPayload.append('password', 'BookVardiSeller@123');
-        formPayload.append('address', `${formData.addressLine1 || ''} ${formData.addressLine2 || ''}`.trim());
-        formPayload.append('addressLine1', formData.addressLine1 || '');
+        formPayload.append('address', addressVal);
+        formPayload.append('addressLine1', formData.addressLine1 || addressVal);
         formPayload.append('addressLine2', formData.addressLine2 || '');
-        formPayload.append('landmark', formData.landmark || '');
-        formPayload.append('city', formData.city || '');
-        formPayload.append('state', formData.state || '');
-        formPayload.append('pincode', formData.pincode || '');
+        formPayload.append('landmark', formData.landmark || userDefaultAddr.landmark || '');
+        formPayload.append('city', cityVal);
+        formPayload.append('state', stateVal);
+        formPayload.append('pincode', pincodeVal);
         formPayload.append('country', formData.country || 'India');
         formPayload.append('gstNumber', formData.gstin || '');
         formPayload.append('msmeRegistrationNumber', formData.msmeRegistrationNumber || '');
@@ -708,9 +719,12 @@ function dataURLtoBlob(dataurl, filename = 'file') {
           if (docBlob) formPayload.append('addressProofDoc', docBlob, filename);
         }
 
-        await registerSellerInBackend(formPayload).catch((err) => {
-          console.warn('Backend seller registration notice:', err?.message);
-        });
+        try {
+          const apiRes = await registerSellerInBackend(formPayload);
+          console.log('Backend seller registration successful:', apiRes);
+        } catch (err) {
+          console.warn('Backend seller registration notice:', err?.response?.data?.message || err?.message);
+        }
       }
     } catch (e) {
       console.error(e);

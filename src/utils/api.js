@@ -865,10 +865,9 @@ export async function fetchSchoolsFromBackend(params = {}) {
 }
 
 export async function registerSellerInBackend(formData) {
+  const isFormData = typeof FormData !== 'undefined' && formData instanceof FormData;
   const res = await apiClient.post('/seller/register', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+    headers: isFormData ? {} : { 'Content-Type': 'application/json' }
   });
   return res.data;
 }
@@ -1091,15 +1090,19 @@ export async function fetchAnnouncementsFromBackend() {
   });
 }
 
-export function getInvoiceDownloadUrl(orderId, type = 'invoice') {
+export function getInvoiceDownloadUrl(orderId, type = 'invoice', sellerId = null) {
   const cleanId = encodeURIComponent(orderId);
-  if (type === 'credit-note') return `${apiBaseUrl}/orders/${cleanId}/credit-note`;
-  if (type === 'exchange-invoice') return `${apiBaseUrl}/orders/${cleanId}/exchange-invoice`;
-  return `${apiBaseUrl}/orders/${cleanId}/invoice`;
+  let base = `${apiBaseUrl}/orders/${cleanId}/invoice`;
+  if (type === 'credit-note') base = `${apiBaseUrl}/orders/${cleanId}/credit-note`;
+  if (type === 'exchange-invoice') base = `${apiBaseUrl}/orders/${cleanId}/exchange-invoice`;
+  if (sellerId) {
+    base += `?sellerId=${encodeURIComponent(sellerId)}`;
+  }
+  return base;
 }
 
-export async function downloadInvoiceApi(orderId, phone = '', type = 'invoice') {
-  const url = getInvoiceDownloadUrl(orderId, type);
+export async function downloadInvoiceApi(orderId, phone = '', type = 'invoice', sellerId = null) {
+  const url = getInvoiceDownloadUrl(orderId, type, sellerId);
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -1110,7 +1113,7 @@ export async function downloadInvoiceApi(orderId, phone = '', type = 'invoice') 
     const blobUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = blobUrl;
-    link.download = `${type.toUpperCase()}_${orderId}.pdf`;
+    link.download = `${type.toUpperCase()}_${orderId}${sellerId ? `_${String(sellerId).replace(/[^a-z0-9]/gi, '_').slice(-10)}` : ''}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
