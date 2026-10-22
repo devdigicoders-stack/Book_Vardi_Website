@@ -73,11 +73,27 @@ export const isCouponApplicableToProduct = (coupon, product, options = {}) => {
 
   // 5. Extract IDs from product
   const prodSellerId = extractId(product.sellerId) || extractId(product.seller) || extractId(product.storeId) || extractId(product.userId);
-  const cleanProdId = extractId(product.id) || extractId(product._id) || extractId(product.productId);
-  const cleanKitId = extractId(product.kitId) || extractId(product.bundleId) || extractId(product.id) || extractId(product._id);
+  const prodCandidateIds = [
+    extractId(product.id),
+    extractId(product._id),
+    extractId(product.productId),
+    extractId(product.customId),
+    extractId(product.itemProductId)
+  ].filter(Boolean);
+
+  const kitCandidateIds = [
+    extractId(product.kitId),
+    extractId(product.bundleId),
+    extractId(product.id),
+    extractId(product._id)
+  ].filter(Boolean);
+
   const isKit = Boolean(product.isKit || product.category === 'kits' || product.bundleType === 'kit' || product.kitId);
   const isCustomized = Boolean(product.isCustomized || (product.name && product.name.includes('(Custom Bundle)')));
   const scope = coupon.applicableScope || 'storewide';
+
+  const isProdMatched = applicableProds.length > 0 && prodCandidateIds.some((cand) => applicableProds.includes(cand));
+  const isKitMatched = applicableKits.length > 0 && kitCandidateIds.some((cand) => applicableKits.includes(cand));
 
   // 6. Seller Scoped Coupon Logic: Seller coupons apply ONLY to items from that seller
   if (isSellerScoped) {
@@ -97,28 +113,27 @@ export const isCouponApplicableToProduct = (coupon, product, options = {}) => {
     if (!isKit) return false;
     if (isCustomized) return false;
     if (applicableKits.length === 0) return true;
-    return applicableKits.some((k) => k === cleanKitId || (cleanProdId && k === cleanProdId));
+    return isKitMatched;
   }
 
   if (scope === 'specific_product') {
     if (isKit) return false;
     if (applicableProds.length === 0) return true;
-    return cleanProdId ? applicableProds.includes(cleanProdId) : false;
+    return isProdMatched;
   }
 
   // Fallback for specified products/kits arrays
   if (applicableProds.length > 0) {
-    const prodMatch = cleanProdId ? applicableProds.includes(cleanProdId) : false;
-    if (prodMatch) return true;
+    if (isProdMatched) return true;
     if (applicableKits.length > 0 && isKit && !isCustomized) {
-      return applicableKits.includes(cleanKitId);
+      return isKitMatched;
     }
     return false;
   }
 
   if (applicableKits.length > 0) {
     if (!isKit || isCustomized) return false;
-    return applicableKits.includes(cleanKitId);
+    return isKitMatched;
   }
 
   // Global storewide coupon (applies to all products/kits matching seller scope if seller-created)
@@ -159,10 +174,26 @@ export const calculateEligibleSubtotal = (coupon, cartItems = []) => {
 
   const eligibleItems = cartItems.filter((item) => {
     const itemSellerId = extractId(item.sellerId) || extractId(item.seller) || extractId(item.storeId) || extractId(item.userId);
-    const itemProductId = extractId(item.id) || extractId(item._id) || extractId(item.productId);
-    const itemKitId = extractId(item.kitId) || extractId(item.bundleId) || extractId(item.id) || extractId(item._id);
+    const prodCandidateIds = [
+      extractId(item.id),
+      extractId(item._id),
+      extractId(item.productId),
+      extractId(item.customId),
+      extractId(item.itemProductId)
+    ].filter(Boolean);
+
+    const kitCandidateIds = [
+      extractId(item.kitId),
+      extractId(item.bundleId),
+      extractId(item.id),
+      extractId(item._id)
+    ].filter(Boolean);
+
     const isKit = Boolean(item.isKit || item.category === 'kits' || item.bundleType === 'kit' || item.kitId);
     const isCustomized = Boolean(item.isCustomized || (item.name && item.name.includes('(Custom Bundle)')));
+
+    const isProdMatched = applicableProds.length > 0 && prodCandidateIds.some((cand) => applicableProds.includes(cand));
+    const isKitMatched = applicableKits.length > 0 && kitCandidateIds.some((cand) => applicableKits.includes(cand));
 
     if (isSellerScoped && targetSellerId && itemSellerId && targetSellerId !== itemSellerId) {
       return false;
@@ -178,27 +209,26 @@ export const calculateEligibleSubtotal = (coupon, cartItems = []) => {
       if (!isKit) return false;
       if (isCustomized) return false;
       if (applicableKits.length === 0) return true;
-      return applicableKits.some((k) => k === itemKitId || (itemProductId && k === itemProductId));
+      return isKitMatched;
     }
 
     if (scope === 'specific_product') {
       if (isKit) return false;
       if (applicableProds.length === 0) return true;
-      return itemProductId ? applicableProds.includes(itemProductId) : false;
+      return isProdMatched;
     }
 
     if (applicableProds.length > 0) {
-      const prodMatch = itemProductId ? applicableProds.includes(itemProductId) : false;
-      if (prodMatch) return true;
+      if (isProdMatched) return true;
       if (applicableKits.length > 0 && isKit && !isCustomized) {
-        return applicableKits.includes(itemKitId);
+        return isKitMatched;
       }
       return false;
     }
 
     if (applicableKits.length > 0) {
       if (!isKit || isCustomized) return false;
-      return applicableKits.includes(itemKitId);
+      return isKitMatched;
     }
 
     return true;
@@ -398,11 +428,16 @@ export const allocateCouponDiscountToItems = (coupon, cartItems = []) => {
   return cartItems.map((item, idx) => {
     const isEligible = eligibleIndices.includes(idx);
     if (!isEligible) {
+      const origPrice = Number(item.price !== undefined ? item.price : item.finalPrice) || 0;
+      const itemQty = Number(item.quantity ?? 1);
       return {
         ...item,
         offerDiscount: 0,
         discount: 0,
-        finalPrice: Number(item.finalPrice !== undefined ? item.finalPrice : item.price) || 0,
+        couponCode: null,
+        appliedCouponCode: null,
+        finalPrice: origPrice,
+        total: Math.round((origPrice * itemQty) * 100) / 100,
         isEligibleForCoupon: false
       };
     }

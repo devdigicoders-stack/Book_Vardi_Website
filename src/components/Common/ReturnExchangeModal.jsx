@@ -13,22 +13,23 @@ import {
 } from '../../utils/orderReturnPolicy';
 
 export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess }) {
-  if (!isOpen || !order) return null;
-
-  const orderId = order.id || order.orderId || order._id;
-  const userPhone = order.customer?.phone || order.shippingAddress?.phone || '';
-  const orderItems = order.items || [];
+  const safeOrder = order || {};
+  const orderId = safeOrder.id || safeOrder.orderId || safeOrder._id || '';
+  const userPhone = safeOrder.customer?.phone || safeOrder.shippingAddress?.phone || '';
+  const orderItems = Array.isArray(safeOrder.items) ? safeOrder.items : [];
   const [selectedItemId, setSelectedItemId] = useState(() => {
-    return order.selectedItem?._id || order.selectedItem?.id || orderItems[0]?._id || orderItems[0]?.id || null;
+    return safeOrder.selectedItem?._id || safeOrder.selectedItem?.id || orderItems[0]?._id || orderItems[0]?.id || null;
   });
 
   useEffect(() => {
-    if (order.selectedItem) {
-      setSelectedItemId(order.selectedItem._id || order.selectedItem.id);
+    if (safeOrder.selectedItem) {
+      setSelectedItemId(safeOrder.selectedItem._id || safeOrder.selectedItem.id);
+    } else if (orderItems.length > 0 && !selectedItemId) {
+      setSelectedItemId(orderItems[0]._id || orderItems[0].id);
     }
-  }, [order.selectedItem]);
+  }, [safeOrder.selectedItem, orderItems, selectedItemId]);
 
-  const activeItem = orderItems.find(it => String(it._id || it.id) === String(selectedItemId)) || order.selectedItem || orderItems[0] || {};
+  const activeItem = orderItems.find(it => String(it._id || it.id) === String(selectedItemId)) || safeOrder.selectedItem || orderItems[0] || {};
   const [fetchedProduct, setFetchedProduct] = useState(null);
   const isReturnable = isItemReturnable(activeItem);
   const isExchangeable = isItemExchangeable(activeItem);
@@ -62,16 +63,15 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
   }, [isReturnable, isExchangeable]);
 
-  const isFabricItem = Boolean(isUnstitched);
+  // Category Configuration and Tabs
+  const replacementOptionsConfig = getCategoryReplacementOptions(activeItem, fetchedProduct);
+  const catType = replacementOptionsConfig.categoryType;
+  const isFabricItem = catType === 'unstitched';
   const currentQuantity = Number(activeItem.quantity || 1);
   const effectiveUnitPrice = Number(activeItem.finalPrice ?? (activeItem.total && currentQuantity ? activeItem.total / currentQuantity : activeItem.price) ?? activeItem.price ?? 0);
   const ratePerMeter = effectiveUnitPrice;
   const meterStep = Number(fetchedProduct?.meterStep || activeItem?.meterStep || 0.25);
   const minMeter = Number(fetchedProduct?.minMeter || activeItem?.minMeter || 0.5);
-
-  // Category Configuration and Tabs
-  const replacementOptionsConfig = getCategoryReplacementOptions(activeItem, fetchedProduct);
-  const catType = replacementOptionsConfig.categoryType;
   const [activeSubTab, setActiveSubTab] = useState(() => replacementOptionsConfig.primaryTab);
 
   useEffect(() => {
@@ -109,12 +109,12 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
 
   // Calculate return window till date
   const deliveredDate = (() => {
-    if (order.deliveredAt) return new Date(order.deliveredAt);
-    if (order.deliveryDetails?.deliveredAt) return new Date(order.deliveryDetails.deliveredAt);
-    const status = String(order.overallStatus || order.status || '').toLowerCase().trim();
+    if (safeOrder.deliveredAt) return new Date(safeOrder.deliveredAt);
+    if (safeOrder.deliveryDetails?.deliveredAt) return new Date(safeOrder.deliveryDetails.deliveredAt);
+    const status = String(safeOrder.overallStatus || safeOrder.status || '').toLowerCase().trim();
     const isDelivered = ['delivered', 'completed', 'fulfilled', 'received'].includes(status);
-    if (isDelivered) return new Date(order.updatedAt || Date.now());
-    return new Date(order.date || order.createdAt || Date.now());
+    if (isDelivered) return new Date(safeOrder.updatedAt || Date.now());
+    return new Date(safeOrder.date || safeOrder.createdAt || Date.now());
   })();
   const returnWindowDays = activeItem.returnWindowDays || activeItem.product?.returnWindowDays || 7;
   const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
@@ -351,6 +351,8 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     : (catType.includes('stationery') || catType === 'book')
     ? 'Exchange Variant'
     : 'Exchange Size';
+
+  if (!isOpen || !order) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">

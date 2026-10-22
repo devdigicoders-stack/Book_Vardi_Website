@@ -55,6 +55,7 @@ import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import OrderTrackingModal, { isOrderRefundedOrReturnOrExchange } from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
 import ReturnExchangeModal from '../Common/ReturnExchangeModal';
+import TaxInvoiceModal from '../Common/TaxInvoiceModal';
 import { isItemReturnable, isItemExchangeable, getReturnExchangeAvailability } from '../../utils/orderReturnPolicy';
 
 export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
@@ -109,6 +110,8 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [returnModalOrder, setReturnModalOrder] = useState(null);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [invoiceModalOrder, setInvoiceModalOrder] = useState(null);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
 
   const resolveOrderLifecycleStatus = (order) => {
     if (!order) return 'placed';
@@ -183,15 +186,21 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
       return 'refund_initiated';
     }
 
+    const isMultiItemOrder = Array.isArray(order.items) && order.items.length > 1;
+    const reqItemId = order.returnRequest?.itemId;
+    const isOnlyOneItemExchanging = isMultiItemOrder && reqItemId && order.items.some(it => String(it._id || it.id || it.productId) !== String(reqItemId) && !String(it.status || '').toLowerCase().includes('exchange') && !String(it.status || '').toLowerCase().includes('return'));
+
     // 9. Active Return / Exchange Request Under Review
     if (rawRet === 'return_requested' || rawOverall === 'return_requested') {
-      return 'return_requested';
+      return isOnlyOneItemExchanging ? 'item_return_requested' : 'return_requested';
     }
     if (rawRet === 'exchange_requested' || rawOverall === 'exchange_requested') {
-      return 'exchange_requested';
+      return isOnlyOneItemExchanging ? 'item_exchange_requested' : 'exchange_requested';
     }
     if (rawRet && rawRet !== 'no_request' && rawRet !== 'none') {
-      return (order.returnRequest?.type === 'exchange') ? 'exchange_requested' : 'return_requested';
+      const isExc = order.returnRequest?.type === 'exchange';
+      if (isExc) return isOnlyOneItemExchanging ? 'item_exchange_requested' : 'exchange_requested';
+      return isOnlyOneItemExchanging ? 'item_return_requested' : 'return_requested';
     }
 
     return rawOverall || 'placed';
@@ -215,12 +224,28 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         iconClass: 'text-emerald-600'
       };
     }
+    if (s === 'item_return_requested') {
+      return {
+        icon: RotateCcw,
+        label: 'Item Return Requested',
+        badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
+        iconClass: 'text-amber-600'
+      };
+    }
     if (s === 'return_requested' || s === 'returned') {
       return {
         icon: RotateCcw,
         label: s === 'returned' ? 'Order Returned' : 'Return Requested',
         badgeClass: 'bg-amber-100 text-amber-950 border border-amber-300',
         iconClass: 'text-amber-600'
+      };
+    }
+    if (s === 'item_exchange_requested') {
+      return {
+        icon: ArrowRightLeft,
+        label: 'Item Exchange Requested',
+        badgeClass: 'bg-indigo-100 text-indigo-950 border border-indigo-300',
+        iconClass: 'text-indigo-600'
       };
     }
     if (s === 'exchange_requested' || s === 'exchanged') {
@@ -2150,13 +2175,105 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                         <div className="text-[10px] text-teal-800 font-semibold mt-0.5">
                                           Sold by: {item.storeName || item.sellerName || item.sellerDetails?.storeName || 'Partner Merchant'}
                                         </div>
+                                        {(() => {
+                                          const itemQty = Number(item.quantity || 1);
+                                          const itemUnitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+                                          const grossItemPrice = Math.round((itemUnitPrice * itemQty) * 100) / 100;
+                                          const anyItemHasSpecificDiscount = (order.items || []).some(
+                                            it => (it.offerDiscount !== undefined && it.offerDiscount !== null && !isNaN(Number(it.offerDiscount)) && Number(it.offerDiscount) > 0) ||
+                                                  (it.discount !== undefined && it.discount !== null && !isNaN(Number(it.discount)) && Number(it.discount) > 0) ||
+                                                  Boolean(it.couponCode) ||
+                                                  (Number(it.finalPrice) > 0 && Number(it.price) > Number(it.finalPrice))
+                                          );
+                                          const isProductSpecificCoupon = Boolean(
+                                            order.couponDetails?.applicableScope === 'specific_product' ||
+                                            (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
+                                          );
+                                          const eligibleProductIds = new Set(
+                                            (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
+                                              .filter(Boolean)
+                                              .map(id => String(id))
+                                          );
+                                          const isEligible = !isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || ''));
+
+                                          const orderCouponDiscount = Number(order.discountAmount ?? order.discount ?? 0);
+                                          const rawItemsSubtotal = (order.items || []).reduce(
+                                            (acc, it) => acc + (Number(it.originalPrice ?? it.price ?? 0) * Number(it.quantity || 1)), 0
+                                          );
+                                          let itemDiscount = 0;
+                                          if (anyItemHasSpecificDiscount) {
+                                            itemDiscount = Number(item.offerDiscount || item.discount || 0);
+                                            if (itemDiscount === 0 && Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice)) {
+                                              itemDiscount = Math.round((Number(item.price) - Number(item.finalPrice)) * itemQty * 100) / 100;
+                                            }
+                                          } else if (orderCouponDiscount > 0 && rawItemsSubtotal > 0 && isEligible) {
+                                            itemDiscount = Math.round((orderCouponDiscount * (grossItemPrice / rawItemsSubtotal)) * 100) / 100;
+                                          }
+                                          itemDiscount = Math.min(grossItemPrice, Math.max(0, itemDiscount));
+                                          const itemCouponCode = (itemDiscount > 0) ? (item.couponCode || item.appliedCouponCode || order.couponCode || order.appliedCouponCode || '') : '';
+                                          if (itemDiscount <= 0) return null;
+                                          return (
+                                            <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
+                                              <span>🏷️ Coupon {itemCouponCode ? `(${itemCouponCode})` : 'Applied'}: -₹{itemDiscount.toFixed(2)} off</span>
+                                            </div>
+                                          );
+                                        })()}
                                       </div>
                                     </div>
 
                                     <div className="text-right flex flex-col items-end gap-1 shrink-0">
-                                      <span className="font-display font-extrabold text-xs text-gray-900">
-                                        ₹{(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}
-                                      </span>
+                                      {(() => {
+                                        const itemQty = Number(item.quantity || 1);
+                                        const itemUnitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+                                        const grossItemPrice = Math.round((itemUnitPrice * itemQty) * 100) / 100;
+                                        const anyItemHasSpecificDiscount = (order.items || []).some(
+                                          it => (it.offerDiscount !== undefined && it.offerDiscount !== null && !isNaN(Number(it.offerDiscount)) && Number(it.offerDiscount) > 0) ||
+                                                (it.discount !== undefined && it.discount !== null && !isNaN(Number(it.discount)) && Number(it.discount) > 0) ||
+                                                Boolean(it.couponCode) ||
+                                                (Number(it.finalPrice) > 0 && Number(it.price) > Number(it.finalPrice))
+                                        );
+                                        const isProductSpecificCoupon = Boolean(
+                                          order.couponDetails?.applicableScope === 'specific_product' ||
+                                          (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
+                                        );
+                                        const eligibleProductIds = new Set(
+                                          (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
+                                            .filter(Boolean)
+                                            .map(id => String(id))
+                                        );
+                                        const isEligible = !isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || ''));
+
+                                        const orderCouponDiscount = Number(order.discountAmount ?? order.discount ?? 0);
+                                        const rawItemsSubtotal = (order.items || []).reduce(
+                                          (acc, it) => acc + (Number(it.originalPrice ?? it.price ?? 0) * Number(it.quantity || 1)), 0
+                                        );
+                                        let itemDiscount = 0;
+                                        if (anyItemHasSpecificDiscount) {
+                                          itemDiscount = Number(item.offerDiscount || item.discount || 0);
+                                          if (itemDiscount === 0 && Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice)) {
+                                            itemDiscount = Math.round((Number(item.price) - Number(item.finalPrice)) * itemQty * 100) / 100;
+                                          }
+                                        } else if (orderCouponDiscount > 0 && rawItemsSubtotal > 0 && isEligible) {
+                                          itemDiscount = Math.round((orderCouponDiscount * (grossItemPrice / rawItemsSubtotal)) * 100) / 100;
+                                        }
+                                        itemDiscount = Math.min(grossItemPrice, Math.max(0, itemDiscount));
+                                        const netItemPrice = Math.max(0, Math.round((grossItemPrice - itemDiscount) * 100) / 100);
+
+                                        if (itemDiscount > 0) {
+                                          return (
+                                            <div className="text-right">
+                                              <div className="font-display font-extrabold text-xs text-emerald-700">₹{netItemPrice.toFixed(2)}</div>
+                                              <div className="text-[10px] text-gray-400 line-through">₹{grossItemPrice.toFixed(2)}</div>
+                                              <div className="text-[9px] text-emerald-600 font-semibold">(-₹{itemDiscount.toFixed(2)} off)</div>
+                                            </div>
+                                          );
+                                        }
+                                        return (
+                                          <span className="font-display font-extrabold text-xs text-gray-900">
+                                            ₹{grossItemPrice.toFixed(2)}
+                                          </span>
+                                        );
+                                      })()}
                                       <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase ${itemStatMeta.badgeClass}`}>
                                         <ItemStatusIcon size={11} className={itemStatMeta.iconClass} />
                                         <span>{itemStatMeta.label}</span>
@@ -2244,10 +2361,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 <div className="flex items-center gap-1.5">
                                   <ArrowRightLeft size={15} className="text-blue-600 shrink-0" />
                                   <span className="font-semibold text-sm">
+                                    {order.returnRequest?.itemName ? `${order.returnRequest.itemName} — ` : ''}
                                     {(currentStatus.includes('exchange') || order.returnRequest?.type === 'exchange')
                                       ? (order.returnRequest?.exchangeLength || order.returnRequest?.isMeterBased
                                           ? 'Fabric Length Exchange Request'
-                                          : String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('kids')
+                                          : String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('kids') || String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('uk/ind')
                                           ? 'Shoe Size Exchange Request'
                                           : String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('line') || String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('pack') || String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('class') || String(order.returnRequest?.exchangeSize || '').toLowerCase().includes('replacement')
                                           ? 'Variant Exchange Request'
@@ -2298,6 +2416,13 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                   )}
                                 </div>
                               </div>
+
+                              {order.returnRequest?.itemName && Array.isArray(order.items) && order.items.length > 1 && (
+                                <div className="text-[11px] font-bold text-blue-900 bg-white/90 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-blue-700 font-extrabold">📦 Item-Specific Exchange:</span>
+                                  <span>Applied ONLY to <strong>{order.returnRequest.itemName}</strong> (1 Item). Other item(s) in this combine order continue with their regular shipping / delivery.</span>
+                                </div>
+                              )}
 
                               {order.returnRequest?.reason && (
                                 <p className="text-[11px] text-gray-700">
@@ -2552,10 +2677,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'invoice');
+                                      setInvoiceModalOrder(order);
+                                      setIsInvoiceModalOpen(true);
                                     }}
                                     className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
-                                    title="Download Tax Invoice"
+                                    title="View & Download Tax Invoice"
                                   >
                                     <FileText size={13} />
                                     <span>Invoice</span>
@@ -4126,6 +4252,17 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         onSuccess={(updatedOrder) => {
           if (fetchUserOrders) fetchUserOrders();
         }}
+      />
+
+      <TaxInvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => {
+          setIsInvoiceModalOpen(false);
+          setInvoiceModalOrder(null);
+        }}
+        order={invoiceModalOrder}
+        userProfile={userProfile}
+        role="user"
       />
     </div>
   );

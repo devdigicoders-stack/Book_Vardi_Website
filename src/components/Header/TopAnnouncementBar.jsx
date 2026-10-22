@@ -16,6 +16,25 @@ export default function TopAnnouncementBar({ onNavigate, onVisibilityChange }) {
         const list = res?.data || res?.announcements;
         if (Array.isArray(list) && list.length > 0 && isMounted) {
           setAnnouncements(list);
+
+          // Real-time synchronization: sync threshold to CartContext if announcement provides one
+          for (const item of list) {
+            if (item && item.isActive !== false) {
+              const combined = `${item.badge || ''} ${item.text || ''}`.toLowerCase();
+              if (combined.includes('free delivery') || combined.includes('free shipping') || combined.includes('freedelivery')) {
+                const match = item.text?.match(/(?:over|above|min(?:imum)?|orders?\s*(?:over|above)?)\s*(?:₹|rs\.?|inr)?\s*(\d+)/i) ||
+                              item.text?.match(/(?:₹|rs\.?|inr)\s*(\d+)/i);
+                if (match && match[1]) {
+                  const val = Number(match[1]);
+                  if (!isNaN(val) && val > 0) {
+                    window.dispatchEvent(new CustomEvent('bv_settings_updated', {
+                      detail: { minOrderFreeShipping: val, freeShippingThreshold: val }
+                    }));
+                  }
+                }
+              }
+            }
+          }
         }
       } catch (err) {
         // Fallback to defaults

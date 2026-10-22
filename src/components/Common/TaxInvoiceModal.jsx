@@ -552,22 +552,68 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const orderPointsDiscount = Number(order.pointsDiscount || 0);
   const orderTotalDiscounts = orderDiscount + orderPointsDiscount;
 
+  const allOrderItemsList = order.items || [];
+  const anyOrderItemsHaveDiscount = allOrderItemsList.some(
+    (it) => (it.offerDiscount !== undefined && it.offerDiscount !== null && !isNaN(Number(it.offerDiscount)) && Number(it.offerDiscount) > 0) ||
+            (it.discount !== undefined && it.discount !== null && !isNaN(Number(it.discount)) && Number(it.discount) > 0) ||
+            Boolean(it.couponCode) ||
+            (Number(it.finalPrice) > 0 && Number(it.price) > Number(it.finalPrice))
+  );
+  const currentItemsHaveDiscount = items.some(
+    (it) => (it.offerDiscount !== undefined && it.offerDiscount !== null && !isNaN(Number(it.offerDiscount)) && Number(it.offerDiscount) > 0) ||
+            (it.discount !== undefined && it.discount !== null && !isNaN(Number(it.discount)) && Number(it.discount) > 0) ||
+            Boolean(it.couponCode) ||
+            (Number(it.finalPrice) > 0 && Number(it.price) > Number(it.finalPrice))
+  );
+
+  const isProductSpecificCoupon = Boolean(
+    order.couponDetails?.applicableScope === 'specific_product' ||
+    (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
+  );
+
+  const eligibleProductIds = new Set(
+    (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
+      .filter(Boolean)
+      .map(id => String(id))
+  );
+
+  const currentSellerHasEligibleProducts = !isProductSpecificCoupon || items.some(it => {
+    const pId = String(it.productId || it.id || it._id || '');
+    return eligibleProductIds.has(pId);
+  });
+
   const sellerShare = allOrderItemsSum > 0 ? (itemsSum / allOrderItemsSum) : 1;
   const shippingCost = sellerGroups.length > 1
     ? (orderShippingCost > 0 ? Math.round(orderShippingCost * sellerShare * 100) / 100 : 0)
     : orderShippingCost;
-  const totalDiscounts = sellerGroups.length > 1
-    ? (orderTotalDiscounts > 0 ? Math.round(orderTotalDiscounts * sellerShare * 100) / 100 : 0)
-    : orderTotalDiscounts;
+
+  const sellerItemsDiscountSum = items.reduce(
+    (sum, it) => sum + (Number(it.offerDiscount || it.discount) || 0),
+    0
+  );
+
+  const totalDiscounts = (anyOrderItemsHaveDiscount || currentItemsHaveDiscount)
+    ? sellerItemsDiscountSum
+    : (!currentSellerHasEligibleProducts
+        ? 0
+        : (sellerGroups.length > 1
+            ? (orderTotalDiscounts > 0 ? Math.round(orderTotalDiscounts * sellerShare * 100) / 100 : 0)
+            : orderTotalDiscounts));
+
+  const rawSubtotal = Number(order.subtotal || 0);
+  const isItemPriceAlreadyDiscounted = !currentItemsHaveDiscount && rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
 
   const subtotal = itemsSum;
   const grandTotal = Math.max(0, Math.round((subtotal + shippingCost - totalDiscounts) * 100) / 100);
-  const discountRatio = subtotal > 0 ? Math.min(1, totalDiscounts / subtotal) : 0;
+  const discountRatio = (!currentItemsHaveDiscount && subtotal > 0 && totalDiscounts > 0)
+    ? Math.min(1, totalDiscounts / subtotal)
+    : 0;
 
   let totalTaxableValue = 0;
   let totalTaxAmount = 0;
+  let runningProratedDiscount = 0;
 
-  const itemBreakdowns = items.map((item) => {
+  const itemBreakdowns = items.map((item, idx) => {
     const isUnstitched = Boolean(
       item.isMeterBased ||
       item.unit === 'meter' ||
@@ -590,13 +636,29 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     const qty = rawQty;
 
     let unitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+    if (isItemPriceAlreadyDiscounted && totalDiscounts > 0 && subtotal > 0) {
+      const proportion = (unitPrice * qty) / itemsSum;
+      const allocDiscount = totalDiscounts * proportion;
+      unitPrice = qty > 0 ? Math.round(((unitPrice * qty + allocDiscount) / qty) * 100) / 100 : unitPrice;
+    }
     const grossPrice = Math.round((unitPrice * qty) * 100) / 100;
     const rate = getProductGstRate(item);
     const isInclusive = item.isGstInclusive !== false && order.isGstInclusive !== false;
 
-    const itemDiscount = item.offerDiscount !== undefined && item.offerDiscount !== null && !isNaN(Number(item.offerDiscount)) && Number(item.offerDiscount) > 0
-      ? Number(item.offerDiscount)
-      : (discountRatio > 0 ? Math.round(grossPrice * discountRatio * 100) / 100 : 0);
+    let itemDiscount = 0;
+    if (currentItemsHaveDiscount) {
+      itemDiscount = Number(item.offerDiscount || item.discount || 0);
+      if (itemDiscount === 0 && Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice)) {
+        itemDiscount = Math.round((Number(item.price) - Number(item.finalPrice)) * qty * 100) / 100;
+      }
+    } else if (discountRatio > 0 && (!isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || '')))) {
+      const isLast = idx === items.length - 1;
+      itemDiscount = isLast
+        ? Math.max(0, Math.round((totalDiscounts - runningProratedDiscount) * 100) / 100)
+        : Math.min(grossPrice, Math.round((grossPrice * discountRatio) * 100) / 100);
+      runningProratedDiscount += itemDiscount;
+    }
+    itemDiscount = Math.min(grossPrice, Math.max(0, itemDiscount));
     const netItemPayable = Math.max(0, Math.round((grossPrice - itemDiscount) * 100) / 100);
 
     let taxableVal = netItemPayable;
@@ -760,6 +822,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const sgstAmount = isIntraState ? Math.round((totalTaxAmount - cgstAmount) * 100) / 100 : 0;
   const igstAmount = !isIntraState ? totalTaxAmount : 0;
 
+  // Adjust small precision rounding against grand total
+  let adjustedTaxableValue = Math.round(totalTaxableValue * 100) / 100;
+  let adjustedTotalTax = Math.round(totalTaxAmount * 100) / 100;
+  if (grandTotal > 0 && Math.abs((adjustedTaxableValue + adjustedTotalTax) - grandTotal) > 0 && Math.abs((adjustedTaxableValue + adjustedTotalTax) - grandTotal) <= 0.05) {
+    adjustedTaxableValue = Math.round((grandTotal - adjustedTotalTax) * 100) / 100;
+  }
+
   // Shipping tax split
   const shippingCgst = shippingTax > 0 && isIntraState ? Math.round((shippingTax / 2) * 100) / 100 : 0;
   const shippingSgst = shippingTax > 0 && isIntraState ? Math.round((shippingTax - shippingCgst) * 100) / 100 : 0;
@@ -793,7 +862,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       const orderIdentifier = String(rawId).replace(/^#/, '').trim();
       const endpoint = isCancelled ? 'credit-note' : 'invoice';
       const sellerParam = activeSellerGroup?.sellerId || activeSellerGroup?.storeName || '';
-      const targetUrl = `${SERVER_URL}/orders/${orderIdentifier}/${endpoint}${sellerParam ? `?sellerId=${encodeURIComponent(sellerParam)}` : ''}`;
+      const targetUrl = `${SERVER_URL}/orders/${orderIdentifier}/${endpoint}?view=customer${sellerParam ? `&sellerId=${encodeURIComponent(sellerParam)}` : ''}`;
       const res = await fetch(targetUrl, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -809,13 +878,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
         return;
       }
-      throw new Error(`Server returned status ${res.status}`);
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.message || `Server returned status ${res.status}`);
     } catch (err) {
-      console.warn('Backend PDF endpoint unavailable, opening pristine print-to-PDF view:', err);
-      handlePrint();
+      console.error('Invoice PDF download error:', err);
+      alert(`Could not download invoice PDF: ${err.message || 'Please try again later'}`);
     } finally {
       setIsDownloading(false);
     }
@@ -1204,6 +1274,11 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                             </>
                           )}
                         </div>
+                        {item.itemDiscount > 0 && (
+                          <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                            <span>🏷️ Offer / Coupon: -₹{item.itemDiscount.toFixed(2)} off</span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-3">
                         <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={sellerName}>
@@ -1243,10 +1318,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                         {isCancelled ? (
                           <span className="text-rose-700">-₹{displayTotal.toFixed(2)}</span>
                         ) : (
-                          <span className="text-gray-900">₹{displayTotal.toFixed(2)}</span>
+                          <>
+                            {item.itemDiscount > 0 && (
+                              <span className="text-gray-400 line-through text-[10px] block font-normal">₹{item.grossPrice.toFixed(2)}</span>
+                            )}
+                            <span className={item.itemDiscount > 0 ? "text-emerald-700 font-bold" : "text-gray-900"}>₹{displayTotal.toFixed(2)}</span>
+                          </>
                         )}
                         {item.itemDiscount > 0 && (
-                          <span className="block text-[9px] text-emerald-600 font-normal font-sans">(-₹{item.itemDiscount.toFixed(2)} off)</span>
+                          <span className="block text-[9px] text-emerald-600 font-semibold font-sans">(-₹{item.itemDiscount.toFixed(2)} off)</span>
                         )}
                       </td>
                     </tr>
@@ -1310,7 +1390,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                     {isCancelled ? 'Total Reversal:' : 'Total / Order Payable:'}
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 text-xs">
-                    ₹{totalTaxableValue.toFixed(2)}
+                    ₹{adjustedTaxableValue.toFixed(2)}
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono">
                     {totalTaxAmount > 0 ? (

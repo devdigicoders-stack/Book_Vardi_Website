@@ -18,10 +18,7 @@ export default function ProductCarouselRow({
   const scrollRef = useRef(null);
   const isHoveredRef = useRef(false);
 
-  // If not loading, no products, and requested to hide empty state
-  if (!isRowLoading && (!products || products.length === 0) && hideIfEmpty) {
-    return null;
-  }
+  const shouldHide = !isRowLoading && (!products || products.length === 0) && hideIfEmpty;
 
   const scroll = (direction) => {
     if (scrollRef.current) {
@@ -43,7 +40,7 @@ export default function ProductCarouselRow({
   };
 
   useEffect(() => {
-    if (!autoScroll || isRowLoading) return;
+    if (!autoScroll || isRowLoading || shouldHide) return;
 
     const timer = setInterval(() => {
       if (!isHoveredRef.current) {
@@ -52,7 +49,12 @@ export default function ProductCarouselRow({
     }, autoScrollInterval);
 
     return () => clearInterval(timer);
-  }, [autoScroll, autoScrollInterval, isRowLoading]);
+  }, [autoScroll, autoScrollInterval, isRowLoading, shouldHide]);
+
+  // If not loading, no products, and requested to hide empty state
+  if (shouldHide) {
+    return null;
+  }
 
   return (
     <section className="py-8 sm:py-10 bg-white border-b border-gray-100 last:border-b-0">
