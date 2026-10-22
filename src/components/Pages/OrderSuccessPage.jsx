@@ -1271,14 +1271,32 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                           );
                           const isProductSpecificCoupon = Boolean(
                             order.couponDetails?.applicableScope === 'specific_product' ||
-                            (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
+                            order.couponDetails?.applicableScope === 'specific_kit' ||
+                            order.couponDetails?.specificProductId ||
+                            order.couponDetails?.specificKitId ||
+                            order.couponDetails?.specificProductName ||
+                            order.couponDetails?.specificKitTitle ||
+                            (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0) ||
+                            (Array.isArray(order.couponDetails?.applicableKits) && order.couponDetails.applicableKits.length > 0)
                           );
                           const eligibleProductIds = new Set(
-                            (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
+                            (order.couponDetails?.applicableProducts || [])
+                              .concat(order.couponDetails?.specificProductId ? [order.couponDetails.specificProductId] : [])
+                              .concat(order.couponDetails?.applicableKits || [])
+                              .concat(order.couponDetails?.specificKitId ? [order.couponDetails.specificKitId] : [])
                               .filter(Boolean)
-                              .map(id => String(id))
+                              .map(id => String(id).toLowerCase().trim())
                           );
-                          const isEligible = !isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || ''));
+                          const specProdName = String(order.couponDetails?.specificProductName || '').toLowerCase().trim();
+                          const specKitTitle = String(order.couponDetails?.specificKitTitle || '').toLowerCase().trim();
+                          const itemCandidateIds = [item.productId, item.id, item._id, item.customId].filter(Boolean).map(id => String(id).toLowerCase().trim());
+                          const isIdMatched = itemCandidateIds.some(id => eligibleProductIds.has(id));
+                          const itemNameLower = String(item.name || '').toLowerCase();
+                          const isNameMatched = Boolean(
+                            (specProdName && itemNameLower.includes(specProdName)) ||
+                            (specKitTitle && itemNameLower.includes(specKitTitle))
+                          );
+                          const isEligible = isProductSpecificCoupon ? (isIdMatched || isNameMatched) : true;
 
                           const orderCouponDiscount = Number(order.discountAmount ?? order.discount ?? 0);
                           const rawItemsSubtotal = (order.items || []).reduce(
@@ -1323,14 +1341,32 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                           );
                           const isProductSpecificCoupon = Boolean(
                             order.couponDetails?.applicableScope === 'specific_product' ||
-                            (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
+                            order.couponDetails?.applicableScope === 'specific_kit' ||
+                            order.couponDetails?.specificProductId ||
+                            order.couponDetails?.specificKitId ||
+                            order.couponDetails?.specificProductName ||
+                            order.couponDetails?.specificKitTitle ||
+                            (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0) ||
+                            (Array.isArray(order.couponDetails?.applicableKits) && order.couponDetails.applicableKits.length > 0)
                           );
                           const eligibleProductIds = new Set(
-                            (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
+                            (order.couponDetails?.applicableProducts || [])
+                              .concat(order.couponDetails?.specificProductId ? [order.couponDetails.specificProductId] : [])
+                              .concat(order.couponDetails?.applicableKits || [])
+                              .concat(order.couponDetails?.specificKitId ? [order.couponDetails.specificKitId] : [])
                               .filter(Boolean)
-                              .map(id => String(id))
+                              .map(id => String(id).toLowerCase().trim())
                           );
-                          const isEligible = !isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || ''));
+                          const specProdName = String(order.couponDetails?.specificProductName || '').toLowerCase().trim();
+                          const specKitTitle = String(order.couponDetails?.specificKitTitle || '').toLowerCase().trim();
+                          const itemCandidateIds = [item.productId, item.id, item._id, item.customId].filter(Boolean).map(id => String(id).toLowerCase().trim());
+                          const isIdMatched = itemCandidateIds.some(id => eligibleProductIds.has(id));
+                          const itemNameLower = String(item.name || '').toLowerCase();
+                          const isNameMatched = Boolean(
+                            (specProdName && itemNameLower.includes(specProdName)) ||
+                            (specKitTitle && itemNameLower.includes(specKitTitle))
+                          );
+                          const isEligible = isProductSpecificCoupon ? (isIdMatched || isNameMatched) : true;
 
                           const orderCouponDiscount = Number(order.discountAmount ?? order.discount ?? 0);
                           const rawItemsSubtotal = (order.items || []).reduce(

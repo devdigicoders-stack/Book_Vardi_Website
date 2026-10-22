@@ -28,6 +28,7 @@ import {
   getProductMainImage,
   API_BASE_URL
 } from '../utils/api';
+import { isCouponApplicableToProduct } from '../utils/couponApplicability';
 
 export const EMPTY_USER_PROFILE = {
   id: '',
@@ -1901,24 +1902,7 @@ export function CartProvider({ children }) {
         return { success: false, message: 'This coupon code has reached its maximum usage limit.' };
       }
 
-      const isSeller = Boolean(dynamicPromo.sellerId || dynamicPromo.storeId || dynamicPromo.createdRole === 'seller');
-      const targetSeller = dynamicPromo.sellerId || dynamicPromo.storeId;
-      const applicableProds = dynamicPromo.specificProductId
-        ? [String(dynamicPromo.specificProductId)]
-        : (Array.isArray(dynamicPromo.applicableProducts) ? dynamicPromo.applicableProducts.map(String) : []);
-
-      const eligibleItems = effectiveCartItems.filter((item) => {
-        const itemSeller = item.sellerId || item.seller || item.storeId || item.userId;
-        const itemProd = item.id || item._id || item.productId;
-        if (isSeller) {
-          if (targetSeller && String(itemSeller) !== String(targetSeller)) return false;
-          if (applicableProds.length > 0 && !applicableProds.includes(String(itemProd))) return false;
-          return true;
-        } else {
-          if (applicableProds.length > 0 && !applicableProds.includes(String(itemProd))) return false;
-          return true;
-        }
-      });
+      const eligibleItems = effectiveCartItems.filter((item) => isCouponApplicableToProduct(dynamicPromo, item));
 
       if (eligibleItems.length === 0) {
         showToast('⚠️ This coupon is not applicable to any items in your cart.');
