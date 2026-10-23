@@ -1351,7 +1351,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                 })}
 
                 {/* Dedicated Delivery Charges Line Item */}
-                {shippingCost > 0 && (
+                {shippingCost > 0 ? (
                   <tr className="hover:bg-gray-50/50 bg-teal-50/15">
                     <td className="py-2.5 px-3">
                       <p className="font-bold text-gray-900">Delivery &amp; Shipping Charges</p>
@@ -1397,6 +1397,33 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                       ) : (
                         <span className="text-gray-900">₹{shippingCost.toFixed(2)}</span>
                       )}
+                    </td>
+                  </tr>
+                ) : (
+                  <tr className="hover:bg-emerald-50/40 bg-emerald-50/20">
+                    <td className="py-2.5 px-3">
+                      <p className="font-bold text-emerald-950 flex items-center gap-1.5">
+                        <span>🚚</span> Delivery &amp; Shipping Charges
+                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-300">
+                          FREE Delivery
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-emerald-700">Order Policy (Admin Absorbed / Free Shipping Promotion)</p>
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-[11px] border border-gray-200 block truncate max-w-[140px]" title={resolvedSeller.storeName}>
+                        {resolvedSeller.storeName}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-gray-400">NA</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-gray-400 line-through">₹49.00</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹0.00</td>
+                    <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                      <span className="text-emerald-700 font-semibold text-[10px] block">0% GST</span>
+                      <span className="text-[9px] text-gray-400 block font-mono">₹0.00 (Exempt)</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-bold text-emerald-700 font-mono whitespace-nowrap pr-3.5">
+                      FREE (₹0.00)
                     </td>
                   </tr>
                 )}
