@@ -2123,6 +2123,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               const itemTillDate = new Date(deliveredDate.getTime() + itemReturnWindowDays * 24 * 60 * 60 * 1000);
                               const itemFormattedTillDate = itemTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
                               const itemDaysLeft = Math.max(0, Math.ceil((itemTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+                              const isItemDelivered = ['delivered', 'completed'].includes(itemRawStatus) || isDelivered;
                               const itemCanonicalStatus = itemRawStatus.replace(/[\s-]+/g, '_');
                               const isItemAlreadyGoverned = [
                                 'return_requested', 'returned', 'exchange_requested', 'exchanged',
