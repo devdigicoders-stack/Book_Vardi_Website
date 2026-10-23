@@ -17,19 +17,25 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   const orderId = safeOrder.id || safeOrder.orderId || safeOrder._id || '';
   const userPhone = safeOrder.customer?.phone || safeOrder.shippingAddress?.phone || '';
   const orderItems = Array.isArray(safeOrder.items) ? safeOrder.items : [];
+  const getItemId = (it) => String(it?._id || it?.id || it?.productId || '');
+
   const [selectedItemId, setSelectedItemId] = useState(() => {
-    return safeOrder.selectedItem?._id || safeOrder.selectedItem?.id || orderItems[0]?._id || orderItems[0]?.id || null;
+    return getItemId(safeOrder.selectedItem) || getItemId(orderItems[0]) || null;
   });
 
   useEffect(() => {
     if (safeOrder.selectedItem) {
-      setSelectedItemId(safeOrder.selectedItem._id || safeOrder.selectedItem.id);
+      const sId = getItemId(safeOrder.selectedItem);
+      if (sId) setSelectedItemId(sId);
     } else if (orderItems.length > 0 && !selectedItemId) {
-      setSelectedItemId(orderItems[0]._id || orderItems[0].id);
+      setSelectedItemId(getItemId(orderItems[0]));
     }
-  }, [safeOrder.selectedItem, orderItems, selectedItemId]);
+  }, [safeOrder.selectedItem, orderItems]);
 
-  const activeItem = orderItems.find(it => String(it._id || it.id) === String(selectedItemId)) || safeOrder.selectedItem || orderItems[0] || {};
+  const activeItem = orderItems.find(it => {
+    const sId = String(selectedItemId || '');
+    return getItemId(it) === sId || (it.name && safeOrder.selectedItem?.name && it.name === safeOrder.selectedItem.name);
+  }) || safeOrder.selectedItem || orderItems[0] || {};
   const [fetchedProduct, setFetchedProduct] = useState(null);
   const isReturnable = isItemReturnable(activeItem);
   const isExchangeable = isItemExchangeable(activeItem);
@@ -87,14 +93,15 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
   const [refundMethod, setRefundMethod] = useState('UPI / Bank Transfer');
 
   useEffect(() => {
-    if (isFabricItem) {
+    if (activeItem) {
+      setExchangeSize(activeItem.size || '');
       const q = Number(activeItem.quantity || 1);
       setExchangeLength(q);
-      if (activeType === 'exchange') {
+      if (isFabricItem && activeType === 'exchange') {
         setReason('Need longer fabric length');
       }
     }
-  }, [activeItem, isFabricItem, activeType]);
+  }, [selectedItemId, activeItem?.size, activeItem?.quantity, isFabricItem, activeType]);
 
   // Refund payout details state for return / partial refund
   const [payoutMode, setPayoutMode] = useState('UPI'); // 'UPI' | 'BANK'
@@ -304,7 +311,7 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
 
     const payload = {
-      itemId: activeItem._id || activeItem.id,
+      itemId: activeItem._id || activeItem.id || activeItem.productId,
       itemName: activeItem.name,
       type: activeType,
       reason,
@@ -434,26 +441,38 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs text-gray-800">
           {/* Order Item Selection if Multiple Items */}
-          {orderItems.length > 1 && !order.selectedItem && (
+          {orderItems.length > 1 && (
             <div className="space-y-1.5">
               <label className="block text-[11px] font-extrabold text-gray-700 uppercase tracking-wider">
-                Select Item to Return / Exchange ({orderItems.length} items in order)
+                Select Item to Return / Exchange ({orderItems.length} items in order):
               </label>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {orderItems.map((it, idx) => {
-                  const itId = it._id || it.id || idx;
-                  const isSelected = String(itId) === String(selectedItemId);
+                  const itId = getItemId(it) || idx;
+                  const isSelected = String(itId) === String(selectedItemId) || (it.name && activeItem?.name && it.name === activeItem.name);
+                  const itemStatusLower = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                  const isItemGoverned = ['exchange_requested', 'return_requested', 'exchanged', 'returned'].includes(itemStatusLower);
                   return (
                     <button
                       key={itId}
                       type="button"
+                      disabled={isItemGoverned}
                       onClick={() => setSelectedItemId(itId)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-2 ${
-                        isSelected ? 'bg-brand-teal text-white border-brand-teal shadow-xs' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand-teal'
+                        isItemGoverned
+                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                          : isSelected
+                          ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
+                          : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand-teal'
                       }`}
                     >
                       <span className="truncate max-w-[120px]">{it.name}</span>
                       <span className={`text-[10px] font-mono ${isSelected ? 'text-teal-100' : 'text-gray-500'}`}>₹{it.price}</span>
+                      {isItemGoverned && (
+                        <span className="text-[9px] bg-gray-200 text-gray-600 px-1 rounded font-normal">
+                          {String(it.status).replace(/_/g, ' ')}
+                        </span>
+                      )}
                     </button>
                   );
                 })}

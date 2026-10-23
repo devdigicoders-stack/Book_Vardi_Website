@@ -2123,8 +2123,21 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               const itemTillDate = new Date(deliveredDate.getTime() + itemReturnWindowDays * 24 * 60 * 60 * 1000);
                               const itemFormattedTillDate = itemTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
                               const itemDaysLeft = Math.max(0, Math.ceil((itemTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-                              const isItemDelivered = ['delivered', 'completed'].includes(itemRawStatus) || isDelivered;
-                              const isItemWindowValid = isItemDelivered && (itemIsRet || itemIsExc) && now <= itemTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
+                              const itemCanonicalStatus = itemRawStatus.replace(/[\s-]+/g, '_');
+                              const isItemAlreadyGoverned = [
+                                'return_requested', 'returned', 'exchange_requested', 'exchanged',
+                                'return_approved', 'exchange_approved', 'refund_requested', 'refunded'
+                              ].includes(itemCanonicalStatus) || (
+                                Boolean(order.returnRequest &&
+                                order.returnRequest.status &&
+                                order.returnRequest.status !== 'no_request' &&
+                                order.returnRequest.status !== 'rejected' &&
+                                order.returnRequest.status !== 'return_rejected' &&
+                                order.returnRequest.status !== 'exchange_rejected') &&
+                                (String(order.returnRequest.itemId || '') === String(item._id || item.id || item.productId || '') ||
+                                 (order.returnRequest.itemName && item.name === order.returnRequest.itemName))
+                              );
+                              const isItemWindowValid = isItemDelivered && (itemIsRet || itemIsExc) && now <= itemTillDate && !isItemAlreadyGoverned;
                               const itemAvail = getReturnExchangeAvailability(itemIsRet, itemIsExc, itemFormattedTillDate, itemDaysLeft);
 
                               return (
