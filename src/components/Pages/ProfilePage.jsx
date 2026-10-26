@@ -2552,20 +2552,25 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                               {/* Direct Statutory PDF Action Buttons: Exchange gets Exchange Tax Invoice ONLY; Returns get Credit Note */}
                               {(() => {
-                                const isExchangeReq = order.returnRequest?.type === 'exchange' ||
-                                  order.returnRequest?.requestType === 'exchange' ||
+                                const retType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase();
+                                const isExchangeReq = retType === 'exchange' ||
                                   ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
                                   String(currentStatus).includes('exchange');
 
-                                const isReturnReq = !isExchangeReq && (
-                                  order.returnRequest?.type === 'return' ||
-                                  ['refund_completed', 'refunded', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus) ||
-                                  (currentStatus === 'product_received' && order.returnRequest?.type === 'return')
-                                );
+                                const retStatus = String(order.returnRequest?.status || order.overallStatus || currentStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                                const acceptedStatuses = [
+                                  'approved', 'return_approved', 'pickup_scheduled',
+                                  'product_received', 'product_return_received',
+                                  'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
+                                ];
+                                const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
+                                const isCancelled = currentStatus === 'cancelled' || Boolean(order.cancelledAt);
+                                const canDownloadCreditNote = !isExchangeReq && (isReturnAccepted || isCancelled);
+                                const isPendingReturnApproval = !isExchangeReq && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
 
                                 return (
                                   <div className="pt-2 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-2">
-                                    {isReturnReq && (
+                                    {canDownloadCreditNote && (
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -2578,6 +2583,16 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                         <FileText size={13} className="text-rose-600" />
                                         <span>Download GST Credit Note</span>
                                       </button>
+                                    )}
+
+                                    {isPendingReturnApproval && (
+                                      <span
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 text-gray-500 font-semibold text-xs rounded-lg border border-gray-200 cursor-not-allowed opacity-90 shadow-2xs"
+                                        title="Credit note will be generated once your return request is approved by the seller"
+                                      >
+                                        <Lock size={12} className="text-gray-400" />
+                                        <span>Credit Note (Pending Approval)</span>
+                                      </span>
                                     )}
 
                                     {isExchangeReq && (
@@ -2667,22 +2682,26 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                               {/* Quick Document Download Buttons for Customer: Strictly Exchange Invoice for exchange, Credit Note for return/cancel */}
                               {(() => {
-                                const isExchangeReq = order.returnRequest?.type === 'exchange' ||
-                                  order.returnRequest?.requestType === 'exchange' ||
+                                const retType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase();
+                                const isExchangeReq = retType === 'exchange' ||
                                   ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
                                   String(currentStatus).includes('exchange');
 
-                                const isReturnReq = !isExchangeReq && (
-                                  order.returnRequest?.type === 'return' ||
-                                  currentStatus === 'cancelled' ||
-                                  ['refund_completed', 'refunded', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus) ||
-                                  (currentStatus === 'product_received' && order.returnRequest?.type === 'return')
-                                );
+                                const retStatus = String(order.returnRequest?.status || order.overallStatus || currentStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                                const acceptedStatuses = [
+                                  'approved', 'return_approved', 'pickup_scheduled',
+                                  'product_received', 'product_return_received',
+                                  'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
+                                ];
+                                const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
+                                const isCancelled = currentStatus === 'cancelled' || Boolean(order.cancelledAt);
+                                const canDownloadCreditNote = !isExchangeReq && (isReturnAccepted || isCancelled);
+                                const isPendingReturnApproval = !isExchangeReq && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
 
                                 if (isOrderRefundedOrReturnOrExchange(order) || currentStatus === 'cancelled') {
                                   return (
                                     <>
-                                      {isReturnReq && (
+                                      {canDownloadCreditNote && (
                                         <button
                                           type="button"
                                           onClick={(e) => {
@@ -2695,6 +2714,15 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                           <FileText size={13} />
                                           <span>Credit Note</span>
                                         </button>
+                                      )}
+                                      {isPendingReturnApproval && (
+                                        <span
+                                          className="inline-flex items-center gap-1 text-xs font-semibold text-gray-400 bg-gray-50 border border-gray-200 px-2.5 py-1.5 rounded-xl cursor-not-allowed shadow-2xs"
+                                          title="Credit note will be generated once your return is approved"
+                                        >
+                                          <Lock size={12} className="text-gray-400" />
+                                          <span>Credit Note (Pending Approval)</span>
+                                        </span>
                                       )}
                                       {isExchangeReq && (
                                         <button

@@ -151,36 +151,7 @@ export default function ProductDetailPage({ onNavigate }) {
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [isBuyingNow, setIsBuyingNow] = useState(false);
 
-  const handleAddToCartWithLoader = () => {
-    if (isAddingToCart) return;
-    const finalQty = isMeterProduct
-      ? Math.max(minMeter, Math.round(Number(quantity) * 100) / 100)
-      : Math.max(1, Number(quantity) || 1);
-    if (isMeterProduct && Number(quantity) < minMeter) {
-      showToast(`⚠️ Minimum fabric length is ${minMeter} meter(s). Setting quantity to ${minMeter}m.`);
-      setQuantity(minMeter);
-      return;
-    }
-    setIsAddingToCart(true);
-    addToCart(finalProductPayload, finalQty);
-    setTimeout(() => setIsAddingToCart(false), 400);
-  };
 
-  const handleBuyNowWithLoader = () => {
-    if (isBuyingNow) return;
-    const finalQty = isMeterProduct
-      ? Math.max(minMeter, Math.round(Number(quantity) * 100) / 100)
-      : Math.max(1, Number(quantity) || 1);
-    if (isMeterProduct && Number(quantity) < minMeter) {
-      showToast(`⚠️ Minimum fabric length is ${minMeter} meter(s). Setting quantity to ${minMeter}m.`);
-      setQuantity(minMeter);
-      return;
-    }
-    setIsBuyingNow(true);
-    addToCart(finalProductPayload, finalQty);
-    setIsCartOpen(true);
-    setTimeout(() => setIsBuyingNow(false), 500);
-  };
 
   // Base Price, Discount % and Real MRP calculation (Aligned 100% with ProductCard homepage logic)
   const basePrice = Number(selectedProduct?.price || 0);
@@ -235,24 +206,48 @@ export default function ProductDetailPage({ onNavigate }) {
           })
         : []);
 
+  // Helper to reliably resolve stock from item or variant
+  const resolveStock = (target) => {
+    if (!target) return 0;
+    const s = target.stockQuantity !== undefined && target.stockQuantity !== null && target.stockQuantity !== ""
+      ? target.stockQuantity
+      : (target.stock !== undefined && target.stock !== null && target.stock !== "" ? target.stock : 0);
+    return Math.max(0, Number(s) || 0);
+  };
+
   // Variant Stock & Overall Product Stock calculation (sum of variants if variants exist)
   const totalVariantStock = rawSizeVariants.length > 0
-    ? rawSizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 0))), 0)
-    : Number(selectedProduct?.stock !== undefined ? selectedProduct.stock : (selectedProduct?.stockQuantity !== undefined ? selectedProduct.stockQuantity : 50));
+    ? rawSizeVariants.reduce((sum, v) => sum + resolveStock(v), 0)
+    : resolveStock(selectedProduct);
 
   const totalProductStock = rawSizeVariants.length > 0
     ? totalVariantStock
-    : Number(selectedProduct?.stock !== undefined ? selectedProduct.stock : (selectedProduct?.stockQuantity !== undefined ? selectedProduct.stockQuantity : 50));
+    : resolveStock(selectedProduct);
 
   const sizeVariants = rawSizeVariants.length > 0 ? rawSizeVariants : [];
 
   const [selectedSize, setSelectedSize] = useState(() => sizeVariants[0]?.size || null);
   const [variantImageOverride, setVariantImageOverride] = useState(null);
 
+  const activeVariant = sizeVariants.find(v => String(v.size) === String(selectedSize)) || (sizeVariants.length > 0 ? sizeVariants[0] : null);
+  const currentSelectedVariant = activeVariant;
+
+  const currentVariantStock = activeVariant
+    ? (activeVariant.stock !== undefined || activeVariant.stockQuantity !== undefined ? resolveStock(activeVariant) : totalProductStock)
+    : totalProductStock;
+
+  const isCurrentVariantOutOfStock = isMeterProduct
+    ? (currentVariantStock < minMeter)
+    : (currentVariantStock <= 0);
+
   useEffect(() => {
     setShowAllSizes(false);
     if (isMeterProduct) {
-      setQuantity(minMeter);
+      if (currentVariantStock > 0 && minMeter > currentVariantStock) {
+        setQuantity(currentVariantStock);
+      } else {
+        setQuantity(minMeter);
+      }
     } else {
       setQuantity(1);
     }
@@ -268,15 +263,6 @@ export default function ProductDetailPage({ onNavigate }) {
       setVariantImageOverride(null);
     }
   }, [selectedProduct?.id, selectedProduct?._id, isMeterProduct, minMeter]);
-
-  const activeVariant = sizeVariants.find(v => String(v.size) === String(selectedSize)) || (sizeVariants.length > 0 ? sizeVariants[0] : null);
-  const currentSelectedVariant = activeVariant;
-
-  const currentVariantStock = activeVariant
-    ? Math.max(0, Number(activeVariant.stock !== undefined ? activeVariant.stock : (activeVariant.stockQuantity !== undefined ? activeVariant.stockQuantity : totalProductStock)))
-    : Math.max(0, totalProductStock);
-
-  const isCurrentVariantOutOfStock = currentVariantStock <= 0;
 
   const currentPrice = (activeVariant?.price !== undefined && activeVariant?.price !== null && Number(activeVariant.price) > 0)
     ? Number(activeVariant.price)
@@ -372,6 +358,55 @@ export default function ProductDetailPage({ onNavigate }) {
     kitItems: selectedKitProducts.length > 0 ? selectedKitProducts : normalizedKitItems,
     bundleType: 'kit'
   } : productPayload;
+
+  const handleAddToCartWithLoader = () => {
+    if (isAddingToCart) return;
+    if (isCurrentVariantOutOfStock) {
+      showToast('⚠️ Sorry, this item is currently out of stock!');
+      return;
+    }
+    const finalQty = isMeterProduct
+      ? Math.max(minMeter, Math.round(Number(quantity) * 100) / 100)
+      : Math.max(1, Number(quantity) || 1);
+    if (isMeterProduct && Number(quantity) < minMeter) {
+      showToast(`⚠️ Minimum fabric length is ${minMeter} meter(s). Setting quantity to ${minMeter}m.`);
+      setQuantity(minMeter);
+      return;
+    }
+    if (currentVariantStock > 0 && finalQty > currentVariantStock) {
+      showToast(`⚠️ Only ${currentVariantStock} ${isMeterProduct ? 'meter(s)' : 'unit(s)'} available in stock!`);
+      setQuantity(currentVariantStock);
+      return;
+    }
+    setIsAddingToCart(true);
+    addToCart(finalProductPayload, finalQty);
+    setTimeout(() => setIsAddingToCart(false), 400);
+  };
+
+  const handleBuyNowWithLoader = () => {
+    if (isBuyingNow) return;
+    if (isCurrentVariantOutOfStock) {
+      showToast('⚠️ Sorry, this item is currently out of stock!');
+      return;
+    }
+    const finalQty = isMeterProduct
+      ? Math.max(minMeter, Math.round(Number(quantity) * 100) / 100)
+      : Math.max(1, Number(quantity) || 1);
+    if (isMeterProduct && Number(quantity) < minMeter) {
+      showToast(`⚠️ Minimum fabric length is ${minMeter} meter(s). Setting quantity to ${minMeter}m.`);
+      setQuantity(minMeter);
+      return;
+    }
+    if (currentVariantStock > 0 && finalQty > currentVariantStock) {
+      showToast(`⚠️ Only ${currentVariantStock} ${isMeterProduct ? 'meter(s)' : 'unit(s)'} available in stock!`);
+      setQuantity(currentVariantStock);
+      return;
+    }
+    setIsBuyingNow(true);
+    addToCart(finalProductPayload, finalQty);
+    setIsCartOpen(true);
+    setTimeout(() => setIsBuyingNow(false), 500);
+  };
 
   // Size Chart logic: "Default Guide" only available when category is School Uniform
   const hasCustomSizeChart = Boolean(
@@ -1505,27 +1540,46 @@ export default function ProductDetailPage({ onNavigate }) {
                           type="number"
                           step="0.01"
                           min={minMeter}
+                          max={currentVariantStock > 0 ? currentVariantStock : undefined}
                           value={Number(quantity).toFixed(2)}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
                             if (isNaN(val)) {
                               setQuantity(minMeter);
                             } else {
-                              setQuantity(Math.max(minMeter, Math.round(val * 100) / 100));
+                              const clampedVal = currentVariantStock > 0 ? Math.min(currentVariantStock, val) : val;
+                              setQuantity(Math.max(minMeter, Math.round(clampedVal * 100) / 100));
                             }
                           }}
                           onBlur={() => {
                             if (Number(quantity) < minMeter) {
                               setQuantity(minMeter);
+                            } else if (currentVariantStock > 0 && Number(quantity) > currentVariantStock) {
+                              setQuantity(currentVariantStock);
+                              showToast(`⚠️ Only ${currentVariantStock} meter(s) available in stock!`);
                             }
                           }}
                           className="w-20 text-center font-extrabold text-sm text-teal-950 focus:outline-hidden bg-transparent font-mono"
                         />
                         <button
                           type="button"
-                          onClick={() => setQuantity((q) => Math.round((Number(q) + meterStep) * 100) / 100)}
-                          className="h-8 px-2.5 flex items-center justify-center rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold cursor-pointer text-xs"
-                          title={`Increase by ${Number(meterStep).toFixed(2)}m`}
+                          disabled={currentVariantStock > 0 && Number(quantity) >= currentVariantStock}
+                          onClick={() => {
+                            if (currentVariantStock > 0 && Number(quantity) >= currentVariantStock) {
+                              showToast(`⚠️ Only ${currentVariantStock} meter(s) available in stock!`);
+                              return;
+                            }
+                            setQuantity((q) => {
+                              const nextVal = Math.round((Number(q) + meterStep) * 100) / 100;
+                              return currentVariantStock > 0 ? Math.min(currentVariantStock, nextVal) : nextVal;
+                            });
+                          }}
+                          className={`h-8 px-2.5 flex items-center justify-center rounded-lg font-bold text-xs transition-colors ${
+                            currentVariantStock > 0 && Number(quantity) >= currentVariantStock
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                              : 'bg-teal-50 hover:bg-teal-100 text-teal-800 cursor-pointer'
+                          }`}
+                          title={currentVariantStock > 0 && Number(quantity) >= currentVariantStock ? `Maximum stock is ${currentVariantStock}m` : `Increase by ${Number(meterStep).toFixed(2)}m`}
                         >
                           +{Number(meterStep).toFixed(2)}m
                         </button>
@@ -1533,20 +1587,33 @@ export default function ProductDetailPage({ onNavigate }) {
 
                       {/* Quick preset length chips */}
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {presetLengths.map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setQuantity(Number(Number(preset).toFixed(2)))}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer font-mono ${
-                              Number(quantity).toFixed(2) === Number(preset).toFixed(2)
-                                ? 'bg-brand-teal text-white border-brand-teal shadow-xs'
-                                : 'bg-white text-teal-900 border-teal-200 hover:border-brand-teal'
-                            }`}
-                          >
-                            {Number(preset).toFixed(2)}m
-                          </button>
-                        ))}
+                        {presetLengths.map((preset) => {
+                          const isExceedingStock = currentVariantStock > 0 && preset > currentVariantStock;
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              disabled={isExceedingStock}
+                              onClick={() => {
+                                if (isExceedingStock) {
+                                  showToast(`⚠️ Only ${currentVariantStock} meter(s) available in stock!`);
+                                  return;
+                                }
+                                setQuantity(Number(Number(preset).toFixed(2)));
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border font-mono ${
+                                isExceedingStock
+                                  ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed opacity-50 line-through'
+                                  : Number(quantity).toFixed(2) === Number(preset).toFixed(2)
+                                    ? 'bg-brand-teal text-white border-brand-teal shadow-xs cursor-pointer'
+                                    : 'bg-white text-teal-900 border-teal-200 hover:border-brand-teal cursor-pointer'
+                              }`}
+                              title={isExceedingStock ? `Exceeds available stock (${currentVariantStock}m)` : `Select ${Number(preset).toFixed(2)}m`}
+                            >
+                              {Number(preset).toFixed(2)}m
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 

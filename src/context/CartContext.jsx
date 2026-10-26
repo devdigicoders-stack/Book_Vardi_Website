@@ -936,6 +936,12 @@ export function CartProvider({ children }) {
     };
 
     let reachedMaxStock = false;
+    if (itemStock !== Infinity && qtyToAdd > itemStock) {
+      reachedMaxStock = true;
+      qtyToAdd = itemStock;
+      itemToAdd.quantity = itemStock;
+    }
+
     setCartItems((prev) => {
       const existingIndex = prev.findIndex((item) => (item.cartItemId || getCartItemKey(item)) === cartItemId);
       if (existingIndex > -1) {
@@ -964,7 +970,7 @@ export function CartProvider({ children }) {
     const nameWithVariant = `${product.name}${variantLabel ? ` (${variantLabel})` : ''}`;
 
     if (reachedMaxStock) {
-      showToast(`⚠️ Limited stock: Reached maximum available units (${itemStock}) for "${nameWithVariant}".`);
+      showToast(`⚠️ Limited stock: Reached maximum available ${isMeter ? 'meters' : 'units'} (${itemStock}) for "${nameWithVariant}".`);
     } else if (inWishlist) {
       setWishlist((prev) => prev.filter((item) => String(item) !== String(prodId)));
       showToast(`Moved "${nameWithVariant}" from wishlist to your cart! 🛍️`);
@@ -2182,7 +2188,16 @@ export function CartProvider({ children }) {
 
         const itemOfferDiscount = Number(item.offerDiscount !== undefined ? item.offerDiscount : (item.discount || 0)) || 0;
         const basePrice = Number(item.price !== undefined ? item.price : item.finalPrice) || 0;
-        const itemQty = Math.max(1, Number(item.quantity) || 1);
+        const isMeter = Boolean(
+          item.isMeterBased ||
+          item.unit === 'meter' ||
+          catProd?.isMeterBased ||
+          catProd?.unit === 'meter' ||
+          (Number(item.quantity) % 1 !== 0)
+        );
+        const itemQty = isMeter
+          ? Math.max(Number(item.minMeter || 0.5), Math.round((Number(item.quantity) || 1) * 100) / 100)
+          : Math.max(1, Number(item.quantity) || 1);
         const itemGross = Math.round(basePrice * itemQty * 100) / 100;
         const itemFinalPrice = Number(item.finalPrice !== undefined ? item.finalPrice : Math.max(0, basePrice - (itemOfferDiscount / itemQty))) || basePrice;
         const itemTotal = Math.max(0, Math.round((itemGross - itemOfferDiscount) * 100) / 100);
@@ -2245,8 +2260,17 @@ export function CartProvider({ children }) {
           : (Array.isArray(prod.variants) ? prod.variants.map((v) => ({ ...v })) : null);
 
         cartMatches.forEach((cartMatch) => {
-          const orderedQty = Math.max(1, Number(cartMatch.quantity) || 1);
-          totalOrdered += orderedQty;
+          const isMeter = Boolean(
+            cartMatch.isMeterBased ||
+            cartMatch.unit === 'meter' ||
+            prod.isMeterBased ||
+            prod.unit === 'meter' ||
+            (Number(cartMatch.quantity) % 1 !== 0)
+          );
+          const orderedQty = isMeter
+            ? Math.round((Number(cartMatch.quantity) || 1) * 100) / 100
+            : Math.max(1, Number(cartMatch.quantity) || 1);
+          totalOrdered = Math.round((totalOrdered + orderedQty) * 100) / 100;
           const targetSize = String(cartMatch.selectedSize || cartMatch.size || cartMatch.variantName || '').trim().toLowerCase();
 
           if (targetSize && updatedVariants) {
@@ -2254,7 +2278,7 @@ export function CartProvider({ children }) {
               const vSize = String(v.size || v.measureValue || v.name || '').trim().toLowerCase();
               if (vSize === targetSize) {
                 const currentVStock = Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : (prod.stock || 50)));
-                const remainingVStock = Math.max(0, currentVStock - orderedQty);
+                const remainingVStock = Math.max(0, Math.round((currentVStock - orderedQty) * 100) / 100);
                 return { ...v, stock: remainingVStock, stockQuantity: remainingVStock };
               }
               return v;
@@ -2264,10 +2288,10 @@ export function CartProvider({ children }) {
 
         let remaining;
         if (updatedVariants && updatedVariants.length > 0) {
-          remaining = updatedVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity || 0))), 0);
+          remaining = Math.round(updatedVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity || 0))), 0) * 100) / 100;
         } else {
           const currentStock = Number(prod.stock !== undefined ? prod.stock : (prod.stockQuantity || 50));
-          remaining = Math.max(0, currentStock - totalOrdered);
+          remaining = Math.max(0, Math.round((currentStock - totalOrdered) * 100) / 100);
         }
 
         return {

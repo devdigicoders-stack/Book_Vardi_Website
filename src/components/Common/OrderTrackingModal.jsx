@@ -1106,25 +1106,26 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
           <div className="flex flex-wrap items-center gap-2">
             {/* Credit Note for Return, Refund, or Cancelled Orders; Exchange Tax Invoice for Exchanges */}
             {(() => {
+              const retType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase();
               const isExchangeReq =
-                order.returnRequest?.requestType === 'exchange' ||
-                order.returnRequest?.type === 'exchange' ||
+                retType === 'exchange' ||
                 ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) ||
                 ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
                 String(currentStatus).includes('exchange');
 
-              const isReturnOrRefund =
-                !isExchangeReq &&
-                (isCancelled ||
-                ['refund_completed', 'refunded', 'product_return_received', 'refund_initiated', 'refund_processed', 'return_approved'].includes(currentStatus) ||
-                (currentStatus === 'product_received' && order.returnRequest?.type === 'return') ||
-                order.returnRequest?.type === 'return' ||
-                order.paymentStatus === 'refunded' ||
-                order.refundStatus === 'Refund Completed');
+              const retStatus = String(order.returnRequest?.status || order.overallStatus || currentStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+              const acceptedStatuses = [
+                'approved', 'return_approved', 'pickup_scheduled',
+                'product_received', 'product_return_received',
+                'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
+              ];
+              const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
+              const canDownloadCreditNote = !isExchangeReq && (isReturnAccepted || isCancelled);
+              const isPendingReturnApproval = !isExchangeReq && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
 
               return (
                 <>
-                  {isReturnOrRefund && (
+                  {canDownloadCreditNote && (
                     <button
                       type="button"
                       onClick={() => downloadInvoiceApi(orderId, order.customer?.phone || '', 'credit-note')}
@@ -1134,6 +1135,16 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                       <FileText size={14} className="text-rose-600" />
                       <span>Download GST Credit Note</span>
                     </button>
+                  )}
+
+                  {isPendingReturnApproval && (
+                    <span
+                      className="px-3.5 py-1.5 bg-gray-100 text-gray-500 font-semibold text-xs rounded-xl border border-gray-200 cursor-not-allowed flex items-center gap-1.5 shadow-2xs"
+                      title="Credit Note will be generated after return is accepted/approved by seller"
+                    >
+                      <Lock size={14} className="text-gray-400" />
+                      <span>Credit Note (Pending Approval)</span>
+                    </span>
                   )}
 
                   {isExchangeReq && (
