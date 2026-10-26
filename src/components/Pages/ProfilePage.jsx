@@ -2550,7 +2550,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 );
                               })()}
 
-                              {/* Direct Statutory PDF Action Buttons: Exchange gets Exchange Tax Invoice ONLY; Returns get Credit Note */}
+                              {/* Direct Statutory PDF Action Buttons: Exchange gets BOTH Credit Note & Exchange Tax Invoice; Returns get Credit Note ONLY */}
                               {(() => {
                                 const retType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase();
                                 const isExchangeReq = retType === 'exchange' ||
@@ -2559,14 +2559,14 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                                 const retStatus = String(order.returnRequest?.status || order.overallStatus || currentStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
                                 const acceptedStatuses = [
-                                  'approved', 'return_approved', 'pickup_scheduled',
-                                  'product_received', 'product_return_received',
+                                  'approved', 'return_approved', 'exchange_approved', 'exchange_dispatched', 'exchanged', 'completed',
+                                  'pickup_scheduled', 'product_received', 'product_return_received',
                                   'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
                                 ];
                                 const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
                                 const isCancelled = currentStatus === 'cancelled' || Boolean(order.cancelledAt);
-                                const canDownloadCreditNote = !isExchangeReq && (isReturnAccepted || isCancelled);
-                                const isPendingReturnApproval = !isExchangeReq && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
+                                const canDownloadCreditNote = isExchangeReq ? isReturnAccepted : (isReturnAccepted || isCancelled);
+                                const isPendingReturnApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
 
                                 return (
                                   <div className="pt-2 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-2">
@@ -2680,7 +2680,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 </button>
                               )}
 
-                              {/* Quick Document Download Buttons for Customer: Strictly Exchange Invoice for exchange, Credit Note for return/cancel */}
+                              {/* Quick Document Download Buttons for Customer: Exchange gets BOTH, Returns get Credit Note only */}
                               {(() => {
                                 const retType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase();
                                 const isExchangeReq = retType === 'exchange' ||
@@ -2689,14 +2689,14 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                                 const retStatus = String(order.returnRequest?.status || order.overallStatus || currentStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
                                 const acceptedStatuses = [
-                                  'approved', 'return_approved', 'pickup_scheduled',
-                                  'product_received', 'product_return_received',
+                                  'approved', 'return_approved', 'exchange_approved', 'exchange_dispatched', 'exchanged', 'completed',
+                                  'pickup_scheduled', 'product_received', 'product_return_received',
                                   'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
                                 ];
                                 const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
                                 const isCancelled = currentStatus === 'cancelled' || Boolean(order.cancelledAt);
-                                const canDownloadCreditNote = !isExchangeReq && (isReturnAccepted || isCancelled);
-                                const isPendingReturnApproval = !isExchangeReq && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
+                                const canDownloadCreditNote = isExchangeReq ? isReturnAccepted : (isReturnAccepted || isCancelled);
+                                const isPendingReturnApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
 
                                 if (isOrderRefundedOrReturnOrExchange(order) || currentStatus === 'cancelled') {
                                   return (

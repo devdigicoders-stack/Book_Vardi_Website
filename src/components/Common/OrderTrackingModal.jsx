@@ -1115,13 +1115,13 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
               const retStatus = String(order.returnRequest?.status || order.overallStatus || currentStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
               const acceptedStatuses = [
-                'approved', 'return_approved', 'pickup_scheduled',
-                'product_received', 'product_return_received',
+                'approved', 'return_approved', 'exchange_approved', 'exchange_dispatched', 'exchanged', 'completed',
+                'pickup_scheduled', 'product_received', 'product_return_received',
                 'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
               ];
               const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
-              const canDownloadCreditNote = !isExchangeReq && (isReturnAccepted || isCancelled);
-              const isPendingReturnApproval = !isExchangeReq && !isCancelled && (retType === 'return' || retStatus.includes('return')) && !isReturnAccepted;
+              const canDownloadCreditNote = isExchangeReq ? isReturnAccepted : (isReturnAccepted || isCancelled);
+              const isPendingReturnApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
 
               return (
                 <>
