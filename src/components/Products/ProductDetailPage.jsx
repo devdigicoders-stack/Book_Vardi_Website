@@ -1375,7 +1375,7 @@ export default function ProductDetailPage({ onNavigate }) {
                       )}
                     </div>
                     {/* Variant Preview Image Layout in Row */}
-                    <div className="flex items-center gap-2.5 overflow-x-auto pb-2 pt-1 scrollbar-thin hide-scrollbar touch-pan-x">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pb-1 pt-1">
                       {sizeVariants.map((variant, vIdx) => {
                         const variantVal = variant.size || variant.measureValue || `size-${vIdx}`;
                         const isSelected = selectedSize === variantVal;
@@ -1389,15 +1389,15 @@ export default function ProductDetailPage({ onNavigate }) {
                             key={variant.id || variant._id || variantVal || `size-var-${vIdx}`}
                             type="button"
                             onClick={() => handleSelectSize(variant)}
-                            className={`flex items-center gap-2.5 p-2 rounded-2xl transition-all cursor-pointer shrink-0 text-left border-0 ${
+                            className={`flex items-center gap-1.5 sm:gap-2 px-2 py-1.5 rounded-xl transition-all cursor-pointer text-left border-0 ${
                               isSelected
-                                ? 'bg-gradient-to-r from-teal-900 to-teal-950 text-white shadow-lg shadow-teal-950/20 ring-2 ring-teal-600 scale-[1.02]'
+                                ? 'bg-gradient-to-r from-teal-900 to-teal-950 text-white shadow-md shadow-teal-950/20 ring-2 ring-teal-600 scale-[1.01]'
                                 : isVOutOfStock
                                 ? 'bg-gray-100 text-gray-400 opacity-60 cursor-not-allowed'
-                                : 'bg-slate-50 hover:bg-white text-gray-800 shadow-xs hover:shadow-md hover:shadow-slate-200/50'
+                                : 'bg-slate-50 hover:bg-white text-gray-800 shadow-2xs hover:shadow-sm hover:shadow-slate-200/50'
                             }`}
                           >
-                            <div className={`relative w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden ${
+                            <div className={`relative w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-bold text-[11px] shrink-0 overflow-hidden ${
                               isSelected ? 'bg-teal-800 text-teal-100' : isVOutOfStock ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-600'
                             }`}>
                               {vImgUrl ? (
@@ -1410,26 +1410,26 @@ export default function ProductDetailPage({ onNavigate }) {
                               ) : null}
                               <span className="select-none absolute z-0">{variantVal.slice(0, 3)}</span>
                             </div>
-                            <div className="pr-2 min-w-[55px]">
-                              <div className="text-xs font-extrabold flex items-center gap-1">
+                            <div className="pr-1 min-w-[40px]">
+                              <div className="text-[11px] font-extrabold flex items-center gap-1 leading-tight">
                                 <span>{variantVal}</span>
                                 {variant.measureScale && variant.measureScale !== 'size' && (
-                                  <span className={`text-[9px] px-1 py-0.2 rounded uppercase font-bold ${isSelected ? 'bg-teal-800 text-amber-300' : 'bg-gray-200/80 text-gray-600'}`}>
+                                  <span className={`text-[8px] px-1 py-0.2 rounded uppercase font-bold ${isSelected ? 'bg-teal-800 text-amber-300' : 'bg-gray-200/80 text-gray-600'}`}>
                                     {variant.measureScale}
                                   </span>
                                 )}
                               </div>
                               {variant.price && (
-                                <div className={`text-[11px] font-bold mt-0.5 ${isSelected ? 'text-amber-300' : isVOutOfStock ? 'text-gray-400' : 'text-brand-teal'}`}>
+                                <div className={`text-[10px] font-bold mt-0.5 leading-tight ${isSelected ? 'text-amber-300' : isVOutOfStock ? 'text-gray-400' : 'text-brand-teal'}`}>
                                   ₹{variant.price}
                                   {variant.mrp && Number(variant.mrp) > Number(variant.price) && (
-                                    <span className={`ml-1 text-[9px] line-through font-normal ${isSelected ? 'text-teal-200' : 'text-gray-400'}`}>
+                                    <span className={`ml-1 text-[8px] line-through font-normal ${isSelected ? 'text-teal-200' : 'text-gray-400'}`}>
                                       ₹{variant.mrp}
                                     </span>
                                   )}
                                 </div>
                               )}
-                              <div className={`text-[10px] font-semibold mt-0.5 ${
+                              <div className={`text-[9px] font-semibold mt-0.5 leading-none ${
                                 isSelected ? 'text-teal-100' : isVOutOfStock ? 'text-rose-500 font-bold' : (vStock <= 5 ? 'text-amber-600 font-bold' : 'text-gray-500')
                               }`}>
                                 {isVOutOfStock ? 'Sold Out' : `${vStock} left`}
