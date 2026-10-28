@@ -13,6 +13,8 @@ import NewsletterSection from './components/Newsletter/NewsletterSection';
 import Footer from './components/Footer/Footer';
 import Toast from './components/Common/Toast';
 import SplashScreen from './components/Common/SplashScreen';
+import OrderSuccessPage from './components/Pages/OrderSuccessPage';
+import { safeStorage } from './utils/safeStorage';
 
 const lazyWithRetry = (componentImport) =>
   lazy(async () => {
@@ -20,6 +22,14 @@ const lazyWithRetry = (componentImport) =>
       return await componentImport();
     } catch (error) {
       console.warn('Initial chunk load failed, retrying smoothly...', error);
+      const isChunkError = error?.name === 'ChunkLoadError' ||
+        /Loading chunk|Failed to fetch dynamically imported module/i.test(error?.message || '');
+      const hasRetried = safeStorage.getItem('bv_chunk_retry') === window.location.href;
+      if (isChunkError && !hasRetried) {
+        safeStorage.setItem('bv_chunk_retry', window.location.href);
+        window.location.reload();
+        return;
+      }
       try {
         return await componentImport();
       } catch (retryErr) {
@@ -43,6 +53,12 @@ class PageErrorBoundary extends React.Component {
     console.error('Page rendering error caught by ErrorBoundary:', error, errorInfo);
   }
 
+  componentDidUpdate(prevProps) {
+    if (prevProps.activePage !== this.props.activePage && this.state.hasError) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -51,18 +67,40 @@ class PageErrorBoundary extends React.Component {
             !
           </div>
           <h2 className="text-lg font-bold text-gray-800 mb-2">Something went wrong while loading this section</h2>
-          <p className="text-sm text-gray-500 max-w-md mb-6">
+          <p className="text-sm text-gray-500 max-w-md mb-3">
             A network update or browser session refresh is required to view this component.
           </p>
-          <button
-            onClick={() => {
-              this.setState({ hasError: false, error: null });
-              window.location.reload();
-            }}
-            className="px-5 py-2.5 bg-brand-teal text-white rounded-xl font-bold text-sm hover:bg-brand-teal-dark transition-all cursor-pointer shadow-md"
-          >
-            Refresh Page
-          </button>
+          {this.state.error?.message && (
+            <div className="mb-5 max-w-md w-full text-left bg-red-50/80 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-mono break-words">
+              <strong>Error Details:</strong> {this.state.error.message}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="px-5 py-2.5 bg-brand-teal text-white rounded-xl font-bold text-sm hover:bg-brand-teal-dark transition-all cursor-pointer shadow-md"
+            >
+              Refresh Page
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                if (typeof this.props.onNavigate === 'function') {
+                  this.props.onNavigate('home');
+                } else {
+                  window.location.href = '/';
+                }
+              }}
+              className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-50 transition-all cursor-pointer shadow-xs"
+            >
+              Go to Home Storefront
+            </button>
+          </div>
         </div>
       );
     }
@@ -77,7 +115,6 @@ const AllProductsPage = lazyWithRetry(() => import('./components/Pages/AllProduc
 const AboutUsPage = lazyWithRetry(() => import('./components/Pages/AboutUsPage'));
 const ProfilePage = lazyWithRetry(() => import('./components/Pages/ProfilePage'));
 const CheckoutPage = lazyWithRetry(() => import('./components/Pages/CheckoutPage'));
-const OrderSuccessPage = lazyWithRetry(() => import('./components/Pages/OrderSuccessPage'));
 const AllCategoriesPage = lazyWithRetry(() => import('./components/Pages/AllCategoriesPage'));
 const AuthModal = lazyWithRetry(() => import('./components/Auth/AuthModal'));
 const ProductDetailPage = lazyWithRetry(() => import('./components/Products/ProductDetailPage'));
@@ -237,6 +274,15 @@ function MainStore() {
         return;
       }
 
+      // If currently on order-success, back button returns cleanly to home catalog
+      if (currentPageRef.current === 'order-success') {
+        setCurrentPage('home');
+        try {
+          window.history.replaceState({ page: 'home', root: true }, '', window.location.pathname);
+        } catch {}
+        return;
+      }
+
       // 5. Normal page back navigation
       if (event.state && event.state.page) {
         const targetPage = event.state.page;
@@ -303,6 +349,9 @@ function MainStore() {
         setOrderSuccessOptions(null);
       }
       setCurrentPage('order-success');
+      try {
+        window.history.pushState({ page: 'order-success' }, '', '#order-success');
+      } catch {}
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -407,7 +456,7 @@ function MainStore() {
             </div>
           </div>
         }>
-          <PageErrorBoundary>
+          <PageErrorBoundary activePage={activePage} onNavigate={navigateTo}>
           {activePage === 'home' && (
             <>
               <HeroSection onNavigate={navigateTo} />

@@ -216,16 +216,37 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
   const isOrderReturnable = hasReturnable || hasExchangeable;
   const returnWindowDays = firstItem.returnWindowDays || firstItem.product?.returnWindowDays || 7;
   const deliveredDate = (() => {
-    if (order.deliveredAt) return new Date(order.deliveredAt);
-    if (order.deliveryDetails?.deliveredAt) return new Date(order.deliveryDetails.deliveredAt);
-    if (isDelivered) return new Date(order.updatedAt || Date.now());
-    return new Date(order.date || order.createdAt || Date.now());
+    try {
+      if (order.deliveredAt) {
+        const d = new Date(order.deliveredAt);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (order.deliveryDetails?.deliveredAt) {
+        const d = new Date(order.deliveryDetails.deliveredAt);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (isDelivered && order.updatedAt) {
+        const d = new Date(order.updatedAt);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (order.createdAt) {
+        const d = new Date(order.createdAt);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (order.date) {
+        const d = new Date(order.date);
+        if (!isNaN(d.getTime())) return d;
+      }
+    } catch {}
+    return new Date();
   })();
-  const returnTillDate = new Date(deliveredDate.getTime() + returnWindowDays * 24 * 60 * 60 * 1000);
+  const safeDeliveredTime = !isNaN(deliveredDate.getTime()) ? deliveredDate.getTime() : Date.now();
+  const returnTillDate = new Date(safeDeliveredTime + returnWindowDays * 24 * 60 * 60 * 1000);
   const now = new Date();
   const isReturnWindowValid = isDelivered && isOrderReturnable && now <= returnTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded', 'refund_completed'].includes(currentStatus);
-  const formattedTillDate = returnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-  const daysLeft = Math.max(0, Math.ceil((returnTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  const safeReturnTillDate = !isNaN(returnTillDate.getTime()) ? returnTillDate : new Date(Date.now() + 7 * 86400000);
+  const formattedTillDate = safeReturnTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const daysLeft = Math.max(0, Math.ceil((safeReturnTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
   const orderAvail = getReturnExchangeAvailability(hasReturnable, hasExchangeable, formattedTillDate, daysLeft);
 
   const isCancelled = currentStatus === 'cancelled';
@@ -901,10 +922,10 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                               downloadInvoiceApi(order.id || order.orderId, order.shippingAddress?.phone || userProfile?.phone || '', 'credit-note');
                             }}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-xs rounded-xl border border-rose-200 transition-colors cursor-pointer shadow-2xs"
-                            title="Download Statutory GST Credit Note under Section 34 of CGST Act"
+                            title="Download Statutory GST Credit Note for Returned Item (Section 34 CGST Act)"
                           >
                             <FileText size={13} className="text-rose-600" />
-                            <span>Download GST Credit Note</span>
+                            <span>Download Credit Note (Returned Item)</span>
                           </button>
                         )}
                         {isExchange && (
@@ -914,11 +935,11 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                               e.stopPropagation();
                               downloadInvoiceApi(order.id || order.orderId, order.shippingAddress?.phone || userProfile?.phone || '', 'exchange-invoice');
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-xl border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
-                            title="Download GST Exchange Tax Invoice & Replacement Slip"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl border border-teal-200 transition-colors cursor-pointer shadow-2xs"
+                            title="Download Tax Invoice for Replacement Item (Section 31 CGST Act)"
                           >
-                            <FileText size={13} className="text-indigo-600" />
-                            <span>Download Exchange Invoice</span>
+                            <FileText size={13} className="text-teal-600" />
+                            <span>Download Replacement Tax Invoice</span>
                           </button>
                         )}
                       </div>
@@ -1215,15 +1236,54 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
 
             <div className="divide-y divide-gray-100">
               {order.items?.map((item, idx) => {
-                const itemRawStatus = String(item.status || order.overallStatus || order.status || 'Pending').toLowerCase().trim();
+                // Accurately determine if THIS specific item is under active return or exchange
+                const reqTargetId = String(order.returnRequest?.itemId || order.returnRequest?.productId || '').trim();
+                const reqTargetName = String(order.returnRequest?.itemName || '').trim().toLowerCase();
+                const hasActiveReturnRequest = Boolean(
+                  order.returnRequest &&
+                  order.returnRequest.status &&
+                  !['no_request', 'rejected', 'return_rejected', 'exchange_rejected', 'none', ''].includes(String(order.returnRequest.status).toLowerCase())
+                );
+
+                const hasExplicitTarget = Boolean(reqTargetId || reqTargetName);
+                const itName = String(item.name || '').trim().toLowerCase();
+                const isTargetMatch = Boolean(
+                  (reqTargetId && (String(item._id || '') === reqTargetId || String(item.id || '') === reqTargetId || String(item.productId || '') === reqTargetId)) ||
+                  (reqTargetName && (itName === reqTargetName || (reqTargetName.length > 3 && itName.includes(reqTargetName)) || (itName.length > 3 && reqTargetName.includes(itName))))
+                );
+
+                const isThisItemExchangedOrReturned = hasActiveReturnRequest && (
+                  hasExplicitTarget
+                    ? isTargetMatch
+                    : (
+                        (order.items?.length === 1) ||
+                        String(item.status || '').toLowerCase().includes('exchange') ||
+                        String(item.status || '').toLowerCase().includes('return')
+                      )
+                );
+
+                let effectiveItemStatus = item.status;
+                if (!isThisItemExchangedOrReturned) {
+                  if (!effectiveItemStatus || effectiveItemStatus.toLowerCase().includes('exchange') || effectiveItemStatus.toLowerCase().includes('pickup') || effectiveItemStatus.toLowerCase().includes('return')) {
+                    const safeOrderStat = String(order.status || '').toLowerCase();
+                    effectiveItemStatus = (!safeOrderStat.includes('exchange') && !safeOrderStat.includes('pickup') && !safeOrderStat.includes('return') && safeOrderStat)
+                      ? order.status
+                      : 'Delivered';
+                  }
+                } else {
+                  effectiveItemStatus = item.status || order.returnRequest?.status || order.overallStatus || 'Exchange Requested';
+                }
+
+                const itemRawStatus = String(effectiveItemStatus).toLowerCase().trim();
                 const itemStatMeta = getOrderStatusMeta(itemRawStatus);
                 const ItemStatusIcon = itemStatMeta.icon;
 
                 const itemIsRet = isItemReturnable(item);
                 const itemIsExc = isItemExchangeable(item);
                 const itemReturnWindowDays = item.returnWindowDays || item.product?.returnWindowDays || returnWindowDays;
-                const itemTillDate = new Date(deliveredDate.getTime() + itemReturnWindowDays * 24 * 60 * 60 * 1000);
-                const itemFormattedTillDate = itemTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                const itemSafeDeliveredTime = !isNaN(deliveredDate.getTime()) ? deliveredDate.getTime() : Date.now();
+                const itemTillDate = new Date(itemSafeDeliveredTime + itemReturnWindowDays * 24 * 60 * 60 * 1000);
+                const itemFormattedTillDate = !isNaN(itemTillDate.getTime()) ? itemTillDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : formattedTillDate;
                 const itemDaysLeft = Math.max(0, Math.ceil((itemTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
                 const isItemDelivered = ['delivered', 'completed'].includes(itemRawStatus) || isDelivered;
                 const isItemWindowValid = isItemDelivered && (itemIsRet || itemIsExc) && now <= itemTillDate && !['return_requested', 'returned', 'exchange_requested', 'exchanged', 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'].includes(currentStatus);
@@ -1457,16 +1517,22 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             </div>
 
             {(() => {
-              const subtotalVal = Number(order.subtotal || order.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || order.total || 0);
-              const shipVal = Number(order.shippingFee ?? order.shippingCost ?? shippingFee ?? 0);
-              const codVal = Number(order.codFee ?? order.appliedCodFee ?? 0);
-              const couponVal = Number(order.discountAmount ?? order.discount ?? 0);
-              const pointsVal = Number(order.pointsDiscount ?? 0);
-              const grandVal = order.totalAmount !== undefined && Number(order.totalAmount) > 0
+              const rawSubtotal = Number(order.subtotal || order.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || order.total || 0);
+              const subtotalVal = isNaN(rawSubtotal) ? 0 : rawSubtotal;
+              const rawShip = Number(order.shippingFee ?? order.shippingCost ?? shippingFee ?? 0);
+              const shipVal = isNaN(rawShip) ? 0 : rawShip;
+              const rawCod = Number(order.codFee ?? order.appliedCodFee ?? 0);
+              const codVal = isNaN(rawCod) ? 0 : rawCod;
+              const rawCoupon = Number(order.discountAmount ?? order.discount ?? 0);
+              const couponVal = isNaN(rawCoupon) ? 0 : rawCoupon;
+              const rawPoints = Number(order.pointsDiscount ?? 0);
+              const pointsVal = isNaN(rawPoints) ? 0 : rawPoints;
+              const rawGrand = order.totalAmount !== undefined && Number(order.totalAmount) > 0
                 ? Number(order.totalAmount)
                 : (order.total !== undefined && Number(order.total) > 0
                     ? Number(order.total)
                     : Math.max(0, Math.round((subtotalVal + shipVal + codVal - couponVal - pointsVal) * 100) / 100));
+              const grandVal = isNaN(rawGrand) ? 0 : rawGrand;
 
               return (
                 <div className="pt-4 border-t border-gray-100 space-y-2.5 text-xs bg-gray-50/70 p-4 rounded-2xl border border-gray-200/80">
@@ -1677,14 +1743,16 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
         }}
       />
 
-      <ReturnExchangeModal
-        isOpen={isReturnModalOpen}
-        onClose={() => setIsReturnModalOpen(false)}
-        order={returnModalOrder || order}
-        onSuccess={() => {
-          onNavigate('profile', null, 'orders');
-        }}
-      />
+      {isReturnModalOpen && (
+        <ReturnExchangeModal
+          isOpen={isReturnModalOpen}
+          onClose={() => setIsReturnModalOpen(false)}
+          order={returnModalOrder || order}
+          onSuccess={() => {
+            onNavigate('profile', null, 'orders');
+          }}
+        />
+      )}
     </div>
   );
 }

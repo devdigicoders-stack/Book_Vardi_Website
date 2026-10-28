@@ -91,6 +91,28 @@ const getProductGallery = (prod) => {
     }
   });
 
+  // If no non-placeholder images found, allow raw images so gallery is never blank
+  if (result.length === 0) {
+    const rawPrimary = extractUrl(prod.image || prod.coverImage || prod.imageUrl || prod.photo || prod.primaryImage);
+    if (rawPrimary) {
+      const res = resolveImageUrl(rawPrimary);
+      if (res) result.push(res);
+    }
+    if (Array.isArray(prod.images)) {
+      prod.images.forEach(img => {
+        const u = extractUrl(img);
+        if (u) {
+          const res = resolveImageUrl(u);
+          if (res && !result.includes(res)) result.push(res);
+        }
+      });
+    }
+  }
+
+  if (result.length === 0) {
+    result.push(FALLBACK_IMAGE);
+  }
+
   return result;
 };
 
@@ -253,8 +275,9 @@ export default function ProductDetailPage({ onNavigate }) {
     }
     if (sizeVariants.length > 0) {
       setSelectedSize(sizeVariants[0].size);
-      if (sizeVariants[0].image) {
-        setVariantImageOverride(sizeVariants[0].image);
+      const rawVImg = sizeVariants[0]?.image;
+      if (rawVImg && typeof rawVImg === 'string' && rawVImg.trim() && rawVImg !== 'null' && rawVImg !== 'undefined') {
+        setVariantImageOverride(resolveImageUrl(rawVImg.trim()));
       } else {
         setVariantImageOverride(null);
       }
@@ -290,8 +313,9 @@ export default function ProductDetailPage({ onNavigate }) {
 
   const handleSelectSize = (variant) => {
     setSelectedSize(variant.size);
-    if (variant.image) {
-      setVariantImageOverride(variant.image);
+    const rawVImg = variant?.image;
+    if (rawVImg && typeof rawVImg === 'string' && rawVImg.trim() && rawVImg !== 'null' && rawVImg !== 'undefined') {
+      setVariantImageOverride(resolveImageUrl(rawVImg.trim()));
     } else {
       setVariantImageOverride(null);
     }
@@ -1133,11 +1157,23 @@ export default function ProductDetailPage({ onNavigate }) {
                   </div>
 
                   {(() => {
-                    const currentImg = variantImageOverride || productGallery[activeImageIndex] || resolveImageUrl(getProductMainImage(selectedProduct));
+                    const resolvedVariant = variantImageOverride ? resolveImageUrl(variantImageOverride) : null;
+                    const fallbackImg = productGallery[activeImageIndex] || productGallery[0] || resolveImageUrl(getProductMainImage(selectedProduct)) || FALLBACK_IMAGE;
+                    const currentImg = resolvedVariant || fallbackImg;
+
                     return currentImg ? (
                       <img
                         src={currentImg}
                         alt={selectedProduct.name ? `${selectedProduct.name} - Official Product` : 'Bookvardi Product Details'}
+                        onError={(e) => {
+                          if (variantImageOverride) {
+                            setVariantImageOverride(null);
+                          }
+                          const safeBackup = productGallery[activeImageIndex] || productGallery[0] || resolveImageUrl(getProductMainImage(selectedProduct)) || FALLBACK_IMAGE;
+                          if (e.currentTarget.src !== safeBackup) {
+                            e.currentTarget.src = safeBackup;
+                          }
+                        }}
                         className="absolute inset-0 w-full h-full object-cover text-xs font-semibold italic text-gray-400 leading-snug p-3 text-center group-hover:scale-105 transition-transform duration-500"
                       />
                     ) : (

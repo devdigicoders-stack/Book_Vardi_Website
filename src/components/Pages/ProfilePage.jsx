@@ -2115,7 +2115,45 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                           {/* Order Items */}
                           <div className="py-4 space-y-3">
                             {order.items?.map((item, idx) => {
-                              const itemRawStatus = String(item.status || order.overallStatus || order.status || 'Pending').toLowerCase().trim();
+                              // Accurately determine if THIS specific item is under active return or exchange
+                              const reqTargetId = String(order.returnRequest?.itemId || order.returnRequest?.productId || '').trim();
+                              const reqTargetName = String(order.returnRequest?.itemName || '').trim().toLowerCase();
+                              const hasActiveReturnRequest = Boolean(
+                                order.returnRequest &&
+                                order.returnRequest.status &&
+                                !['no_request', 'rejected', 'return_rejected', 'exchange_rejected', 'none', ''].includes(String(order.returnRequest.status).toLowerCase())
+                              );
+
+                              const hasExplicitTarget = Boolean(reqTargetId || reqTargetName);
+                              const itName = String(item.name || '').trim().toLowerCase();
+                              const isTargetMatch = Boolean(
+                                (reqTargetId && (String(item._id || '') === reqTargetId || String(item.id || '') === reqTargetId || String(item.productId || '') === reqTargetId)) ||
+                                (reqTargetName && (itName === reqTargetName || (reqTargetName.length > 3 && itName.includes(reqTargetName)) || (itName.length > 3 && reqTargetName.includes(itName))))
+                              );
+
+                              const isThisItemExchangedOrReturned = hasActiveReturnRequest && (
+                                hasExplicitTarget
+                                  ? isTargetMatch
+                                  : (
+                                      (order.items?.length === 1) ||
+                                      String(item.status || '').toLowerCase().includes('exchange') ||
+                                      String(item.status || '').toLowerCase().includes('return')
+                                    )
+                              );
+
+                              let effectiveItemStatus = item.status;
+                              if (!isThisItemExchangedOrReturned) {
+                                if (!effectiveItemStatus || effectiveItemStatus.toLowerCase().includes('exchange') || effectiveItemStatus.toLowerCase().includes('pickup') || effectiveItemStatus.toLowerCase().includes('return')) {
+                                  const safeOrderStat = String(order.status || '').toLowerCase();
+                                  effectiveItemStatus = (!safeOrderStat.includes('exchange') && !safeOrderStat.includes('pickup') && !safeOrderStat.includes('return') && safeOrderStat)
+                                    ? order.status
+                                    : 'Delivered';
+                                }
+                              } else {
+                                effectiveItemStatus = item.status || order.returnRequest?.status || order.overallStatus || 'Exchange Requested';
+                              }
+
+                              const itemRawStatus = String(effectiveItemStatus).toLowerCase().trim();
                               const itemStatMeta = getOrderStatusMeta(itemRawStatus);
                               const ItemStatusIcon = itemStatMeta.icon;
 
@@ -2127,19 +2165,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               const itemDaysLeft = Math.max(0, Math.ceil((itemTillDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
                               const isItemDelivered = ['delivered', 'completed'].includes(itemRawStatus) || isDelivered;
                               const itemCanonicalStatus = itemRawStatus.replace(/[\s-]+/g, '_');
-                              const isItemAlreadyGoverned = [
+                              const isItemAlreadyGoverned = isThisItemExchangedOrReturned || [
                                 'return_requested', 'returned', 'exchange_requested', 'exchanged',
                                 'return_approved', 'exchange_approved', 'refund_requested', 'refunded'
-                              ].includes(itemCanonicalStatus) || (
-                                Boolean(order.returnRequest &&
-                                order.returnRequest.status &&
-                                order.returnRequest.status !== 'no_request' &&
-                                order.returnRequest.status !== 'rejected' &&
-                                order.returnRequest.status !== 'return_rejected' &&
-                                order.returnRequest.status !== 'exchange_rejected') &&
-                                (String(order.returnRequest.itemId || '') === String(item._id || item.id || item.productId || '') ||
-                                 (order.returnRequest.itemName && item.name === order.returnRequest.itemName))
-                              );
+                              ].includes(itemCanonicalStatus);
                               const isItemWindowValid = isItemDelivered && (itemIsRet || itemIsExc) && now <= itemTillDate && !isItemAlreadyGoverned;
                               const itemAvail = getReturnExchangeAvailability(itemIsRet, itemIsExc, itemFormattedTillDate, itemDaysLeft);
 
@@ -2583,7 +2612,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                         title="Download Statutory GST Credit Note under Section 34 of CGST Act"
                                       >
                                         <FileText size={13} className="text-rose-600" />
-                                        <span>Download GST Credit Note</span>
+                                        <span>Download Credit Note (Returned Item)</span>
                                       </button>
                                     )}
 
@@ -2604,11 +2633,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                           e.stopPropagation();
                                           downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
                                         }}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold text-xs rounded-lg border border-indigo-200 transition-colors cursor-pointer shadow-2xs"
-                                        title="Download GST Exchange Tax Invoice & Replacement Slip"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-lg border border-teal-200 transition-colors cursor-pointer shadow-2xs"
+                                        title="Download Tax Invoice for Replacement Item (Section 31 CGST Act)"
                                       >
-                                        <FileText size={13} className="text-indigo-600" />
-                                        <span>Download Exchange Invoice</span>
+                                        <FileText size={13} className="text-teal-600" />
+                                        <span>Download Replacement Tax Invoice</span>
                                       </button>
                                     )}
                                   </div>
@@ -2711,7 +2740,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                             downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'credit-note');
                                           }}
                                           className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
-                                          title="Download GST Credit Note"
+                                          title="Download GST Credit Note for Returned Item"
                                         >
                                           <FileText size={13} />
                                           <span>Credit Note</span>
@@ -2733,11 +2762,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                             e.stopPropagation();
                                             downloadInvoiceApi(order.id || order.orderId || order._id, order.customer?.phone || userProfile?.phone || '', 'exchange-invoice');
                                           }}
-                                          className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
-                                          title="Download Exchange Invoice"
+                                          className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                                          title="Download Tax Invoice for Replacement Item (Section 31 CGST Act)"
                                         >
                                           <FileText size={13} />
-                                          <span>Exchange Invoice</span>
+                                          <span>Tax Invoice</span>
                                         </button>
                                       )}
                                     </>
@@ -2761,10 +2790,10 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                       setIsInvoiceModalOpen(true);
                                     }}
                                     className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
-                                    title="View & Download Tax Invoice"
+                                    title="View & Download Original Tax Invoice"
                                   >
                                     <FileText size={13} />
-                                    <span>Invoice</span>
+                                    <span>{isExchangeReq ? 'Original Invoice' : 'Invoice'}</span>
                                   </button>
                                 ) : (
                                   <span
