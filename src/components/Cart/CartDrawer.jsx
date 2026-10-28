@@ -17,6 +17,7 @@ export default function CartDrawer({ onNavigate }) {
     removeFromCart,
     clearCart,
     updateQuantity,
+    getItemAvailableStock,
     subtotal,
     totalItemsCount,
     freeShippingThreshold,
@@ -235,45 +236,60 @@ export default function CartDrawer({ onNavigate }) {
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between mt-2">
-                      {/* Stepper with count/meter increment and decrement buttons */}
-                      <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 overflow-hidden shadow-2xs">
-                        <button
-                          className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
-                          onClick={() => updateQuantity(itemKey, isMeter ? -meterStep : -1)}
-                          aria-label="Decrease quantity"
-                          title={isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity"}
-                        >
-                          <Minus size={12} strokeWidth={2.5} />
-                        </button>
-                        <span className="min-w-10 px-1 text-center text-xs font-extrabold text-gray-900 bg-white py-1 font-mono">
-                          {isMeter ? `${Number(item.quantity).toFixed(2)}m` : item.quantity}
-                        </span>
-                        <button
-                          disabled={item.stock !== undefined && item.stock !== Infinity && item.quantity >= Number(item.stock)}
-                          className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          onClick={() => updateQuantity(itemKey, isMeter ? meterStep : 1)}
-                          aria-label="Increase quantity"
-                          title={item.stock !== undefined && item.quantity >= Number(item.stock) ? "Max stock reached" : (isMeter ? `Increase by ${Number(meterStep).toFixed(2)}m` : "Increase quantity")}
-                        >
-                          <Plus size={12} strokeWidth={2.5} />
-                        </button>
-                      </div>
+                    {(() => {
+                      const availStock = getItemAvailableStock ? getItemAvailableStock(item) : Number(item.stock ?? item.stockQuantity ?? Infinity);
+                      const isMaxStockReached = availStock !== Infinity && Number(item.quantity) >= availStock;
 
-                      {item.stock !== undefined && item.stock !== Infinity && item.quantity >= Number(item.stock) && (
-                        <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                          Max Stock
-                        </span>
-                      )}
+                      return (
+                        <div className="flex items-center justify-between mt-2">
+                          {/* Stepper with count/meter increment and decrement buttons */}
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 overflow-hidden shadow-2xs">
+                              <button
+                                className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
+                                onClick={() => updateQuantity(itemKey, isMeter ? -meterStep : -1)}
+                                aria-label="Decrease quantity"
+                                title={isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity"}
+                              >
+                                <Minus size={12} strokeWidth={2.5} />
+                              </button>
+                              <span className="min-w-10 px-1 text-center text-xs font-extrabold text-gray-900 bg-white py-1 font-mono">
+                                {isMeter ? `${Number(item.quantity).toFixed(2)}m` : item.quantity}
+                              </span>
+                              <button
+                                disabled={isMaxStockReached}
+                                className="w-7 h-7 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                onClick={() => {
+                                  if (isMaxStockReached) {
+                                    if (showToast) showToast(`⚠️ Only ${availStock} units in stock for "${item.name}".`);
+                                    return;
+                                  }
+                                  updateQuantity(itemKey, isMeter ? meterStep : 1);
+                                }}
+                                aria-label="Increase quantity"
+                                title={isMaxStockReached ? `Maximum available stock is ${availStock}` : (isMeter ? `Increase by ${Number(meterStep).toFixed(2)}m` : "Increase quantity")}
+                              >
+                                <Plus size={12} strokeWidth={2.5} />
+                              </button>
+                            </div>
 
-                      <button
-                        className="text-gray-400 hover:text-brand-pink transition-colors p-1.5 hover:bg-rose-50 rounded-md cursor-pointer"
-                        onClick={() => removeFromCart(itemKey)}
-                        title="Remove item from cart"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                            {isMaxStockReached && (
+                              <span className="text-[10px] text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                Max {availStock}
+                              </span>
+                            )}
+                          </div>
+
+                          <button
+                            className="text-gray-400 hover:text-brand-pink transition-colors p-1.5 hover:bg-rose-50 rounded-md cursor-pointer"
+                            onClick={() => removeFromCart(itemKey)}
+                            title="Remove item from cart"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );

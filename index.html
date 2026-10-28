@@ -15,6 +15,50 @@
           var target = 'https://www.bookvardi.in' + window.location.pathname + window.location.search + window.location.hash;
           window.location.replace(target);
         }
+
+        // Safe storage shim to prevent "Access is denied for this document" DOMException in private/webview mode
+        var memStore = {};
+        var createShim = function() {
+          return {
+            getItem: function(k) { return Object.prototype.hasOwnProperty.call(memStore, k) ? memStore[k] : null; },
+            setItem: function(k, v) { memStore[k] = String(v); },
+            removeItem: function(k) { delete memStore[k]; },
+            clear: function() { memStore = {}; },
+            key: function(i) { return Object.keys(memStore)[i] || null; },
+            get length() { return Object.keys(memStore).length; }
+          };
+        };
+
+        ['localStorage', 'sessionStorage'].forEach(function(storageName) {
+          var isWorking = false;
+          try {
+            var st = window[storageName];
+            if (st) {
+              var tk = '__bv_check__';
+              st.setItem(tk, '1');
+              st.removeItem(tk);
+              isWorking = true;
+            }
+          } catch (e) {
+            isWorking = false;
+          }
+
+          if (!isWorking) {
+            var shim = createShim();
+            try {
+              Object.defineProperty(window, storageName, {
+                get: function() { return shim; },
+                set: function() {},
+                configurable: true,
+                enumerable: true
+              });
+            } catch (err) {
+              try {
+                window[storageName] = shim;
+              } catch (e2) {}
+            }
+          }
+        });
       })();
     </script>
   </head>

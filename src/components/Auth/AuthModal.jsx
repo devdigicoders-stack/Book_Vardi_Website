@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { sendOtpToBackend, verifyOtpWithBackend } from '../../utils/api';
+import safeStorage from '../../utils/safeStorage';
+const localStorage = safeStorage;
 import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 

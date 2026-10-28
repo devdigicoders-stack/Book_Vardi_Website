@@ -44,6 +44,7 @@ export default function CheckoutPage({ onNavigate }) {
     toggleCartItemSelection,
     selectAllCartItems,
     updateQuantity,
+    getItemAvailableStock,
     removeFromCart,
     subtotal,
     freeShippingThreshold,
@@ -380,6 +381,22 @@ export default function CheckoutPage({ onNavigate }) {
   };
 
   // Place Order submission
+// Safety guard: Auto-clamp any cart item whose quantity exceeds currently available live stock
+  useEffect(() => {
+    if (!Array.isArray(cartItems) || cartItems.length === 0) return;
+    cartItems.forEach((it) => {
+      const avail = getItemAvailableStock ? getItemAvailableStock(it) : Number(it.stock ?? it.stockQuantity ?? Infinity);
+      if (avail !== Infinity && Number(it.quantity) > avail) {
+        const itemKey = it.cartItemId || getCartItemKey(it);
+        const diff = avail - Number(it.quantity);
+        updateQuantity(itemKey, diff);
+        if (showToast) {
+          showToast(`⚠️ "${it.name}" adjusted to maximum available stock (${avail} in stock).`);
+        }
+      }
+    });
+  }, [products, cartItems.length]);
+
   const handlePlaceOrder = async () => {
     if (areAllPaymentsDisabled) {
       const itemName = noPaymentMethodItem?.name || 'item';
@@ -437,6 +454,19 @@ export default function CheckoutPage({ onNavigate }) {
     if (invalidMeterItem) {
       const minRequired = Number(invalidMeterItem.minMeter) > 0 ? Number(invalidMeterItem.minMeter) : 0.5;
       showToast(`⚠️ "${invalidMeterItem.name}" requires a minimum order length of ${minRequired} meter(s). Please adjust before proceeding.`);
+      return;
+    }
+
+    // Validate available inventory stock for all selected cart items before order placement
+    const invalidStockItem = selectedCartItems.find((it) => {
+      const avail = getItemAvailableStock ? getItemAvailableStock(it) : Number(it.stock ?? it.stockQuantity ?? Infinity);
+      return avail !== Infinity && Number(it.quantity) > avail;
+    });
+
+    if (invalidStockItem) {
+      const avail = getItemAvailableStock ? getItemAvailableStock(invalidStockItem) : Number(invalidStockItem.stock ?? invalidStockItem.stockQuantity ?? 0);
+      const variantLabel = invalidStockItem.variantName || invalidStockItem.selectedSize ? ` (${invalidStockItem.variantName || invalidStockItem.selectedSize})` : '';
+      showToast(`⚠️ Insufficient stock for "${invalidStockItem.name}"${variantLabel}. Only ${avail} units available in stock. Please adjust quantity.`);
       return;
     }
 
@@ -1166,30 +1196,51 @@ export default function CheckoutPage({ onNavigate }) {
                               </span>
 
                               {/* Stepper with count increment and decrement buttons */}
-                              <div className="flex items-center border border-gray-200 rounded-md bg-gray-50 overflow-hidden shadow-2xs shrink-0">
-                                <button
-                                  type="button"
-                                  disabled={isMeter && Number(item.quantity) <= minMeter}
-                                  className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                                  onClick={() => updateQuantity(itemKey, isMeter ? -meterStep : -1)}
-                                  aria-label="Decrease quantity"
-                                  title={isMeter && Number(item.quantity) <= minMeter ? `Minimum order is ${minMeter}m` : (isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity")}
-                                >
-                                  <Minus size={10} strokeWidth={2.5} />
-                                </button>
-                                <span className="min-w-8 px-1 text-center text-xs font-extrabold text-gray-900 bg-white py-0.5 font-mono">
-                                  {isMeter ? `${Number(item.quantity).toFixed(2)}m` : item.quantity}
-                                </span>
-                                <button
-                                  type="button"
-                                  className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer"
-                                  onClick={() => updateQuantity(itemKey, isMeter ? meterStep : 1)}
-                                  aria-label="Increase quantity"
-                                  title={isMeter ? `Increase by ${Number(meterStep).toFixed(2)}m` : "Increase quantity (add more)"}
-                                >
-                                  <Plus size={10} strokeWidth={2.5} />
-                                </button>
-                              </div>
+                              {(() => {
+                                const availStock = getItemAvailableStock ? getItemAvailableStock(item) : Number(item.stock ?? item.stockQuantity ?? Infinity);
+                                const isMaxStockReached = availStock !== Infinity && Number(item.quantity) >= availStock;
+
+                                return (
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <div className="flex items-center border border-gray-200 rounded-md bg-gray-50 overflow-hidden shadow-2xs">
+                                      <button
+                                        type="button"
+                                        disabled={isMeter && Number(item.quantity) <= minMeter}
+                                        className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                        onClick={() => updateQuantity(itemKey, isMeter ? -meterStep : -1)}
+                                        aria-label="Decrease quantity"
+                                        title={isMeter && Number(item.quantity) <= minMeter ? `Minimum order is ${minMeter}m` : (isMeter ? `Decrease by ${Number(meterStep).toFixed(2)}m` : "Decrease quantity")}
+                                      >
+                                        <Minus size={10} strokeWidth={2.5} />
+                                      </button>
+                                      <span className="min-w-8 px-1 text-center text-xs font-extrabold text-gray-900 bg-white py-0.5 font-mono">
+                                        {isMeter ? `${Number(item.quantity).toFixed(2)}m` : item.quantity}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        disabled={isMaxStockReached}
+                                        className="w-6 h-6 flex items-center justify-center text-gray-700 hover:bg-gray-200 hover:text-brand-teal transition-colors font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                        onClick={() => {
+                                          if (isMaxStockReached) {
+                                            if (showToast) showToast(`⚠️ Only ${availStock} units in stock for "${item.name}"${variantText ? ` (${variantText})` : ''}.`);
+                                            return;
+                                          }
+                                          updateQuantity(itemKey, isMeter ? meterStep : 1);
+                                        }}
+                                        aria-label="Increase quantity"
+                                        title={isMaxStockReached ? `Maximum available stock is ${availStock}` : (isMeter ? `Increase by ${Number(meterStep).toFixed(2)}m` : "Increase quantity (add more)")}
+                                      >
+                                        <Plus size={10} strokeWidth={2.5} />
+                                      </button>
+                                    </div>
+                                    {isMaxStockReached && (
+                                      <span className="text-[9px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                        Max {availStock}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           );
                         })()}

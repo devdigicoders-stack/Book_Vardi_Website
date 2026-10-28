@@ -43,6 +43,8 @@ import {
   Key
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import safeStorage from '../../utils/safeStorage';
+const localStorage = safeStorage;
 import ProductCard from '../Products/ProductCard';
 import SellerRegistrationModal, { INITIAL_FORM_STATE } from '../Profile/SellerRegistrationModal';
 import SellerApplicationReviewCard from '../Profile/SellerApplicationReviewCard';

@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { backendEnabled, fetchSchoolsFromBackend } from '../utils/api';
+import safeStorage from '../utils/safeStorage';
+const localStorage = safeStorage;
 
 const FALLBACK_SCHOOLS = [
   {

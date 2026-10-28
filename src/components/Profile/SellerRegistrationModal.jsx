@@ -30,6 +30,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import safeStorage from '../../utils/safeStorage';
+const localStorage = safeStorage;
 import { backendEnabled, registerSellerInBackend, sendSellerPhoneOtpApi, verifySellerPhoneOtpApi } from '../../utils/api';
 import LocationPickerModal from './LocationPickerModal';
 

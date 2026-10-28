@@ -373,9 +373,19 @@ export default function ProductDetailPage({ onNavigate }) {
       setQuantity(minMeter);
       return;
     }
-    if (currentVariantStock > 0 && finalQty > currentVariantStock) {
-      showToast(`⚠️ Only ${currentVariantStock} ${isMeterProduct ? 'meter(s)' : 'unit(s)'} available in stock!`);
-      setQuantity(currentVariantStock);
+    const existingInCart = cartItems?.find((it) => {
+      const matchId = String(it.productId || it.id || it._id) === String(selectedProduct.id || selectedProduct._id);
+      const matchSize = !selectedSize || String(it.selectedSize || it.variantName || '').toLowerCase() === String(selectedSize).toLowerCase();
+      return matchId && matchSize;
+    });
+    const currentQtyInCart = existingInCart ? Number(existingInCart.quantity || 0) : 0;
+    if (currentVariantStock > 0 && (currentQtyInCart + finalQty) > currentVariantStock) {
+      if (currentQtyInCart >= currentVariantStock) {
+        showToast(`⚠️ You already have the maximum available stock (${currentVariantStock}) in your cart!`);
+        return;
+      }
+      showToast(`⚠️ Only ${currentVariantStock} available in stock (${currentQtyInCart} already in cart). Setting quantity to ${currentVariantStock - currentQtyInCart}.`);
+      setQuantity(currentVariantStock - currentQtyInCart);
       return;
     }
     setIsAddingToCart(true);

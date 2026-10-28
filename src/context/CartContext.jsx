@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import safeStorage from '../utils/safeStorage';
+const localStorage = safeStorage;
 import {
   backendEnabled,
   loginWithBackend,
@@ -972,6 +974,58 @@ export function CartProvider({ children }) {
     setSelectedProduct(null);
   };
 
+// Helper to accurately resolve live available stock for any product / cart item, taking size variants into account
+  const getItemAvailableStock = useCallback((item) => {
+    if (!item) return Infinity;
+    const prodId = String(item.productId !== undefined ? item.productId : (item.id !== undefined ? item.id : (item._id || ''))).trim();
+    const itemName = String(item.name || '').trim().toLowerCase();
+    const itemSize = String(item.selectedSize || item.variantName || item.size || '').trim().toLowerCase();
+
+    // 1. Look up live catalog product
+    let matchedProd = null;
+    if (prodId && Array.isArray(products) && products.length > 0) {
+      matchedProd = products.find((p) => {
+        const pId = String(p.id !== undefined ? p.id : (p._id || '')).trim();
+        return pId && pId === prodId;
+      });
+    }
+    if (!matchedProd && itemName && Array.isArray(products) && products.length > 0) {
+      matchedProd = products.find((p) => String(p.name || '').trim().toLowerCase() === itemName);
+    }
+
+    const target = matchedProd || item;
+
+    // 2. If size variant is specified, resolve variant stock
+    if (itemSize && Array.isArray(target?.sizeVariants) && target.sizeVariants.length > 0) {
+      const variant = target.sizeVariants.find((v) => {
+        const vSize = String(v.size || v.measureValue || v.name || '').trim().toLowerCase();
+        return vSize === itemSize;
+      });
+      if (variant) {
+        const vStock = variant.stockQuantity !== undefined ? variant.stockQuantity : variant.stock;
+        if (vStock !== undefined && vStock !== null && !isNaN(Number(vStock))) {
+          return Math.max(0, Number(vStock));
+        }
+      }
+    }
+
+    // 3. Check direct item stock
+    const directStock = item.stockQuantity !== undefined ? item.stockQuantity : item.stock;
+    if (directStock !== undefined && directStock !== null && directStock !== Infinity && !isNaN(Number(directStock))) {
+      return Math.max(0, Number(directStock));
+    }
+
+    // 4. Check catalog product stock
+    if (target) {
+      const pStock = target.stockQuantity !== undefined ? target.stockQuantity : target.stock;
+      if (pStock !== undefined && pStock !== null && pStock !== Infinity && !isNaN(Number(pStock))) {
+        return Math.max(0, Number(pStock));
+      }
+    }
+
+    return Infinity;
+  }, [products]);
+
   const addToCart = (product, quantity = 1) => {
     if (!isAuthenticated) {
       openAuthModal('login');
@@ -1002,11 +1056,7 @@ export function CartProvider({ children }) {
     const cartItemId = product?.cartItemId || computedKey;
     const inWishlist = wishlist.some((item) => String(item) === String(prodId));
 
-    const itemStock = Number(
-      product?.stock !== undefined
-        ? product.stock
-        : (product?.stockQuantity !== undefined ? product.stockQuantity : Infinity)
-    );
+    const itemStock = getItemAvailableStock(product);
 
     if (itemStock <= 0) {
       showToast(`⚠️ Sorry, "${product.name}${product.selectedSize ? ` (${product.selectedSize})` : ''}" is currently out of stock!`);
@@ -1046,11 +1096,15 @@ export function CartProvider({ children }) {
         const newTotalQty = isMeter
           ? Math.round((existingQty + qtyToAdd) * 100) / 100
           : existingQty + qtyToAdd;
+        if (itemStock !== Infinity && existingQty >= itemStock) {
+          reachedMaxStock = true;
+          return prev;
+        }
         if (itemStock !== Infinity && newTotalQty > itemStock) {
           reachedMaxStock = true;
           return prev.map((item, idx) =>
             idx === existingIndex
-              ? { ...item, ...itemToAdd, quantity: Math.max(existingQty, itemStock), selected: true }
+              ? { ...item, ...itemToAdd, stock: itemStock, stockQuantity: itemStock, quantity: itemStock, selected: true }
               : item
           );
         }
@@ -1163,25 +1217,34 @@ export function CartProvider({ children }) {
       showToast('Please log in to manage your cart! 🛍️');
       return;
     }
+    let stockReachedMsg = '';
+
     setCartItems((prev) =>
       prev
         .map((item) => {
           const itemKey = item.cartItemId || getCartItemKey(item);
           if (String(itemKey) === String(id) || String(item.id || item.productId || item._id) === String(id)) {
-            const itemStock = Number(item.stock !== undefined ? item.stock : (item.stockQuantity !== undefined ? item.stockQuantity : Infinity));
+            const itemStock = getItemAvailableStock(item);
             const isMeter = isUnstitchedItem(item);
             const minMeter = isMeter ? (Number(item.minMeter) > 0 ? Number(item.minMeter) : 0.5) : 1;
             const newQty = Math.round((Number(item.quantity) + delta) * 100) / 100;
             if (delta > 0 && itemStock !== Infinity && newQty > itemStock) {
-              showToast(`⚠️ Only ${itemStock} units in stock for ${item.selectedSize ? `size ${item.selectedSize}` : 'this item'}.`);
-              return item;
+              stockReachedMsg = `⚠️ Only ${itemStock} units available in stock for "${item.name}"${item.selectedSize ? ` (Size ${item.selectedSize})` : ''}.`;
+              return {
+                ...item,
+                stock: itemStock,
+                stockQuantity: itemStock,
+                quantity: Math.min(Number(item.quantity), itemStock)
+              };
             }
             if (isMeter && newQty < minMeter && delta < 0) {
               return null;
             }
             return newQty > 0 ? {
               ...item,
-              quantity: newQty,
+              stock: itemStock !== Infinity ? itemStock : item.stock,
+              stockQuantity: itemStock !== Infinity ? itemStock : item.stockQuantity,
+              quantity: itemStock !== Infinity ? Math.min(newQty, itemStock) : newQty,
               isMeterBased: isMeter ? true : Boolean(item.isMeterBased),
               minMeter: isMeter ? minMeter : item.minMeter,
               meterStep: isMeter ? (Number(item.meterStep) > 0 ? Number(item.meterStep) : 0.5) : item.meterStep
@@ -1191,6 +1254,11 @@ export function CartProvider({ children }) {
         })
         .filter(Boolean)
     );
+
+    if (stockReachedMsg) {
+      showToast(stockReachedMsg);
+      return;
+    }
     if (backendEnabled) {
       const phone = userProfile?.phone || '';
       const userId = userProfile?.id || userProfile?._id || '';
@@ -2532,6 +2600,7 @@ export function CartProvider({ children }) {
     removeFromCart,
     clearCart,
     updateQuantity,
+    getItemAvailableStock,
     toggleWishlist,
     removeFromWishlist,
     showToast,
