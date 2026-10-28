@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -381,7 +381,7 @@ export default function CheckoutPage({ onNavigate }) {
   };
 
   // Place Order submission
-// Safety guard: Auto-clamp any cart item whose quantity exceeds currently available live stock
+  // Safety guard: Auto-clamp any cart item whose quantity exceeds currently available live stock
   useEffect(() => {
     if (!Array.isArray(cartItems) || cartItems.length === 0) return;
     cartItems.forEach((it) => {
