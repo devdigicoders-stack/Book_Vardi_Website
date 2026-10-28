@@ -140,8 +140,10 @@ export const DEFAULT_SCHOOLS = FALLBACK_SCHOOLS;
 
 // Standard known cities and subdistrict localities with coordinates
 export const POPULAR_CITIES = [
+  { id: 'behat_saharanpur', name: 'Behat, Saharanpur', subdistrict: 'Behat', city: 'Saharanpur', lat: 30.1667, lng: 77.6167, state: 'Uttar Pradesh' },
   { id: 'kamta_lucknow', name: 'Kamta, Lucknow', subdistrict: 'Kamta', city: 'Lucknow', lat: 26.8790, lng: 81.0118, state: 'Uttar Pradesh' },
   { id: 'jajmau_kanpur', name: 'Jajmau, Kanpur', subdistrict: 'Jajmau', city: 'Kanpur', lat: 26.4312, lng: 80.4026, state: 'Uttar Pradesh' },
+  { id: 'mirzapur', name: 'Mirzapur', subdistrict: 'Mirzapur Sadar', city: 'Mirzapur', lat: 25.1337, lng: 82.5644, state: 'Uttar Pradesh' },
   { id: 'rto_azamgarh', name: 'RTO, Azamgarh', subdistrict: 'RTO Area', city: 'Azamgarh', lat: 26.0682, lng: 83.1844, state: 'Uttar Pradesh' },
   { id: 'sec14_gurugram', name: 'Sector 14, Gurugram', subdistrict: 'Sector 14', city: 'Gurugram', lat: 28.4732, lng: 77.0425, state: 'Haryana' },
   { id: 'rk_puram_delhi', name: 'RK Puram, New Delhi', subdistrict: 'RK Puram', city: 'New Delhi', lat: 28.5684, lng: 77.1834, state: 'Delhi' },
@@ -150,6 +152,13 @@ export const POPULAR_CITIES = [
   { id: 'mumbai', name: 'Mumbai Metro', subdistrict: 'Bandra', city: 'Mumbai', lat: 19.0760, lng: 72.8777, state: 'Maharashtra' },
   { id: 'bengaluru', name: 'Bengaluru / Bangalore', subdistrict: 'Indiranagar', city: 'Bengaluru', lat: 12.9716, lng: 77.5946, state: 'Karnataka' },
 ];
+
+export function isInsideIndia(lat, lng) {
+  if (lat == null || lng == null) return false;
+  const numLat = Number(lat);
+  const numLng = Number(lng);
+  return numLat >= 6.0 && numLat <= 38.5 && numLng >= 68.0 && numLng <= 98.5;
+}
 
 /**
  * Calculates Great-Circle distance in kilometers using the Haversine formula
@@ -239,7 +248,9 @@ export function parseLocationDetails(data = {}) {
  * Reverse geocodes live GPS coordinates into subdistrict / locality name using Nominatim with fallback
  */
 export async function resolveSubdistrictFromCoords(lat, lng) {
-  if (!lat || !lng) return 'Kamta, Lucknow';
+  if (!lat || !lng || !isInsideIndia(lat, lng)) {
+    return 'Behat, Saharanpur';
+  }
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000);
@@ -253,6 +264,18 @@ export async function resolveSubdistrictFromCoords(lat, lng) {
     clearTimeout(timeoutId);
     if (response.ok) {
       const data = await response.json();
+      const countryCode = data.address?.country_code;
+      const displayName = String(data.display_name || '').toLowerCase();
+      // Guard against foreign VPN / proxy coordinates (e.g. France, Paris, Auteuil, US, UK)
+      if (
+        (countryCode && countryCode.toLowerCase() !== 'in') ||
+        displayName.includes('france') ||
+        displayName.includes('paris') ||
+        displayName.includes('auteuil')
+      ) {
+        console.warn('Overseas or foreign location detected from GPS/VPN:', data.address || data.display_name);
+        return 'Behat, Saharanpur';
+      }
       const parsed = parseLocationDetails(data);
       if (parsed.state) localStorage.setItem('bv_user_state', parsed.state);
       if (parsed.pincode) localStorage.setItem('bv_user_pincode', parsed.pincode);
@@ -396,41 +419,60 @@ export function LocationProvider({ children }) {
   const [userLocation, setUserLocation] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_user_coords');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (isInsideIndia(parsed?.lat, parsed?.lng)) {
+          return parsed;
+        }
+      }
     } catch {}
-    return { lat: 26.8790, lng: 81.0118, label: 'Kamta, Lucknow' };
+    return { lat: 30.1667, lng: 77.6167, label: 'Behat, Saharanpur' };
   });
 
   const [locationLabel, setLocationLabel] = useState(() => {
     try {
-      return localStorage.getItem('bv_user_location_label') || 'Kamta, Lucknow';
-    } catch {
-      return 'Kamta, Lucknow';
-    }
+      const label = localStorage.getItem('bv_user_location_label');
+      if (label && !label.toLowerCase().includes('auteuil') && !label.toLowerCase().includes('paris') && !label.toLowerCase().includes('france')) {
+        return label;
+      }
+    } catch {}
+    return 'Behat, Saharanpur';
   });
 
   const [userSubdistrict, setUserSubdistrict] = useState(() => {
     try {
-      return localStorage.getItem('bv_user_subdistrict') || 'Kamta, Lucknow';
-    } catch {
-      return 'Kamta, Lucknow';
-    }
+      const sub = localStorage.getItem('bv_user_subdistrict');
+      if (sub && !sub.toLowerCase().includes('auteuil') && !sub.toLowerCase().includes('paris') && !sub.toLowerCase().includes('france')) {
+        return sub;
+      }
+    } catch {}
+    return 'Behat, Saharanpur';
   });
 
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
 
-
-
   // Silent background location fetcher
   const fetchLocationInBackground = useCallback(() => {
+    // If user has set a manual location, do not override with background GPS!
+    const storedPermission = localStorage.getItem('bv_location_permission');
+    if (storedPermission === 'manual') return;
+
     if (!navigator.geolocation) return;
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
+
+        // Strict guard: ignore coordinates outside India (VPN, proxy, or DevTools emulator)
+        if (!isInsideIndia(lat, lng)) {
+          console.warn('Ignoring coordinates outside India:', lat, lng);
+          setIsLocating(false);
+          return;
+        }
+
         const coords = { lat, lng, accuracy: position.coords.accuracy };
         setUserLocation(coords);
         setPermissionStatus('granted');
@@ -472,6 +514,27 @@ export function LocationProvider({ children }) {
     const checkPermissionAndStartBg = async () => {
       const storedPermission = localStorage.getItem('bv_location_permission');
       const hasPrompted = localStorage.getItem('bv_location_prompted_once');
+
+      // Purge any legacy 'Auteuil' or 'Paris' strings from storage
+      const storedLabel = localStorage.getItem('bv_user_location_label') || '';
+      const storedSub = localStorage.getItem('bv_user_subdistrict') || '';
+      if (
+        storedLabel.toLowerCase().includes('auteuil') ||
+        storedLabel.toLowerCase().includes('paris') ||
+        storedSub.toLowerCase().includes('auteuil') ||
+        storedSub.toLowerCase().includes('paris')
+      ) {
+        localStorage.setItem('bv_user_location_label', 'Behat, Saharanpur');
+        localStorage.setItem('bv_user_subdistrict', 'Behat, Saharanpur');
+        localStorage.setItem('bv_user_coords', JSON.stringify({ lat: 30.1667, lng: 77.6167 }));
+      }
+
+      // If user has chosen a manual location, never override with background geolocation
+      if (storedPermission === 'manual') {
+        setPermissionStatus('manual');
+        setIsPermissionModalOpen(false);
+        return;
+      }
 
       // Check native browser permissions if available
       if (navigator.permissions && navigator.permissions.query) {
@@ -536,12 +599,20 @@ export function LocationProvider({ children }) {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        if (!isInsideIndia(lat, lng)) {
+          setLocationError('Detected location is outside India (possibly VPN or proxy). Defaulting to Behat, Saharanpur.');
+          selectManualCity(POPULAR_CITIES[0]);
+          setIsLocating(false);
+          return;
+        }
+
         // ON ALLOW: IMMEDIATELY HIDE POPUP & RUN REST IN BACKGROUND
         setIsPermissionModalOpen(false);
         setPermissionStatus('granted');
 
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
         const coords = {
           lat,
           lng,

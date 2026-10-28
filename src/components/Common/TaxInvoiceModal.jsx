@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
+  ArrowLeft,
   Printer, 
   Download,
   ShieldCheck, 
@@ -12,6 +13,8 @@ import {
   Clock,
   Store
 } from 'lucide-react';
+import { getSellerInvoiceNumber, getSellerCreditNoteNumber } from '../../utils/invoiceHelper';
+import { useCart } from '../../context/CartContext';
 
 const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80';
@@ -233,7 +236,30 @@ export function parseStateInfo(sourceObj, fallbackString = '') {
 }
 
 export default function TaxInvoiceModal({ isOpen, onClose, order }) {
+  const { customerCareEmail } = useCart();
+  const invoiceSupportEmail = customerCareEmail || 'support@bookvardi.in';
   if (!isOpen || !order) return null;
+
+  // Handle browser back button (popstate) safely so user never gets kicked out of the portal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const modalId = 'website_invoice_modal_' + Date.now();
+    window.history.pushState({ modalOpen: true, modalId }, '');
+
+    const handlePopState = () => {
+      onClose();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (window.history.state?.modalId === modalId) {
+        window.history.back();
+      }
+    };
+  }, [isOpen, onClose]);
 
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedSellerKey, setSelectedSellerKey] = useState(null);
@@ -829,6 +855,27 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
 
   const resolvedSeller = resolveSeller();
 
+  const resolvedInvoiceNumber = useMemo(() => {
+    return getSellerInvoiceNumber(order, resolvedSeller);
+  }, [order, resolvedSeller]);
+
+  const resolvedCreditNoteNumber = useMemo(() => {
+    return getSellerCreditNoteNumber(order, resolvedSeller);
+  }, [order, resolvedSeller]);
+
+  const platformSettings = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('bookvardi_platform_settings');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  }, []);
+
+  const companyName = platformSettings.companyName || 'BOOK VARDI';
+  const companyAddress = platformSettings.companyAddress || 'Lucknow, Uttar Pradesh - 226001';
+  const companyGstin = platformSettings.companyGstin || '09AAACB1234F1Z9';
+
   // Dynamic Intra-State vs Inter-State detection
   const sellerStateInfo = parseStateInfo(resolvedSeller, `${resolvedSeller.city} ${resolvedSeller.state}`);
   const customerStateInfo = parseStateInfo(shippingAddr, `${formattedAddressStr} ${shippingAddr?.state || ''}`);
@@ -951,7 +998,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
       .join('\n');
 
     const rawId = order.id || order.orderId || order._id || 'ORDER';
-    const cleanId = String(rawId).replace(/^#/, '').trim();
+    const cleanId = resolvedInvoiceNumber || String(rawId).replace(/^#/, '').trim();
 
     doc.write(`
       <!DOCTYPE html>
@@ -1033,6 +1080,15 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
         {/* Top Control Bar */}
         <div className="bg-gray-950 text-white px-5 py-3 flex items-center justify-between shrink-0 print:hidden border-b border-gray-800">
           <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs border border-gray-700 shrink-0"
+              title="Return to Orders"
+            >
+              <ArrowLeft size={14} />
+              <span>Back</span>
+            </button>
             <div className={`w-8 h-8 rounded-lg ${isCancelled ? 'bg-rose-600' : 'bg-brand-teal'} text-white flex items-center justify-center font-bold`}>
               <FileText size={16} />
             </div>
@@ -1168,10 +1224,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                   </span>
                 )}
               </div>
-              <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight">
-                BOOK VARDI
+              <h1 className="font-display font-extrabold text-xl text-gray-900 tracking-tight uppercase">
+                {companyName}
               </h1>
-              <p className="text-[11px] text-gray-500">Lucknow, Uttar Pradesh - 226001 | GSTIN: 09AAACB1234F1Z9</p>
+              <p className="text-[11px] text-gray-500">{companyAddress} | GSTIN: {companyGstin}</p>
             </div>
 
             <div className={`sm:text-right border-l-2 sm:border-l-0 sm:border-r-0 ${isCancelled ? 'border-rose-600' : 'border-brand-teal'} pl-3 sm:pl-0`}>
@@ -1181,12 +1237,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
               <p className="text-xs font-bold text-gray-700">
                 {isCancelled ? 'Credit Note No: ' : 'Invoice No: '}
                 <strong className={`font-mono ${isCancelled ? 'text-rose-600' : 'text-brand-teal'}`}>
-                  {isCancelled ? `CN-${order.id}` : `INV-${order.id}`}
+                  {isCancelled ? resolvedCreditNoteNumber : resolvedInvoiceNumber}
                 </strong>
               </p>
               {isCancelled && (
                 <p className="text-[11px] text-gray-500 font-mono">
-                  Original Ref: <strong>INV-{order.id}</strong>
+                  Original Ref: <strong>{resolvedInvoiceNumber}</strong>
                 </p>
               )}
               <p className="text-[11px] text-gray-500">
@@ -1236,7 +1292,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                     {isCancelled ? 'Issued To (Customer)' : 'Billed To (Customer)'}
                   </span>
                   <p className="font-extrabold text-gray-900 text-sm">{typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || 'Customer')}</p>
-                  <p className="text-gray-600 mt-0.5">{formattedAddressStr}</p>
+                  <p className="text-gray-600 mt-0.5">
+                    {isCancelled
+                      ? formattedAddressStr
+                          .replace(/,?\s*\((?:Phone|Mobile|Ph|Mob|Tel|Contact)?\s*:?\s*[\+0-9\s-]{8,}\)/gi, '')
+                          .replace(/,?\s*(?:Phone|Mobile|Ph|Mob|Tel|Contact)\s*:?\s*[\+0-9\s-]{8,}/gi, '')
+                          .replace(/,?\s*\+?91[\s-]?[6-9]\d{9}\b/gi, '')
+                      : formattedAddressStr}
+                  </p>
                   <p className="text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
                     <span>Order ID: <strong className="font-mono text-gray-900">#{order.id || order.orderId}</strong></span>
                     <span>•</span>
@@ -1291,6 +1354,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                             </>
                           )}
                         </div>
+                        {order.returnRequest?.type === 'exchange' &&
+                          (String(order.returnRequest.itemId || '') === String(item.id || item._id || item.productId || '') ||
+                           String(order.returnRequest.itemName || '').trim().toLowerCase() === String(item.name || '').trim().toLowerCase()) && (
+                          <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 text-[10px] font-bold">
+                            <span>🔄 Exchanged Item (New Size: {order.returnRequest.exchangeSize || 'Standard'})</span>
+                          </div>
+                        )}
                         {item.itemDiscount > 0 && (
                           <div className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
                             <span>🏷️ Offer / Coupon: -₹{item.itemDiscount.toFixed(2)} off</span>
@@ -1595,7 +1665,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
           <div className="border-t border-gray-200 pt-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-gray-500">
             <div>
               <p className="font-semibold text-gray-700">Book Vardi Customer Support & Help Desk</p>
-              <p className="text-[10px] text-gray-400">Official Student & School Marketplace • support@bookvardi.com</p>
+              <p className="text-[10px] text-gray-400">Official Student & School Marketplace • {invoiceSupportEmail}</p>
             </div>
             <div className="text-right shrink-0">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider block">Authorized Signatory</span>

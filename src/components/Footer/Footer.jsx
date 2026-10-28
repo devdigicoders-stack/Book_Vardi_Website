@@ -10,7 +10,9 @@ import { CATEGORIES } from '../../constants/categories';
 import { useCart } from '../../context/CartContext';
 
 export default function Footer({ onNavigate }) {
-  const { isAuthenticated, sellerStatus, isAdmin, isSeller, freeShippingThreshold = 999, shippingFee = 49 } = useCart();
+  const { isAuthenticated, sellerStatus, isAdmin, isSeller, freeShippingThreshold = 999, shippingFee = 49, customerCarePhone, customerCareEmail } = useCart();
+  const footerPhone = customerCarePhone || '+91 98765 43210';
+  const footerEmail = customerCareEmail || 'support@bookvardi.in';
   const [showAllCategories, setShowAllCategories] = useState(false);
   return (
     <footer className="bg-brand-teal text-white pt-16 border-t border-white/10" id="footer">
@@ -243,6 +245,8 @@ export default function Footer({ onNavigate }) {
                 <div>
                   <div className="text-[11px] sm:text-xs font-bold text-white">24/7 SUPPORT</div>
                   <div className="text-[10px] sm:text-[11px] text-white/60">Human Help</div>
+                  <a href={`tel:${footerPhone}`} className="text-[10px] text-brand-yellow hover:underline block mt-0.5">{footerPhone}</a>
+                  <a href={`mailto:${footerEmail}`} className="text-[10px] text-white/50 hover:underline block">{footerEmail}</a>
                 </div>
               </div>
             </div>

@@ -561,6 +561,46 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
     processAddressProofFile(file);
   };
 
+  const processPassbookDocFile = async (file) => {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      showToast('⚠️ Document file size must be less than 15 MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target.result;
+      let finalUrl = dataUrl;
+
+      try {
+        const token = localStorage.getItem('token') || localStorage.getItem('bv_token');
+        const res = await fetch(`${API_BASE_URL}/upload-base64`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ dataUrl, folder: 'documents', fieldName: 'passbookDoc' })
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch (err) {
+        console.warn('Backend disk save fallback:', err);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        passbookDoc: finalUrl,
+        passbookFileName: file.name
+      }));
+      showToast(`📄 Bank Passbook / Cancelled Cheque (${file.name}) uploaded successfully!`);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const nextStep = () => {
     // Step 1: Mobile Phone number & OTP verification
     if (step === 1) {
@@ -605,6 +645,38 @@ export default function SellerRegistrationModal({ isOpen, onClose, isPage = fals
       }
     }
 
+    // Step 7: Settlement Bank Account & Passbook / Cancelled Cheque
+    if (step === 7) {
+      if (!formData.bankAccountHolder?.trim()) {
+        showToast('⚠️ Please enter the Beneficiary Account Holder Name.');
+        return;
+      }
+      if (!formData.bankAccountNumber?.trim()) {
+        showToast('⚠️ Please enter the Bank Account Number.');
+        return;
+      }
+      if (formData.confirmBankAccountNumber && formData.bankAccountNumber !== formData.confirmBankAccountNumber) {
+        showToast('⚠️ Bank Account Number and Confirm Account Number do not match!');
+        return;
+      }
+      if (!formData.bankIfscCode?.trim()) {
+        showToast('⚠️ Please enter the Bank IFSC Code.');
+        return;
+      }
+      if (!formData.passbookDoc && !formData.passbookFileName) {
+        showToast('⚠️ Please upload Bank Passbook or Cancelled Cheque document before continuing.');
+        return;
+      }
+    }
+
+    // Step 10: Agreements
+    if (step === 10) {
+      if (!formData.acceptedTerms || !formData.acceptedCommissionRate || !formData.acceptedReturnPolicy) {
+        showToast('⚠️ Please check and accept all 3 mandatory agreement checkboxes before submitting!');
+        return;
+      }
+    }
+
     if (step < 12) {
       const newStep = step + 1;
       setStep(newStep);
@@ -640,6 +712,18 @@ function dataURLtoBlob(dataurl, filename = 'file') {
       setStep(1);
       setShowOtpPopup(true);
       showToast('⚠️ Mobile OTP verification is required to complete seller registration!');
+      return;
+    }
+
+    if (!formData.passbookDoc && !formData.passbookFileName) {
+      setStep(7);
+      showToast('⚠️ Bank Passbook or Cancelled Cheque document is mandatory! Please upload before submitting.');
+      return;
+    }
+
+    if (!formData.acceptedTerms || !formData.acceptedCommissionRate || !formData.acceptedReturnPolicy) {
+      setStep(10);
+      showToast('⚠️ Please check and accept all 3 mandatory agreement checkboxes before submitting!');
       return;
     }
 
@@ -700,6 +784,10 @@ function dataURLtoBlob(dataurl, filename = 'file') {
         formPayload.append('acceptedReturnPolicy', formData.acceptedReturnPolicy ? 'true' : 'false');
         formPayload.append('authorizedSignatoryConfirmation', formData.authorizedSignatoryConfirmation ? 'true' : 'false');
 
+        formPayload.append('selfDelivery', 'true');
+        formPayload.append('maxDeliveryRadiusKm', '10');
+        formPayload.append('thirdPartyDelivery', 'true');
+
         if (Array.isArray(formData.selectedCategories)) {
           formData.selectedCategories.forEach(cat => formPayload.append('selectedCategories', cat));
         }
@@ -719,15 +807,29 @@ function dataURLtoBlob(dataurl, filename = 'file') {
           if (docBlob) formPayload.append('addressProofDoc', docBlob, filename);
         }
 
+        if (formData.passbookDoc) {
+          const ext = formData.passbookFileName?.endsWith('.pdf') ? '.pdf' : '.png';
+          const filename = formData.passbookFileName || `passbook-doc${ext}`;
+          const passbookBlob = dataURLtoBlob(formData.passbookDoc, filename);
+          if (passbookBlob) formPayload.append('passbookDoc', passbookBlob, filename);
+        }
+
         try {
           const apiRes = await registerSellerInBackend(formPayload);
           console.log('Backend seller registration successful:', apiRes);
         } catch (err) {
-          console.warn('Backend seller registration notice:', err?.response?.data?.message || err?.message);
+          const errorMsg = err?.response?.data?.message || err?.message || 'Server connection failed';
+          console.error('Backend seller registration failed:', errorMsg);
+          showToast(`❌ Submission Failed: ${errorMsg}`);
+          setIsSubmitting(false);
+          return;
         }
       }
     } catch (e) {
       console.error(e);
+      showToast(`❌ Application error: ${e?.message || 'Unknown error'}`);
+      setIsSubmitting(false);
+      return;
     }
 
     submitSellerApplication({
@@ -735,6 +837,11 @@ function dataURLtoBlob(dataurl, filename = 'file') {
       status: 'Pending Approval',
       submittedAt: new Date().toLocaleDateString()
     });
+    try {
+      localStorage.setItem('book_vardi_seller_status', JSON.stringify('pending'));
+      localStorage.setItem('bv_seller_status', 'pending');
+      window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: 'pending' }));
+    } catch {}
     setIsSubmitting(false);
     setStep(11);
     showToast('🎉 Seller Registration Application Submitted! Pending Verification.');
@@ -820,11 +927,23 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                       setShowOtpPopup(true);
                       return;
                     }
-                    if (isReached || isPast || s.id <= step + 1) {
+                    if (s.id > step) {
+                      // Cannot jump forward past step 7 without bank passbook/cancelled cheque
+                      if (step >= 7 && !formData.passbookDoc && !formData.passbookFileName) {
+                        showToast('⚠️ Please upload Bank Passbook or Cancelled Cheque document before proceeding.');
+                        return;
+                      }
+                      // Cannot jump forward past step 10 without accepting all agreements
+                      if (s.id > 10 && (!formData.acceptedTerms || !formData.acceptedCommissionRate || !formData.acceptedReturnPolicy)) {
+                        showToast('⚠️ Please check all 3 mandatory agreement checkboxes before proceeding.');
+                        return;
+                      }
+                    }
+                    if (s.id <= step || isReached) {
                       setStep(s.id);
                     }
                   }}
-                  disabled={!isReached && s.id > step + 1}
+                  disabled={!isReached && s.id > step}
                   className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                     isCurrent
                       ? 'bg-brand-teal text-white shadow-xs'
@@ -1725,6 +1844,50 @@ function dataURLtoBlob(dataurl, filename = 'file') {
                     <option value="Overdraft Account">Overdraft Account (OD)</option>
                   </select>
                 </div>
+
+                <div className="space-y-2 md:col-span-2 p-4 bg-teal-50/60 rounded-2xl border border-teal-100 mt-2">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <label className="font-bold text-teal-950 text-xs sm:text-sm block">
+                        Bank Passbook / Cancelled Cheque Document *
+                      </label>
+                      <p className="text-[11px] text-teal-700">
+                        Upload first page of Bank Passbook or Cancelled Cheque showing Account # and IFSC for payout validation (`passbookDoc`).
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <label className="px-3 py-1.5 bg-brand-teal hover:bg-brand-teal-dark text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all">
+                        <UploadCloud size={14} />
+                        <span>{formData.passbookDoc ? 'Change Document' : 'Upload Passbook / Cheque'}</span>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={(e) => processPassbookDocFile(e.target.files && e.target.files[0])}
+                          className="hidden"
+                        />
+                      </label>
+                      {formData.passbookDoc && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDocModal({
+                            title: 'Bank Passbook / Cancelled Cheque',
+                            src: formData.passbookDoc,
+                            fileName: formData.passbookFileName || 'cancelled_cheque.pdf'
+                          })}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Eye size={14} /> Preview Doc
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {formData.passbookFileName && (
+                    <p className="text-[11px] font-semibold text-emerald-800 flex items-center gap-1">
+                      <FileCheck size={13} /> Selected document: {formData.passbookFileName}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 font-semibold text-xs">
@@ -2193,8 +2356,12 @@ function dataURLtoBlob(dataurl, filename = 'file') {
               <button
                 type="button"
                 onClick={handleFinalSubmit}
-                disabled={isSubmitting}
-                className="px-6 py-2.5 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
+                disabled={isSubmitting || !formData.acceptedTerms || !formData.acceptedCommissionRate || !formData.acceptedReturnPolicy}
+                className={`px-6 py-2.5 font-black text-xs rounded-xl shadow-md flex items-center gap-2 transition-all ${
+                  !formData.acceptedTerms || !formData.acceptedCommissionRate || !formData.acceptedReturnPolicy
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed opacity-60'
+                    : 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark cursor-pointer'
+                }`}
               >
                 {isSubmitting ? (
                   <>

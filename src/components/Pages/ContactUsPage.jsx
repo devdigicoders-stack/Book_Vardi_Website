@@ -4,7 +4,10 @@ import { useCart } from '../../context/CartContext';
 import { submitContactMessageApi } from '../../utils/api';
 
 export default function ContactUsPage() {
-  const { isAuthenticated, userProfile, showToast } = useCart();
+  const { isAuthenticated, userProfile, showToast, customerCarePhone, customerCareEmail, supportHours } = useCart();
+  const displayPhone = customerCarePhone || '+91 98765 43210';
+  const displayEmail = customerCareEmail || 'support@bookvardi.in';
+  const displayHours = supportHours || 'Mon - Sat, 9am to 6pm';
   const [formData, setFormData] = useState({
     name: isAuthenticated ? userProfile?.name || '' : '',
     email: isAuthenticated ? userProfile?.email || '' : '',
@@ -74,8 +77,8 @@ export default function ContactUsPage() {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Call Us</h4>
-                  <p className="text-sm font-bold text-gray-900">+91 98765 43210</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Mon - Sat, 9am to 6pm</p>
+                  <p className="text-sm font-bold text-gray-900">{displayPhone}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{displayHours}</p>
                 </div>
               </div>
 
@@ -85,7 +88,7 @@ export default function ContactUsPage() {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Email Us</h4>
-                  <p className="text-sm font-bold text-gray-900">support@bookvardi.in</p>
+                  <p className="text-sm font-bold text-gray-900">{displayEmail}</p>
                   <p className="text-xs text-gray-500 mt-0.5">We reply within 24 hours</p>
                 </div>
               </div>

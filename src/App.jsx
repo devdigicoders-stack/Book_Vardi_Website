@@ -158,9 +158,24 @@ function MainStore() {
 
   // Synchronize browser history / URL hash
   React.useEffect(() => {
-    const handlePopState = () => {
-      const page = getInitialPage();
-      setCurrentPage(page);
+    // Initialize history state if not present so Back button stays within portal
+    if (!window.history.state || !window.history.state.page) {
+      const initPage = getInitialPage();
+      const initUrl = initPage === 'home' ? window.location.pathname : `#${initPage}`;
+      try {
+        window.history.replaceState({ page: initPage }, '', initUrl);
+      } catch {}
+    }
+
+    const handlePopState = (event) => {
+      if (event.state && event.state.page) {
+        setCurrentPage(event.state.page);
+        if (event.state.category) setActiveCategory(event.state.category);
+        if (event.state.tab) setActiveProfileTab(event.state.tab);
+      } else {
+        const page = getInitialPage();
+        setCurrentPage(page);
+      }
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -198,7 +213,7 @@ function MainStore() {
     if (page === 'seller-registration') {
       setCurrentPage('seller-registration');
       try {
-        window.history.replaceState(null, '', '#seller-registration');
+        window.history.pushState({ page: 'seller-registration' }, '', '#seller-registration');
       } catch {}
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -233,7 +248,9 @@ function MainStore() {
       const newUrl = targetPage === 'home' 
         ? window.location.pathname 
         : `#${targetPage}`;
-      window.history.replaceState(null, '', newUrl);
+      if (currentPage !== targetPage) {
+        window.history.pushState({ page: targetPage, category, tab }, '', newUrl);
+      }
     } catch {}
 
     if (typeof category === 'string') {

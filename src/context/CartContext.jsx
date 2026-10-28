@@ -478,6 +478,9 @@ export function CartProvider({ children }) {
             if (data && (data.type === 'ORDER_CREATED' || data.type === 'ORDER_UPDATED')) {
               handleOrderSync();
             }
+            if (data && data.type === 'PLATFORM_SETTINGS_UPDATED' && data.settings) {
+              window.dispatchEvent(new CustomEvent('bv_settings_updated', { detail: data.settings }));
+            }
           } catch (e) {}
         };
 
@@ -644,6 +647,17 @@ export function CartProvider({ children }) {
       rawApplication: data
     };
 
+    try {
+      const existingRaw = localStorage.getItem('admin_sellers');
+      const existingSellers = existingRaw ? JSON.parse(existingRaw) : [];
+      const filtered = existingSellers.filter(s => s.phone !== newSellerEntry.phone && s.email !== newSellerEntry.email);
+      localStorage.setItem('admin_sellers', JSON.stringify([newSellerEntry, ...filtered]));
+      window.dispatchEvent(new CustomEvent('bv_sellers_updated'));
+      window.dispatchEvent(new CustomEvent('bv_seller_status_updated', { detail: 'pending' }));
+    } catch (e) {
+      console.warn('Sync to admin_sellers warning:', e.message);
+    }
+
     showToast('Seller application submitted successfully! 🚀');
   };
 
@@ -748,6 +762,48 @@ export function CartProvider({ children }) {
     }
   });
 
+  // Dynamic COD Handling Fee state (initialized from localStorage with fallback to 0)
+  const [codFee, setCodFee] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bv_cod_fee');
+      if (saved) return Number(JSON.parse(saved));
+      const savedSettings = localStorage.getItem('admin_settings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        if (parsed.codFee !== undefined && parsed.codFee !== null) {
+          return Number(parsed.codFee);
+        }
+      }
+      return 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const [customerCarePhone, setCustomerCarePhone] = useState(() => {
+    try {
+      return localStorage.getItem('bv_support_phone') || '+91 98765 43210';
+    } catch {
+      return '+91 98765 43210';
+    }
+  });
+
+  const [customerCareEmail, setCustomerCareEmail] = useState(() => {
+    try {
+      return localStorage.getItem('bv_support_email') || 'support@bookvardi.in';
+    } catch {
+      return 'support@bookvardi.in';
+    }
+  });
+
+  const [supportHours, setSupportHours] = useState(() => {
+    try {
+      return localStorage.getItem('bv_support_hours') || 'Mon - Sat (9:00 AM - 6:00 PM)';
+    } catch {
+      return 'Mon - Sat (9:00 AM - 6:00 PM)';
+    }
+  });
+
   useEffect(() => {
     if (backendEnabled) {
       fetchPublicSettingsFromBackend()
@@ -771,6 +827,29 @@ export function CartProvider({ children }) {
                 } catch (e) {}
               }
             }
+            if (res.codFee !== undefined && res.codFee !== null) {
+              const cFee = Number(res.codFee);
+              if (!isNaN(cFee) && cFee >= 0) {
+                setCodFee(cFee);
+                try {
+                  localStorage.setItem('bv_cod_fee', JSON.stringify(cFee));
+                } catch (e) {}
+              }
+            }
+            if (res.customerCarePhone || res.supportPhone) {
+              const phone = res.customerCarePhone || res.supportPhone;
+              setCustomerCarePhone(phone);
+              try { localStorage.setItem('bv_support_phone', phone); } catch {}
+            }
+            if (res.customerCareEmail || res.supportEmail) {
+              const email = res.customerCareEmail || res.supportEmail;
+              setCustomerCareEmail(email);
+              try { localStorage.setItem('bv_support_email', email); } catch {}
+            }
+            if (res.supportHours) {
+              setSupportHours(res.supportHours);
+              try { localStorage.setItem('bv_support_hours', res.supportHours); } catch {}
+            }
           }
         })
         .catch(() => {});
@@ -787,6 +866,24 @@ export function CartProvider({ children }) {
         if (e.detail.shippingFee !== undefined && e.detail.shippingFee !== null) {
           const fee = Number(e.detail.shippingFee);
           if (!isNaN(fee) && fee >= 0) setShippingFee(fee);
+        }
+        if (e.detail.codFee !== undefined && e.detail.codFee !== null) {
+          const cFee = Number(e.detail.codFee);
+          if (!isNaN(cFee) && cFee >= 0) setCodFee(cFee);
+        }
+        if (e.detail.customerCarePhone || e.detail.supportPhone) {
+          const phone = e.detail.customerCarePhone || e.detail.supportPhone;
+          setCustomerCarePhone(phone);
+          try { localStorage.setItem('bv_support_phone', phone); } catch {}
+        }
+        if (e.detail.customerCareEmail || e.detail.supportEmail) {
+          const email = e.detail.customerCareEmail || e.detail.supportEmail;
+          setCustomerCareEmail(email);
+          try { localStorage.setItem('bv_support_email', email); } catch {}
+        }
+        if (e.detail.supportHours) {
+          setSupportHours(e.detail.supportHours);
+          try { localStorage.setItem('bv_support_hours', e.detail.supportHours); } catch {}
         }
       }
     };
@@ -2230,6 +2327,9 @@ export function CartProvider({ children }) {
       taxAmount: orderData.taxAmount || 0,
       subtotal: orderData.subtotal,
       shippingCost: orderData.shippingCost,
+      shippingFee: orderData.shippingCost,
+      codFee: isCod ? Number(orderData.codFee ?? codFee ?? 0) : 0,
+      appliedCodFee: isCod ? Number(orderData.codFee ?? codFee ?? 0) : 0,
       discount: orderData.discount || 0,
       total: orderData.total,
       totalAmount: orderData.total,
@@ -2417,6 +2517,12 @@ export function CartProvider({ children }) {
     subtotal,
     freeShippingThreshold,
     shippingFee,
+    codFee,
+    customerCarePhone,
+    supportPhone: customerCarePhone,
+    customerCareEmail,
+    supportEmail: customerCareEmail,
+    supportHours,
     freeShippingProgress,
     freeShippingRemaining,
     setIsCartOpen,
@@ -2487,6 +2593,10 @@ export function CartProvider({ children }) {
     subtotal,
     freeShippingThreshold,
     shippingFee,
+    codFee,
+    customerCarePhone,
+    customerCareEmail,
+    supportHours,
     freeShippingProgress,
     freeShippingRemaining,
     isAuthenticated,
@@ -2541,6 +2651,12 @@ export function useCart() {
       subtotal: 0,
       freeShippingThreshold: 999,
       shippingFee: 49,
+      codFee: 0,
+      customerCarePhone: '+91 98765 43210',
+      supportPhone: '+91 98765 43210',
+      customerCareEmail: 'support@bookvardi.in',
+      supportEmail: 'support@bookvardi.in',
+      supportHours: 'Mon - Sat (9:00 AM - 6:00 PM)',
       freeShippingProgress: 0,
       freeShippingRemaining: 999,
       setIsCartOpen: () => {},

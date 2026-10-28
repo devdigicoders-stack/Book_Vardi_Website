@@ -48,6 +48,7 @@ export default function CheckoutPage({ onNavigate }) {
     subtotal,
     freeShippingThreshold,
     shippingFee,
+    codFee = 0,
     userProfile,
     isAuthenticated,
     addAddress,
@@ -230,6 +231,38 @@ export default function CheckoutPage({ onNavigate }) {
   const [showCouponInput, setShowCouponInput] = useState(false);
   const [isRedeemingPoints, setIsRedeemingPoints] = useState(false);
 
+  const activeCouponsList = useMemo(() => {
+    const defaultList = [
+      {
+        code: 'WELCOME10',
+        title: 'Welcome Student Offer',
+        description: 'Flat 10% OFF on uniforms, textbooks & stationery',
+        discountType: 'percentage',
+        discountValue: 10,
+        minOrderAmount: 299
+      },
+      {
+        code: 'FLAT50',
+        title: 'Instant Savings',
+        description: 'Flat ₹50 OFF on orders above ₹499',
+        discountType: 'flat',
+        discountValue: 50,
+        minOrderAmount: 499
+      },
+      {
+        code: 'BOOKVARDI',
+        title: 'Official Store Discount',
+        description: '15% OFF on school kits and textbook bundles',
+        discountType: 'percentage',
+        discountValue: 15,
+        minOrderAmount: 699
+      }
+    ];
+
+    const list = Array.isArray(promotions) && promotions.length > 0 ? promotions : defaultList;
+    return list.filter(c => c.status !== 'expired' && c.status !== 'inactive');
+  }, [promotions]);
+
   // Loading state
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -310,7 +343,8 @@ export default function CheckoutPage({ onNavigate }) {
 
   const hasExtraTax = extraTaxAmount > 0;
   const pointsDiscount = isRedeemingPoints ? Math.min(50, subtotal) : 0;
-  const grandTotal = Math.max(0, Math.round((subtotal + extraTaxAmount - couponDiscount - pointsDiscount + totalShippingCost) * 100) / 100);
+  const appliedCodFee = paymentMethod === 'cod' ? (Number(codFee) || 0) : 0;
+  const grandTotal = Math.max(0, Math.round((subtotal + extraTaxAmount - couponDiscount - pointsDiscount + totalShippingCost + appliedCodFee) * 100) / 100);
 
   // Handle adding a new address for authenticated user
   const handleAddNewAddress = (e) => {
@@ -440,6 +474,8 @@ export default function CheckoutPage({ onNavigate }) {
           subtotal,
           taxAmount: extraTaxAmount,
           shippingCost: totalShippingCost,
+          codFee: appliedCodFee,
+          appliedCodFee: appliedCodFee,
           discount: couponDiscount + pointsDiscount,
           couponDiscount,
           pointsDiscount,
@@ -993,7 +1029,12 @@ export default function CheckoutPage({ onNavigate }) {
                     Pay in cash or scan the delivery partner's UPI QR code upon arrival at your hostel desk or home address.
                   </p>
                   <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-[11px] font-bold text-emerald-900">
-                    <span>COD Handling Fee: <strong className="text-emerald-700 font-extrabold">₹0 (FREE)</strong></span>
+                    <span>
+                      COD Handling Fee:{" "}
+                      <strong className={appliedCodFee > 0 ? "text-emerald-900 font-extrabold" : "text-emerald-700 font-extrabold"}>
+                        {appliedCodFee > 0 ? `₹${appliedCodFee}` : "₹0 (FREE)"}
+                      </strong>
+                    </span>
                     <span>No Prepayment Required</span>
                   </div>
                 </div>
@@ -1206,36 +1247,87 @@ export default function CheckoutPage({ onNavigate }) {
                     </button>
                   </div>
                 ) : (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setShowCouponInput(!showCouponInput)}
-                      className="w-full flex items-center justify-between text-xs font-extrabold text-brand-teal bg-brand-teal/5 border border-brand-teal/15 hover:bg-brand-teal/10 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
                         <Tag size={14} className="text-brand-pink" />
-                        <span>Have a Coupon Code?</span>
-                      </div>
-                      <ChevronRight size={14} className={`transform transition-transform duration-200 ${showCouponInput ? 'rotate-90' : ''}`} />
-                    </button>
+                        Apply Coupon Code
+                      </span>
+                    </div>
 
-                    {showCouponInput && (
-                      <div className="mt-2.5 space-y-2.5 animate-in fade-in duration-200">
-                        <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Enter Coupon Code"
-                            value={couponInput}
-                            onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                            className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold uppercase focus:outline-none focus:border-brand-teal focus:bg-white"
-                          />
-                          <button
-                            type="submit"
-                            className="px-4 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                          >
-                            Apply
-                          </button>
-                        </form>
+                    <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter Coupon Code"
+                        value={couponInput}
+                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                        className="flex-1 bg-white border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-semibold uppercase focus:outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-brand-teal hover:bg-brand-teal-light text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                      >
+                        Apply
+                      </button>
+                    </form>
+
+                    {/* Available Active Coupons List */}
+                    {activeCouponsList.length > 0 && (
+                      <div className="pt-2 border-t border-gray-100 space-y-2">
+                        <span className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider block">
+                          Available Coupons & Offers
+                        </span>
+                        <div className="space-y-2">
+                          {activeCouponsList.map((c) => {
+                            const isCurrentApplied = appliedCoupon?.code === c.code;
+                            const minVal = c.minOrderAmount || c.minAmount || c.minOrderValue || 0;
+
+                            return (
+                              <div
+                                key={c.code}
+                                className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                                  isCurrentApplied
+                                    ? 'bg-emerald-50 border-emerald-300'
+                                    : 'bg-gray-50/80 hover:bg-gray-100/70 border-gray-200'
+                                }`}
+                              >
+                                <div className="space-y-0.5 flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="px-2 py-0.5 bg-brand-yellow/30 text-teal-950 font-mono font-extrabold text-[11px] rounded-md border border-brand-yellow/60">
+                                      {c.code}
+                                    </span>
+                                    {c.discountValue && (
+                                      <span className="text-[10px] font-bold text-emerald-700">
+                                        {c.discountType === 'percentage' || c.type === 'percent' ? `${c.discountValue}% OFF` : `₹${c.discountValue} OFF`}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-gray-600 truncate">
+                                    {c.description || c.title || `Save on orders above ₹${minVal}`}
+                                  </p>
+                                  {minVal > 0 && (
+                                    <p className="text-[10px] text-gray-400">
+                                      Min order: ₹{minVal}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => applyCoupon(c.code)}
+                                  disabled={isCurrentApplied}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer shrink-0 ${
+                                    isCurrentApplied
+                                      ? 'bg-emerald-600 text-white cursor-default'
+                                      : 'bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200'
+                                  }`}
+                                >
+                                  {isCurrentApplied ? 'Applied ✓' : 'Apply'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1289,6 +1381,19 @@ export default function CheckoutPage({ onNavigate }) {
                     )}
                   </span>
                 </div>
+
+                {paymentMethod === 'cod' && (
+                  <div className="flex justify-between items-center text-xs">
+                    <span>Cash on Delivery (COD) Fee</span>
+                    <span className="font-semibold text-gray-900">
+                      {appliedCodFee > 0 ? (
+                        `+₹${appliedCodFee}`
+                      ) : (
+                        <span className="text-emerald-700 font-bold">FREE</span>
+                      )}
+                    </span>
+                  </div>
+                )}
 
                 {couponDiscount > 0 && (
                   <div className="flex justify-between items-start text-emerald-700 font-bold">

@@ -866,10 +866,31 @@ export async function fetchSchoolsFromBackend(params = {}) {
 
 export async function registerSellerInBackend(formData) {
   const isFormData = typeof FormData !== 'undefined' && formData instanceof FormData;
-  const res = await apiClient.post('/seller/register', formData, {
-    headers: isFormData ? {} : { 'Content-Type': 'application/json' }
-  });
-  return res.data;
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('token');
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  if (isFormData) {
+    // When using FormData, use native fetch so the browser automatically sets
+    // the correct multipart/form-data boundary and doesn't get overridden by axios instance json defaults
+    const targetUrl = `${API_BASE_URL}/seller/register`;
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error(data?.message || `Registration failed with status ${response.status}`);
+      err.response = { data, status: response.status };
+      throw err;
+    }
+    return data;
+  } else {
+    headers['Content-Type'] = 'application/json';
+    const res = await apiClient.post('/seller/register', formData, { headers });
+    return res.data;
+  }
 }
 
 export async function sendSellerPhoneOtpApi(phone, isRegistration = true) {

@@ -1459,9 +1459,14 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
             {(() => {
               const subtotalVal = Number(order.subtotal || order.items?.reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || order.total || 0);
               const shipVal = Number(order.shippingFee ?? order.shippingCost ?? shippingFee ?? 0);
+              const codVal = Number(order.codFee ?? order.appliedCodFee ?? 0);
               const couponVal = Number(order.discountAmount ?? order.discount ?? 0);
               const pointsVal = Number(order.pointsDiscount ?? 0);
-              const grandVal = Math.max(0, Math.round((subtotalVal + shipVal - couponVal - pointsVal) * 100) / 100);
+              const grandVal = order.totalAmount !== undefined && Number(order.totalAmount) > 0
+                ? Number(order.totalAmount)
+                : (order.total !== undefined && Number(order.total) > 0
+                    ? Number(order.total)
+                    : Math.max(0, Math.round((subtotalVal + shipVal + codVal - couponVal - pointsVal) * 100) / 100));
 
               return (
                 <div className="pt-4 border-t border-gray-100 space-y-2.5 text-xs bg-gray-50/70 p-4 rounded-2xl border border-gray-200/80">
@@ -1476,6 +1481,15 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                       {shipVal === 0 ? 'FREE' : `₹${shipVal.toFixed(2)}`}
                     </span>
                   </div>
+
+                  {codVal > 0 && (
+                    <div className="flex justify-between items-center text-gray-700 font-medium">
+                      <span>COD Handling Fee:</span>
+                      <span className="font-semibold text-gray-900 font-mono">
+                        ₹{codVal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
 
                   {couponVal > 0 ? (
                     <div className="flex justify-between text-emerald-700 font-bold">
