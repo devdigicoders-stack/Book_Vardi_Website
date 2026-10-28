@@ -145,36 +145,128 @@ function getInitialPage() {
 }
 
 function MainStore() {
-  const { isAuthenticated, openAuthModal, selectedProduct, isSeller, setIsSellerModalOpen } = useCart();
-  const [currentPage, setCurrentPage] = useState(getInitialPage); // 'home' | 'products' | 'about' | 'profile' | 'checkout' | 'order-success' | 'seller-dashboard' | 'product-detail'
+  const {
+    isAuthenticated,
+    openAuthModal,
+    selectedProduct,
+    closeProductDetails,
+    isSeller,
+    setIsSellerModalOpen,
+    isCartOpen,
+    setIsCartOpen,
+    isWishlistOpen,
+    setIsWishlistOpen,
+    isAuthModalOpen,
+    closeAuthModal,
+    showToast
+  } = useCart();
+  const [currentPage, setCurrentPage] = useState(getInitialPage);
   const [activeCategory, setActiveCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeProfileTab, setActiveProfileTab] = useState('profile');
+
+  // Keep refs for event listeners to avoid stale closure state
+  const isCartOpenRef = React.useRef(isCartOpen);
+  const isWishlistOpenRef = React.useRef(isWishlistOpen);
+  const isAuthModalOpenRef = React.useRef(isAuthModalOpen);
+  const selectedProductRef = React.useRef(selectedProduct);
+  const currentPageRef = React.useRef(currentPage);
+  const lastBackPressRef = React.useRef(0);
+
+  React.useEffect(() => { isCartOpenRef.current = isCartOpen; }, [isCartOpen]);
+  React.useEffect(() => { isWishlistOpenRef.current = isWishlistOpen; }, [isWishlistOpen]);
+  React.useEffect(() => { isAuthModalOpenRef.current = isAuthModalOpen; }, [isAuthModalOpen]);
+  React.useEffect(() => { selectedProductRef.current = selectedProduct; }, [selectedProduct]);
+  React.useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
 
   // Priority: Home UI is loaded first. Pre-fetch secondary pages in background during idle time.
   React.useEffect(() => {
     prefetchSecondaryRoutes();
   }, []);
 
-  // Synchronize browser history / URL hash
+  // Push history state whenever a drawer or modal opens so Back button closes the modal
   React.useEffect(() => {
-    // Initialize history state if not present so Back button stays within portal
+    if (isCartOpen || isWishlistOpen || isAuthModalOpen) {
+      try {
+        window.history.pushState({ modalOpen: true, cart: isCartOpen, wishlist: isWishlistOpen, auth: isAuthModalOpen }, '', window.location.hash || '#');
+      } catch {}
+    }
+  }, [isCartOpen, isWishlistOpen, isAuthModalOpen]);
+
+  // Synchronize browser history, back navigation & double-back exit protection
+  React.useEffect(() => {
+    // Initialize base history state if not present
     if (!window.history.state || !window.history.state.page) {
       const initPage = getInitialPage();
       const initUrl = initPage === 'home' ? window.location.pathname : `#${initPage}`;
       try {
-        window.history.replaceState({ page: initPage }, '', initUrl);
+        window.history.replaceState({ page: initPage, root: initPage === 'home' }, '', initUrl);
+        // Also push a guard entry on home so first back doesn't dump outside
+        if (initPage === 'home') {
+          window.history.pushState({ page: 'home', root: true }, '', initUrl);
+        }
       } catch {}
     }
 
     const handlePopState = (event) => {
+      // 1. If Cart Drawer is open, back button simply closes it
+      if (isCartOpenRef.current) {
+        setIsCartOpen(false);
+        return;
+      }
+
+      // 2. If Wishlist Drawer is open, back button simply closes it
+      if (isWishlistOpenRef.current) {
+        setIsWishlistOpen(false);
+        return;
+      }
+
+      // 3. If Auth Modal is open, back button simply closes it
+      if (isAuthModalOpenRef.current) {
+        closeAuthModal();
+        return;
+      }
+
+      // 4. If Product Details is open, back button returns to previous page / home
+      if (selectedProductRef.current || currentPageRef.current === 'product-detail') {
+        closeProductDetails();
+        setCurrentPage('home');
+        try {
+          window.history.replaceState({ page: 'home', root: true }, '', window.location.pathname);
+        } catch {}
+        return;
+      }
+
+      // 5. Normal page back navigation
       if (event.state && event.state.page) {
-        setCurrentPage(event.state.page);
+        const targetPage = event.state.page;
+        setCurrentPage(targetPage);
         if (event.state.category) setActiveCategory(event.state.category);
         if (event.state.tab) setActiveProfileTab(event.state.tab);
+        return;
+      }
+
+      // 6. If at root / home without state:
+      const current = currentPageRef.current;
+      if (current !== 'home') {
+        setCurrentPage('home');
+        try {
+          window.history.pushState({ page: 'home', root: true }, '', window.location.pathname);
+        } catch {}
       } else {
-        const page = getInitialPage();
-        setCurrentPage(page);
+        // Already on home: Double-back to exit protection
+        const now = Date.now();
+        if (now - lastBackPressRef.current < 2000) {
+          window.history.back();
+        } else {
+          lastBackPressRef.current = now;
+          if (showToast) {
+            showToast('Press BACK again to exit Book Vardi 👋');
+          }
+          try {
+            window.history.pushState({ page: 'home', root: true }, '', window.location.pathname);
+          } catch {}
+        }
       }
     };
 
@@ -186,11 +278,16 @@ function MainStore() {
     };
   }, []);
 
-  // Navigate to product-detail page automatically if a product is selected
+  // Navigate to product-detail page and push history state so Back button returns to catalog
   React.useEffect(() => {
     if (selectedProduct && currentPage !== 'product-detail') {
       setCurrentPage('product-detail');
+      try {
+        window.history.pushState({ page: 'product-detail', productId: selectedProduct.id || selectedProduct._id }, '', '#product-detail');
+      } catch {}
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (!selectedProduct && currentPage === 'product-detail') {
+      setCurrentPage('home');
     }
   }, [selectedProduct]);
 
