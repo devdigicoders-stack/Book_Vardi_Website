@@ -30,7 +30,7 @@ import {
 import { compressImageToWebP } from '../../utils/imageCompressor';
 import { backendEnabled, submitSchoolBulkOrderInBackend, API_BASE_URL } from '../../utils/api';
 import { useCart } from '../../context/CartContext';
-import { useLocation, parseLocationDetails, fetchDetailsFromPincode } from '../../context/LocationContext';
+import { useLocation, parseLocationDetails, fetchDetailsFromPincode, fetchIpLocation, reverseGeocodeWithGoogle } from '../../context/LocationContext';
 
 export default function SchoolBulkOrderPage({ onNavigate }) {
   const { isAuthenticated, openAuthModal, userProfile, showToast } = useCart();
@@ -105,28 +105,29 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
   }, [isAuthenticated, userProfile]);
 
   // Helper for fallback location filling when reverse geocoding is unavailable
-  const fallbackLocationFill = () => {
+  const fallbackLocationFill = async () => {
     setIsDetectingLoc(false);
-    const savedState = localStorage.getItem('bv_user_state') || 'Uttar Pradesh';
-    const savedPincode = localStorage.getItem('bv_user_pincode') || '226028';
+    // Try IP location first instead of hardcoded state/pincode!
+    const ipLoc = await fetchIpLocation();
+    if (ipLoc && ipLoc.city) {
+      setCity(ipLoc.city);
+      setState(ipLoc.state || 'Uttarakhand');
+      if (ipLoc.pincode) setPincode(ipLoc.pincode);
+      if (!address) setAddress(`${ipLoc.city} Main Campus`);
+      showToast(`📍 Auto-filled network location: ${ipLoc.city}, ${ipLoc.state}`);
+      return;
+    }
 
-    if (locationLabel && locationLabel !== 'Kamta, Lucknow') {
+    if (locationLabel && !locationLabel.includes('Behat')) {
       const parts = locationLabel.split(',').map((s) => s.trim());
       if (parts.length >= 2) {
         setAddress((prev) => prev || parts[0]);
         setCity((prev) => prev || parts[parts.length - 1]);
       } else {
         setAddress((prev) => prev || locationLabel);
-        setCity((prev) => prev || 'Lucknow');
       }
-    } else {
-      setAddress((prev) => prev || 'Kamta Campus Road');
-      setCity((prev) => prev || 'Lucknow');
     }
-
-    setState((prev) => prev || savedState);
-    setPincode((prev) => prev || savedPincode);
-    showToast('📍 Auto-filled campus location details');
+    showToast('⚠️ Could not access GPS. Please check browser location permissions or enter campus details manually.');
   };
 
   // Handle Location Auto-Detect with Reverse Geocoding for Address, City, State, & Pincode
@@ -144,10 +145,28 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           try {
+            // 1. Check Google Maps API first if configured
+            const gmap = await reverseGeocodeWithGoogle(lat, lng);
+            if (gmap) {
+              const formattedAddress = [gmap.street, gmap.colony].filter(Boolean).join(', ') || gmap.displayName;
+              if (formattedAddress) setAddress(formattedAddress);
+              if (gmap.city) setCity(gmap.city);
+              if (gmap.state) setState(gmap.state);
+              if (gmap.pincode) setPincode(gmap.pincode);
+
+              showToast(`✅ Detected campus: ${gmap.city}, ${gmap.state} (${gmap.pincode})`);
+              setIsDetectingLoc(false);
+              return;
+            }
+
+            // 2. OpenStreetMap Nominatim
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
             const res = await fetch(
               `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`,
-              { headers: { 'Accept-Language': 'en' } }
+              { headers: { 'Accept-Language': 'en' }, signal: controller.signal }
             );
+            clearTimeout(timeoutId);
             if (res.ok) {
               const data = await res.json();
               const parsed = parseLocationDetails(data);
@@ -162,20 +181,20 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
               if (parsed.state) setState(parsed.state);
               if (parsed.pincode) setPincode(parsed.pincode);
 
-              showToast('✅ Campus location, State & Pincode detected successfully!');
+              showToast(`✅ Campus location detected: ${parsed.city || formattedAddress}, ${parsed.state} (${parsed.pincode})`);
               setIsDetectingLoc(false);
               return;
             }
           } catch (err) {
             console.warn('Live reverse geocoding error:', err);
           }
-          fallbackLocationFill();
+          await fallbackLocationFill();
         },
-        (err) => {
+        async (err) => {
           console.warn('Geolocation positioning error:', err);
-          fallbackLocationFill();
+          await fallbackLocationFill();
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     } else {
       fallbackLocationFill();
@@ -185,26 +204,43 @@ export default function SchoolBulkOrderPage({ onNavigate }) {
   // Sync userLocation updates into empty campus location fields
   useEffect(() => {
     if (userLocation?.lat && userLocation?.lng && (!address || !city || !state || !pincode)) {
-      fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.lat}&lon=${userLocation.lng}&zoom=16&addressdetails=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      )
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data) {
-            const parsed = parseLocationDetails(data);
-            const parts = [parsed.street, parsed.colony, parsed.landmark].filter(Boolean);
-            const formattedAddress = parts.length > 0
-              ? Array.from(new Set(parts)).join(', ')
-              : (parsed.displayName ? parsed.displayName.split(',').slice(0, 3).join(', ') : '');
+      // Don't auto-fetch if coords match old fallback dummy
+      if (userLocation.lat === 30.1667 && userLocation.lng === 77.6167) return;
 
-            if (formattedAddress) setAddress((prev) => prev || formattedAddress);
-            if (parsed.city) setCity((prev) => prev || parsed.city);
-            if (parsed.state) setState((prev) => prev || parsed.state);
-            if (parsed.pincode) setPincode((prev) => prev || parsed.pincode);
-          }
-        })
-        .catch(() => {});
+      reverseGeocodeWithGoogle(userLocation.lat, userLocation.lng).then((gmap) => {
+        if (gmap) {
+          const formattedAddress = [gmap.street, gmap.colony].filter(Boolean).join(', ') || gmap.displayName;
+          if (formattedAddress) setAddress((prev) => prev || formattedAddress);
+          if (gmap.city) setCity((prev) => prev || gmap.city);
+          if (gmap.state) setState((prev) => prev || gmap.state);
+          if (gmap.pincode) setPincode((prev) => prev || gmap.pincode);
+          return;
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.lat}&lon=${userLocation.lng}&zoom=16&addressdetails=1`,
+          { headers: { 'Accept-Language': 'en' }, signal: controller.signal }
+        )
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            clearTimeout(timeoutId);
+            if (data) {
+              const parsed = parseLocationDetails(data);
+              const parts = [parsed.street, parsed.colony, parsed.landmark].filter(Boolean);
+              const formattedAddress = parts.length > 0
+                ? Array.from(new Set(parts)).join(', ')
+                : (parsed.displayName ? parsed.displayName.split(',').slice(0, 3).join(', ') : '');
+
+              if (formattedAddress) setAddress((prev) => prev || formattedAddress);
+              if (parsed.city) setCity((prev) => prev || parsed.city);
+              if (parsed.state) setState((prev) => prev || parsed.state);
+              if (parsed.pincode) setPincode((prev) => prev || parsed.pincode);
+            }
+          })
+          .catch(() => {});
+      });
     }
   }, [userLocation]);
 

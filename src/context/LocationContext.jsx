@@ -142,14 +142,17 @@ export const DEFAULT_SCHOOLS = FALLBACK_SCHOOLS;
 
 // Standard known cities and subdistrict localities with coordinates
 export const POPULAR_CITIES = [
+  { id: 'dehradun', name: 'Dehradun, Uttarakhand', subdistrict: 'Dehradun', city: 'Dehradun', lat: 30.3165, lng: 78.0322, state: 'Uttarakhand' },
+  { id: 'haridwar', name: 'Haridwar, Uttarakhand', subdistrict: 'Haridwar', city: 'Haridwar', lat: 29.9457, lng: 78.1642, state: 'Uttarakhand' },
+  { id: 'roorkee', name: 'Roorkee, Haridwar', subdistrict: 'Roorkee', city: 'Roorkee', lat: 29.8543, lng: 77.8880, state: 'Uttarakhand' },
+  { id: 'saharanpur', name: 'Saharanpur City', subdistrict: 'Saharanpur', city: 'Saharanpur', lat: 29.9679, lng: 77.5510, state: 'Uttar Pradesh' },
   { id: 'behat_saharanpur', name: 'Behat, Saharanpur', subdistrict: 'Behat', city: 'Saharanpur', lat: 30.1667, lng: 77.6167, state: 'Uttar Pradesh' },
+  { id: 'delhi', name: 'Delhi NCR (Central)', subdistrict: 'Central Delhi', city: 'New Delhi', lat: 28.6139, lng: 77.2090, state: 'Delhi' },
+  { id: 'sec14_gurugram', name: 'Sector 14, Gurugram', subdistrict: 'Sector 14', city: 'Gurugram', lat: 28.4732, lng: 77.0425, state: 'Haryana' },
   { id: 'kamta_lucknow', name: 'Kamta, Lucknow', subdistrict: 'Kamta', city: 'Lucknow', lat: 26.8790, lng: 81.0118, state: 'Uttar Pradesh' },
   { id: 'jajmau_kanpur', name: 'Jajmau, Kanpur', subdistrict: 'Jajmau', city: 'Kanpur', lat: 26.4312, lng: 80.4026, state: 'Uttar Pradesh' },
   { id: 'mirzapur', name: 'Mirzapur', subdistrict: 'Mirzapur Sadar', city: 'Mirzapur', lat: 25.1337, lng: 82.5644, state: 'Uttar Pradesh' },
   { id: 'rto_azamgarh', name: 'RTO, Azamgarh', subdistrict: 'RTO Area', city: 'Azamgarh', lat: 26.0682, lng: 83.1844, state: 'Uttar Pradesh' },
-  { id: 'sec14_gurugram', name: 'Sector 14, Gurugram', subdistrict: 'Sector 14', city: 'Gurugram', lat: 28.4732, lng: 77.0425, state: 'Haryana' },
-  { id: 'rk_puram_delhi', name: 'RK Puram, New Delhi', subdistrict: 'RK Puram', city: 'New Delhi', lat: 28.5684, lng: 77.1834, state: 'Delhi' },
-  { id: 'delhi', name: 'Delhi NCR (Central)', subdistrict: 'Central Delhi', city: 'New Delhi', lat: 28.6139, lng: 77.2090, state: 'Delhi' },
   { id: 'pune', name: 'Pune City', subdistrict: 'Ganeshkhind', city: 'Pune', lat: 18.5204, lng: 73.8567, state: 'Maharashtra' },
   { id: 'mumbai', name: 'Mumbai Metro', subdistrict: 'Bandra', city: 'Mumbai', lat: 19.0760, lng: 72.8777, state: 'Maharashtra' },
   { id: 'bengaluru', name: 'Bengaluru / Bangalore', subdistrict: 'Indiranagar', city: 'Bengaluru', lat: 12.9716, lng: 77.5946, state: 'Karnataka' },
@@ -185,7 +188,7 @@ export function calculateDistanceKm(lat1, lon1, lat2, lon2) {
  * Finds the nearest subdistrict locality from known POPULAR_CITIES or formats coordinates
  */
 export function findNearestSubdistrict(lat, lng) {
-  if (!lat || !lng) return 'Kamta, Lucknow';
+  if (!lat || !lng) return 'Dehradun, Uttarakhand';
 
   let closest = null;
   let minDistance = Infinity;
@@ -198,7 +201,8 @@ export function findNearestSubdistrict(lat, lng) {
     }
   }
 
-  if (closest && minDistance < 50) {
+  // Realistic locality threshold: only snap if within 15 km (prevents snapping Dehradun to Behat which is 43km away!)
+  if (closest && minDistance < 15) {
     return closest.name;
   }
   return `Locality (${lat.toFixed(2)}, ${lng.toFixed(2)})`;
@@ -220,14 +224,14 @@ export function parseLocationDetails(data = {}) {
   const street = addr.road || addr.building || addr.amenity || (addr.house_number ? `${addr.house_number}, ${addr.road || ''}` : '');
   const colony = addr.suburb || addr.neighbourhood || addr.residential || addr.subdistrict || addr.city_district || addr.village || addr.hamlet || '';
   const landmark = addr.amenity || addr.landmark || addr.commercial || addr.historic || addr.shop || '';
-  const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || addr.state_district || 'Lucknow';
+  const city = addr.city || addr.town || addr.city_district || addr.district || addr.county || addr.state_district || 'Dehradun';
 
   let state = addr.state || addr.state_district || addr.region || addr.province || '';
   if (!state && displayName) {
     const matchedState = INDIAN_STATES.find((s) => new RegExp(`\\b${s}\\b`, 'i').test(displayName));
     if (matchedState) state = matchedState;
   }
-  if (!state) state = 'Uttar Pradesh';
+  if (!state) state = 'Uttarakhand';
 
   let pincode = addr.postcode || addr.postal_code || addr.zip || addr.zipcode || '';
   if (!pincode && displayName) {
@@ -247,15 +251,116 @@ export function parseLocationDetails(data = {}) {
 }
 
 /**
- * Reverse geocodes live GPS coordinates into subdistrict / locality name using Nominatim with fallback
+ * Reverse geocodes using Google Maps Geocoding API if key is supplied
+ */
+export async function reverseGeocodeWithGoogle(lat, lng) {
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
+        const result = data.results[0];
+        const components = result.address_components || [];
+        let colony = '';
+        let city = '';
+        let state = '';
+        let pincode = '';
+        let street = '';
+
+        for (const comp of components) {
+          const types = comp.types || [];
+          if (types.includes('sublocality') || types.includes('sublocality_level_1') || types.includes('neighborhood')) {
+            colony = comp.long_name;
+          } else if (types.includes('locality')) {
+            city = comp.long_name;
+          } else if (!city && types.includes('administrative_area_level_2')) {
+            city = comp.long_name;
+          } else if (types.includes('administrative_area_level_1')) {
+            state = comp.long_name;
+          } else if (types.includes('postal_code')) {
+            pincode = comp.long_name;
+          } else if (types.includes('route')) {
+            street = comp.long_name;
+          }
+        }
+
+        const resolvedLabel = colony && city ? `${colony}, ${city}` : (city || colony || result.formatted_address);
+        return {
+          street,
+          colony,
+          city: city || colony,
+          state: state || 'Uttarakhand',
+          pincode,
+          displayName: result.formatted_address,
+          label: resolvedLabel
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Google Maps reverse geocoding failed:', err);
+  }
+  return null;
+}
+
+/**
+ * Fallback to IP-based Geolocation when browser GPS is blocked, unavailable, or times out
+ */
+export async function fetchIpLocation() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('https://ipwho.is/', { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && isInsideIndia(data.latitude, data.longitude)) {
+        const city = data.city || 'Dehradun';
+        const region = data.region || 'Uttarakhand';
+        const label = city && region ? `${city}, ${region}` : city;
+        return {
+          lat: data.latitude,
+          lng: data.longitude,
+          city,
+          state: region,
+          pincode: data.postal || '',
+          label
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('IP-based location detection fallback failed:', err);
+  }
+  return null;
+}
+
+/**
+ * Reverse geocodes live GPS coordinates into subdistrict / locality name using Google, Nominatim, or Nearest
  */
 export async function resolveSubdistrictFromCoords(lat, lng) {
   if (!lat || !lng || !isInsideIndia(lat, lng)) {
-    return 'Behat, Saharanpur';
+    return 'Dehradun, Uttarakhand';
   }
+
+  // 1. First priority: Google Maps Geocoding API if key configured
+  const gmapResult = await reverseGeocodeWithGoogle(lat, lng);
+  if (gmapResult) {
+    if (gmapResult.state) localStorage.setItem('bv_user_state', gmapResult.state);
+    if (gmapResult.pincode) localStorage.setItem('bv_user_pincode', gmapResult.pincode);
+    return gmapResult.label;
+  }
+
+  // 2. Second priority: OpenStreetMap Nominatim with higher 8s timeout
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     const response = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`,
       {
@@ -268,7 +373,7 @@ export async function resolveSubdistrictFromCoords(lat, lng) {
       const data = await response.json();
       const countryCode = data.address?.country_code;
       const displayName = String(data.display_name || '').toLowerCase();
-      // Guard against foreign VPN / proxy coordinates (e.g. France, Paris, Auteuil, US, UK)
+      // Guard against foreign VPN / proxy coordinates
       if (
         (countryCode && countryCode.toLowerCase() !== 'in') ||
         displayName.includes('france') ||
@@ -276,7 +381,7 @@ export async function resolveSubdistrictFromCoords(lat, lng) {
         displayName.includes('auteuil')
       ) {
         console.warn('Overseas or foreign location detected from GPS/VPN:', data.address || data.display_name);
-        return 'Behat, Saharanpur';
+        return 'Dehradun, Uttarakhand';
       }
       const parsed = parseLocationDetails(data);
       if (parsed.state) localStorage.setItem('bv_user_state', parsed.state);
@@ -293,6 +398,7 @@ export async function resolveSubdistrictFromCoords(lat, lng) {
   } catch (e) {
     console.warn('Live reverse geocoding fallback to nearest subdistrict:', e);
   }
+
   return findNearestSubdistrict(lat, lng);
 }
 
@@ -417,7 +523,7 @@ export function LocationProvider({ children }) {
     }
   });
 
-  // User coordinates: { lat, lng } or null
+  // User coordinates: { lat, lng } or null (defaults to Dehradun)
   const [userLocation, setUserLocation] = useState(() => {
     try {
       const saved = localStorage.getItem('bv_user_coords');
@@ -428,7 +534,7 @@ export function LocationProvider({ children }) {
         }
       }
     } catch {}
-    return { lat: 30.1667, lng: 77.6167, label: 'Behat, Saharanpur' };
+    return { lat: 30.3165, lng: 78.0322, label: 'Dehradun, Uttarakhand' };
   });
 
   const [locationLabel, setLocationLabel] = useState(() => {
@@ -438,7 +544,7 @@ export function LocationProvider({ children }) {
         return label;
       }
     } catch {}
-    return 'Behat, Saharanpur';
+    return 'Dehradun, Uttarakhand';
   });
 
   const [userSubdistrict, setUserSubdistrict] = useState(() => {
@@ -448,7 +554,7 @@ export function LocationProvider({ children }) {
         return sub;
       }
     } catch {}
-    return 'Behat, Saharanpur';
+    return 'Dehradun, Uttarakhand';
   });
 
   const [isLocating, setIsLocating] = useState(false);
@@ -461,14 +567,29 @@ export function LocationProvider({ children }) {
     const storedPermission = localStorage.getItem('bv_location_permission');
     if (storedPermission === 'manual') return;
 
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      fetchIpLocation().then((ipLoc) => {
+        if (ipLoc) {
+          setUserLocation({ lat: ipLoc.lat, lng: ipLoc.lng });
+          setUserSubdistrict(ipLoc.label);
+          setLocationLabel(ipLoc.label);
+          localStorage.setItem('bv_user_coords', JSON.stringify({ lat: ipLoc.lat, lng: ipLoc.lng }));
+          localStorage.setItem('bv_user_location_label', ipLoc.label);
+          localStorage.setItem('bv_user_subdistrict', ipLoc.label);
+          if (ipLoc.state) localStorage.setItem('bv_user_state', ipLoc.state);
+          if (ipLoc.pincode) localStorage.setItem('bv_user_pincode', ipLoc.pincode);
+        }
+      });
+      return;
+    }
+
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
-        // Strict guard: ignore coordinates outside India (VPN, proxy, or DevTools emulator)
+        // Strict guard: ignore coordinates outside India
         if (!isInsideIndia(lat, lng)) {
           console.warn('Ignoring coordinates outside India:', lat, lng);
           setIsLocating(false);
@@ -488,23 +609,39 @@ export function LocationProvider({ children }) {
         // Resolve reverse geocoding in background
         try {
           const resolvedLabel = await resolveSubdistrictFromCoords(lat, lng);
-          setUserSubdistrict(resolvedLabel);
-          setLocationLabel(resolvedLabel);
-          localStorage.setItem('bv_user_location_label', resolvedLabel);
-          localStorage.setItem('bv_user_subdistrict', resolvedLabel);
+          if (resolvedLabel) {
+            setUserSubdistrict(resolvedLabel);
+            setLocationLabel(resolvedLabel);
+            localStorage.setItem('bv_user_location_label', resolvedLabel);
+            localStorage.setItem('bv_user_subdistrict', resolvedLabel);
+          }
         } catch {}
         setIsLocating(false);
       },
-      (error) => {
+      async (error) => {
+        // Fallback to IP if GPS is not available, denied, or times out
+        try {
+          const ipLoc = await fetchIpLocation();
+          if (ipLoc) {
+            setUserLocation({ lat: ipLoc.lat, lng: ipLoc.lng });
+            setUserSubdistrict(ipLoc.label);
+            setLocationLabel(ipLoc.label);
+            localStorage.setItem('bv_user_coords', JSON.stringify({ lat: ipLoc.lat, lng: ipLoc.lng }));
+            localStorage.setItem('bv_user_location_label', ipLoc.label);
+            localStorage.setItem('bv_user_subdistrict', ipLoc.label);
+            if (ipLoc.state) localStorage.setItem('bv_user_state', ipLoc.state);
+            if (ipLoc.pincode) localStorage.setItem('bv_user_pincode', ipLoc.pincode);
+          }
+        } catch {}
         setIsLocating(false);
         if (error.code === error.PERMISSION_DENIED) {
           setPermissionStatus('denied');
         }
       },
       {
-        enableHighAccuracy: false,
+        enableHighAccuracy: true,
         timeout: 15000,
-        maximumAge: 300000
+        maximumAge: 0 // Fresh GPS reading
       }
     );
   }, []);
@@ -517,21 +654,24 @@ export function LocationProvider({ children }) {
       const storedPermission = localStorage.getItem('bv_location_permission');
       const hasPrompted = localStorage.getItem('bv_location_prompted_once');
 
-      // Purge any legacy 'Auteuil' or 'Paris' strings from storage
+      // Purge any legacy 'Auteuil', 'Paris', or stale default 'Behat' strings if user never chose manual
       const storedLabel = localStorage.getItem('bv_user_location_label') || '';
       const storedSub = localStorage.getItem('bv_user_subdistrict') || '';
       if (
         storedLabel.toLowerCase().includes('auteuil') ||
         storedLabel.toLowerCase().includes('paris') ||
         storedSub.toLowerCase().includes('auteuil') ||
-        storedSub.toLowerCase().includes('paris')
+        storedSub.toLowerCase().includes('paris') ||
+        (storedPermission !== 'manual' && (storedLabel.includes('Behat') || storedSub.includes('Behat')))
       ) {
-        localStorage.setItem('bv_user_location_label', 'Behat, Saharanpur');
-        localStorage.setItem('bv_user_subdistrict', 'Behat, Saharanpur');
-        localStorage.setItem('bv_user_coords', JSON.stringify({ lat: 30.1667, lng: 77.6167 }));
+        localStorage.removeItem('bv_user_coords');
+        localStorage.removeItem('bv_user_location_label');
+        localStorage.removeItem('bv_user_subdistrict');
+        localStorage.removeItem('bv_user_state');
+        localStorage.removeItem('bv_user_pincode');
       }
 
-      // If user has chosen a manual location, never override with background geolocation
+      // If user has chosen a manual location, keep it
       if (storedPermission === 'manual') {
         setPermissionStatus('manual');
         setIsPermissionModalOpen(false);
@@ -546,8 +686,8 @@ export function LocationProvider({ children }) {
 
           if (status.state === 'granted') {
             setPermissionStatus('granted');
-            setIsPermissionModalOpen(false); // Hide popup
-            fetchLocationInBackground(); // Run in background
+            setIsPermissionModalOpen(false);
+            fetchLocationInBackground();
 
             status.onchange = () => {
               if (status.state === 'granted') {
@@ -559,21 +699,18 @@ export function LocationProvider({ children }) {
             return;
           } else if (status.state === 'denied') {
             setPermissionStatus('denied');
+            fetchLocationInBackground(); // Fallback to IP geolocation
+            return;
           }
         } catch (err) {
           console.warn('Permissions API check failed:', err);
         }
       }
 
-      // If stored as granted or manual, hide popup and run background sync if granted
-      if (storedPermission === 'granted') {
-        setPermissionStatus('granted');
-        setIsPermissionModalOpen(false);
-        fetchLocationInBackground();
-      } else if (storedPermission === 'manual' || hasPrompted === 'true') {
-        setIsPermissionModalOpen(false);
-      } else if (!hasPrompted || permissionStatus === 'prompt') {
-        // Show modal only if user has never been prompted
+      // Attempt background live GPS or IP sync whenever not manually set
+      fetchLocationInBackground();
+
+      if (!hasPrompted || permissionStatus === 'prompt') {
         const timer = setTimeout(() => {
           if (isMounted) setIsPermissionModalOpen(true);
         }, 700);
@@ -589,12 +726,28 @@ export function LocationProvider({ children }) {
   }, [fetchLocationInBackground, permissionStatus]);
 
   // Request native browser GPS permission
-  const requestBrowserLocation = useCallback(() => {
+  const requestBrowserLocation = useCallback(async () => {
     setIsLocating(true);
     setLocationError(null);
 
     if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser.');
+      // IP fallback
+      const ipLoc = await fetchIpLocation();
+      if (ipLoc) {
+        const coords = { lat: ipLoc.lat, lng: ipLoc.lng };
+        setUserLocation(coords);
+        setLocationLabel(ipLoc.label);
+        setUserSubdistrict(ipLoc.label);
+        try {
+          localStorage.setItem('bv_user_coords', JSON.stringify(coords));
+          localStorage.setItem('bv_user_location_label', ipLoc.label);
+          localStorage.setItem('bv_user_subdistrict', ipLoc.label);
+          if (ipLoc.state) localStorage.setItem('bv_user_state', ipLoc.state);
+          if (ipLoc.pincode) localStorage.setItem('bv_user_pincode', ipLoc.pincode);
+        } catch {}
+      } else {
+        setLocationError('Geolocation is not supported by your browser.');
+      }
       setIsLocating(false);
       return;
     }
@@ -605,7 +758,7 @@ export function LocationProvider({ children }) {
         const lng = position.coords.longitude;
 
         if (!isInsideIndia(lat, lng)) {
-          setLocationError('Detected location is outside India (possibly VPN or proxy). Defaulting to Behat, Saharanpur.');
+          setLocationError('Detected location is outside India (possibly VPN or proxy). Defaulting to Dehradun, Uttarakhand.');
           selectManualCity(POPULAR_CITIES[0]);
           setIsLocating(false);
           return;
@@ -631,30 +784,57 @@ export function LocationProvider({ children }) {
         // Resolve reverse geocoding asynchronously in background without blocking UI
         resolveSubdistrictFromCoords(lat, lng)
           .then((resolvedLabel) => {
-            setUserSubdistrict(resolvedLabel);
-            setLocationLabel(resolvedLabel);
+            if (resolvedLabel) {
+              setUserSubdistrict(resolvedLabel);
+              setLocationLabel(resolvedLabel);
+              try {
+                localStorage.setItem('bv_user_location_label', resolvedLabel);
+                localStorage.setItem('bv_user_subdistrict', resolvedLabel);
+              } catch {}
+            }
             setIsLocating(false);
-            try {
-              localStorage.setItem('bv_user_location_label', resolvedLabel);
-              localStorage.setItem('bv_user_subdistrict', resolvedLabel);
-            } catch {}
           })
           .catch(() => {
             setIsLocating(false);
           });
       },
-      (error) => {
+      async (error) => {
+        console.warn('Geolocation positioning error, attempting IP fallback:', error);
+        
+        // Try IP fallback before showing error
+        const ipLoc = await fetchIpLocation();
+        if (ipLoc) {
+          const coords = { lat: ipLoc.lat, lng: ipLoc.lng };
+          setUserLocation(coords);
+          setLocationLabel(ipLoc.label);
+          setUserSubdistrict(ipLoc.label);
+          try {
+            localStorage.setItem('bv_user_coords', JSON.stringify(coords));
+            localStorage.setItem('bv_user_location_label', ipLoc.label);
+            localStorage.setItem('bv_user_subdistrict', ipLoc.label);
+            if (ipLoc.state) localStorage.setItem('bv_user_state', ipLoc.state);
+            if (ipLoc.pincode) localStorage.setItem('bv_user_pincode', ipLoc.pincode);
+          } catch {}
+          setIsLocating(false);
+          if (error.code === error.PERMISSION_DENIED) {
+            setPermissionStatus('denied');
+            setLocationError('Browser location permission was denied. Detected location via network IP.');
+          }
+          return;
+        }
+
         setIsLocating(false);
-        let errorMsg = 'Unable to retrieve your location.';
+        let errorMsg = 'Unable to retrieve your live GPS location.';
         if (error.code === error.PERMISSION_DENIED) {
-          errorMsg = 'Location permission was denied. You can select your city manually.';
+          errorMsg = 'Location permission is denied in your browser. Please allow location in site permissions or pick Dehradun below.';
           setPermissionStatus('denied');
         } else if (error.code === error.POSITION_UNAVAILABLE) {
-          errorMsg = 'Location information is currently unavailable.';
+          errorMsg = 'Location information is currently unavailable. Please ensure GPS is turned on.';
         } else if (error.code === error.TIMEOUT) {
-          errorMsg = 'Location request timed out. Please try selecting your city.';
+          errorMsg = 'Location request timed out. Please try again or select your city below.';
         }
         setLocationError(errorMsg);
+        setIsPermissionModalOpen(true); // Open modal so user can choose city or see error!
         try {
           localStorage.setItem('bv_location_permission', 'denied');
           localStorage.setItem('bv_location_prompted_once', 'true');
@@ -662,8 +842,8 @@ export function LocationProvider({ children }) {
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000
+        timeout: 15000,
+        maximumAge: 0 // NO CACHED COORDINATES
       }
     );
   }, []);

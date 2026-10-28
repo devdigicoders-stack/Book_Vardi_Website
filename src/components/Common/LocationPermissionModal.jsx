@@ -106,8 +106,8 @@ export default function LocationPermissionModal() {
                       : 'bg-gray-50 text-gray-700 border-gray-200/80 hover:bg-brand-teal/5 hover:border-brand-teal/30'
                   }`}
                 >
-                  <span className="truncate">{city.name}</span>
-                  {isActive && <Check size={10} className="shrink-0" />}
+                  <span className="truncate">{city.city || city.name}</span>
+                  {isActive && <Check size={10} className="shrink-0 text-amber-300" />}
                 </button>
               );
             })}
