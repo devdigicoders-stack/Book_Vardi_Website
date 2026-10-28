@@ -1685,6 +1685,8 @@ export function CartProvider({ children }) {
 
   const openAuthModal = (mode = 'login') => {
     setAuthMode(mode);
+    setIsCartOpen(false);
+    setIsWishlistOpen(false);
     setIsAuthModalOpen(true);
   };
 
@@ -2593,8 +2595,8 @@ export function CartProvider({ children }) {
     supportHours,
     freeShippingProgress,
     freeShippingRemaining,
-    setIsCartOpen,
-    setIsWishlistOpen,
+    setIsCartOpen: handleSetIsCartOpen,
+    setIsWishlistOpen: handleSetIsWishlistOpen,
     addToCart,
     moveToCart,
     removeFromCart,

@@ -437,8 +437,10 @@ export default function ProductDetailPage({ onNavigate }) {
       return;
     }
     setIsBuyingNow(true);
-    addToCart(finalProductPayload, finalQty);
-    setIsCartOpen(true);
+    const added = addToCart(finalProductPayload, finalQty);
+    if (added !== false) {
+      setIsCartOpen(true);
+    }
     setTimeout(() => setIsBuyingNow(false), 500);
   };
 
@@ -876,7 +878,7 @@ export default function ProductDetailPage({ onNavigate }) {
       if (selectedBundleItems.length > 0) {
         const selectedProducts = selectedProduct.kitItems.filter((item) => selectedBundleItems.includes(item.id));
         const bundlePrice = selectedProducts.reduce((sum, item) => sum + item.price, 0);
-        addToCart({
+        const added = addToCart({
           ...selectedProduct,
           id: `kit-${selectedProduct.id}-${selectedBundleItems.slice().sort((a, b) => a - b).join('-')}`,
           name: `${selectedProduct.name} (Custom Bundle)`,
@@ -884,13 +886,21 @@ export default function ProductDetailPage({ onNavigate }) {
           kitItems: selectedProducts,
           bundleType: 'kit'
         }, finalQty);
+        if (added !== false) {
+          setIsCartOpen(true);
+        }
       } else {
-        addToCart({ ...selectedProduct, bundleType: 'kit' }, finalQty);
+        const added = addToCart({ ...selectedProduct, bundleType: 'kit' }, finalQty);
+        if (added !== false) {
+          setIsCartOpen(true);
+        }
       }
     } else {
-      addToCart(productPayload, finalQty);
+      const added = addToCart(productPayload, finalQty);
+      if (added !== false) {
+        setIsCartOpen(true);
+      }
     }
-    setIsCartOpen(true);
   };
 
   const goBack = () => {

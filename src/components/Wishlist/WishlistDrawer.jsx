@@ -7,6 +7,7 @@ export default function WishlistDrawer({ onNavigate }) {
   const {
     isWishlistOpen,
     setIsWishlistOpen,
+    isAuthModalOpen,
     wishlistProducts,
     toggleWishlist,
     addToCart,
@@ -27,13 +28,13 @@ export default function WishlistDrawer({ onNavigate }) {
   return (
     <div
       className={`fixed inset-0 z-9999 bg-brand-teal-dark/60 backdrop-blur-xs flex justify-end transition-opacity duration-300 ${
-        isWishlistOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        (isWishlistOpen && !isAuthModalOpen) ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}
       onClick={() => setIsWishlistOpen(false)}
     >
       <div
         className={`w-full max-w-md h-full bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${
-          isWishlistOpen ? 'translate-x-0' : 'translate-x-full'
+          (isWishlistOpen && !isAuthModalOpen) ? 'translate-x-0' : 'translate-x-full'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
