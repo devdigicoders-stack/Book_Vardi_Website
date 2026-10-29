@@ -2508,7 +2508,12 @@ export function CartProvider({ children }) {
         }
       } catch (err) {
         console.error('❌ Failed to save order to backend DB:', err);
-        throw new Error(err.response?.data?.message || err.message || 'Failed to place order in database. Please check your network and try again.');
+        const backendErrorDetail = err.response?.data?.error || err.data?.error || '';
+        const backendMsg = err.response?.data?.message || err.data?.message || '';
+        const combinedMsg = backendMsg && backendErrorDetail
+          ? `${backendMsg} (${backendErrorDetail})`
+          : (backendMsg || backendErrorDetail || err.message || 'Failed to place order in database. Please check your network and try again.');
+        throw new Error(combinedMsg);
       }
 
       // Non-blocking background cart clear (backend createOrder already auto-cleared MongoDB cart)
