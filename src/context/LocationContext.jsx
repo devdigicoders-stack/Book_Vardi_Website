@@ -529,9 +529,22 @@ export function LocationProvider({ children }) {
     try {
       const stored = localStorage.getItem('bv_school_radius_km');
       if (stored) return Number(stored);
+      const settings = localStorage.getItem('bookvardi_platform_settings');
+      if (settings) {
+        const parsed = JSON.parse(settings);
+        if (parsed.schoolRadiusKm) return Number(parsed.schoolRadiusKm);
+      }
     } catch {}
     return 25; // default 25 km
   });
+
+  useEffect(() => {
+    const handleRadiusUpdate = (e) => {
+      if (e?.detail) setSchoolRadiusKm(Number(e.detail));
+    };
+    window.addEventListener('bv_radius_updated', handleRadiusUpdate);
+    return () => window.removeEventListener('bv_radius_updated', handleRadiusUpdate);
+  }, []);
 
   // 2. Schools list (synced or fallback to mockData)
   const [schools, setSchools] = useState(() => {

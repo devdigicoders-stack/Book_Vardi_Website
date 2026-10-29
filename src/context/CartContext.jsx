@@ -852,6 +852,10 @@ export function CartProvider({ children }) {
               setSupportHours(res.supportHours);
               try { localStorage.setItem('bv_support_hours', res.supportHours); } catch {}
             }
+            if (res.schoolRadiusKm) {
+              try { localStorage.setItem('bv_school_radius_km', String(res.schoolRadiusKm)); } catch {}
+              window.dispatchEvent(new CustomEvent('bv_radius_updated', { detail: res.schoolRadiusKm }));
+            }
             try {
               localStorage.setItem('bookvardi_platform_settings', JSON.stringify(res));
             } catch {}
