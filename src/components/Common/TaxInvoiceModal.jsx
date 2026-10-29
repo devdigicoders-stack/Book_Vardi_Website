@@ -630,7 +630,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const isItemPriceAlreadyDiscounted = !currentItemsHaveDiscount && rawSubtotal > 0 && totalDiscounts > 0 && Math.abs((itemsSum + totalDiscounts) - rawSubtotal) < 1;
 
   const subtotal = itemsSum;
-  const grandTotal = Math.max(0, Math.round((subtotal + shippingCost - totalDiscounts) * 100) / 100);
+  const rawCodFee = Number(order.codFee ?? order.appliedCodFee ?? order.codCharges ?? order.settlement?.codChargeAmount ?? 0);
+  const isCodOrder = String(order.paymentMethod || '').toUpperCase().includes('COD') || 
+                     String(order.paymentMethod || '').toUpperCase().includes('CASH') || 
+                     rawCodFee > 0;
+  const effectiveCodFeeInTotal = (isCodOrder && rawCodFee > 0) ? rawCodFee : 0;
+  const grandTotal = Math.max(0, Math.round((subtotal + shippingCost - totalDiscounts + effectiveCodFeeInTotal) * 100) / 100);
   const discountRatio = (!currentItemsHaveDiscount && subtotal > 0 && totalDiscounts > 0)
     ? Math.min(1, totalDiscounts / subtotal)
     : 0;
@@ -744,6 +749,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
     }
     totalTaxableValue += shippingTaxable;
     totalTaxAmount += shippingTax;
+  }
+
+  if (effectiveCodFeeInTotal > 0) {
+    totalTaxableValue += effectiveCodFeeInTotal;
   }
 
   totalTaxableValue = Math.round(totalTaxableValue * 100) / 100;
@@ -1463,6 +1472,57 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
                       FREE (₹0.00)
                     </td>
                   </tr>
+                )}
+
+                {/* Dedicated Cash on Delivery (COD) Charges Line Item */}
+                {isCod && (
+                  rawCodFee > 0 ? (
+                    <tr className="hover:bg-amber-50/40 bg-amber-50/20">
+                      <td className="py-2.5 px-3">
+                        <p className="font-bold text-gray-900 flex items-center gap-1.5 flex-wrap">
+                          <span>💵</span> Cash on Delivery (COD) Charges
+                          <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                            Pay on Delivery
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-gray-500">Doorstep Cash Handling &amp; Collection (SAC 998544)</p>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold text-gray-400">—</td>
+                      <td className="py-2.5 px-3 text-center font-bold text-gray-700">1</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-700">₹{rawCodFee.toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹{rawCodFee.toFixed(2)}</td>
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <span className="text-gray-500 font-semibold text-[10px] block">0% GST</span>
+                        <span className="text-[9px] text-gray-400 block font-mono">₹0.00 (Exempt)</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-gray-900 font-mono whitespace-nowrap pr-3.5">
+                        ₹{rawCodFee.toFixed(2)}
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr className="hover:bg-amber-50/30 bg-amber-50/15">
+                      <td className="py-2.5 px-3">
+                        <p className="font-bold text-amber-950 flex items-center gap-1.5 flex-wrap">
+                          <span>💵</span> Cash on Delivery (COD) Charges
+                          <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                            FREE COD (₹0 Fee)
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-amber-700">Doorstep Cash Collection Promotion (Admin Absorbed / Free COD Promotion)</p>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold text-gray-400">—</td>
+                      <td className="py-2.5 px-3 text-center font-bold text-gray-400">NA</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-400 line-through">₹40.00</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-600">₹0.00</td>
+                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <span className="text-amber-800 font-semibold text-[10px] block">0% GST</span>
+                        <span className="text-[9px] text-gray-400 block font-mono">₹0.00 (Exempt)</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-emerald-700 font-mono whitespace-nowrap pr-3.5">
+                        FREE (₹0.00)
+                      </td>
+                    </tr>
+                  )
                 )}
               </tbody>
               <tfoot className="bg-gray-100/95 font-bold border-t-2 border-gray-300">
