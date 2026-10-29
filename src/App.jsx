@@ -80,20 +80,31 @@ class PageErrorBoundary extends React.Component {
               type="button"
               onClick={() => {
                 this.setState({ hasError: false, error: null });
-                window.location.reload();
+                try {
+                  if ('caches' in window) {
+                    caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+                  }
+                } catch (_) {}
+                const targetUrl = window.location.origin + window.location.pathname + '?_bv=' + Date.now() + window.location.hash;
+                window.location.replace(targetUrl);
               }}
               className="px-5 py-2.5 bg-brand-teal text-white rounded-xl font-bold text-sm hover:bg-brand-teal-dark transition-all cursor-pointer shadow-md"
             >
-              Refresh Page
+              Refresh Page (Clear Cache)
             </button>
             <button
               type="button"
               onClick={() => {
                 this.setState({ hasError: false, error: null });
+                try {
+                  if ('caches' in window) {
+                    caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+                  }
+                } catch (_) {}
                 if (typeof this.props.onNavigate === 'function') {
                   this.props.onNavigate('home');
                 } else {
-                  window.location.href = '/';
+                  window.location.replace('/?_bv=' + Date.now() + '#home');
                 }
               }}
               className="px-5 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-xl font-bold text-sm hover:bg-gray-50 transition-all cursor-pointer shadow-xs"
