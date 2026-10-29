@@ -2066,6 +2066,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
                       const isCancelEligible = ['placed', 'pending', 'confirmed', 'processing', 'packed'].includes(currentStatus);
                       const isDelivered = ['delivered', 'completed'].includes(currentStatus);
+                      const retType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase();
+                      const isExchangeReq = retType === 'exchange' ||
+                        ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) ||
+                        ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
+                        String(currentStatus).includes('exchange');
                       const orderItems = order.items || [];
                       const firstItem = orderItems[0] || {};
                       const returnWindowDays = firstItem.returnWindowDays || firstItem.product?.returnWindowDays || 7;
@@ -2775,6 +2780,11 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                               })()}
 
                               {(() => {
+                                const retType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase();
+                                const isExchangeReq = retType === 'exchange' ||
+                                  ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(order.returnRequest?.status) ||
+                                  ['exchange_approved', 'exchange_dispatched', 'exchanged'].includes(currentStatus) ||
+                                  String(currentStatus).includes('exchange');
                                 const hasConfirmedOrFulfilledItem = Array.isArray(order.items) && order.items.some(it => {
                                   const s = String(it.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
                                   return s && !['pending', 'placed', 'unconfirmed', 'draft', ''].includes(s);
