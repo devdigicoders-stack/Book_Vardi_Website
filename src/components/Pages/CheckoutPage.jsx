@@ -301,10 +301,18 @@ export default function CheckoutPage({ onNavigate }) {
     );
   }
 
-  // Calculate pricing breakdown
+  // Calculate pricing breakdown: Delivery charges are per distinct seller, NEVER doubled for multiple items from the same seller
+  const uniqueSellers = new Set(
+    selectedCartItems.map(item => {
+      const sId = item.sellerId?._id || item.sellerId || item.sellerDetails?.sellerId || item.sellerDetails?._id;
+      const sStore = (item.storeName || item.sellerStoreName || item.sellerName || item.sellerDetails?.storeName || '').trim().toLowerCase();
+      return sId ? String(sId) : (sStore || 'default_seller');
+    })
+  );
+  const distinctSellersCount = Math.max(1, uniqueSellers.size);
   const distinctProductsCount = selectedCartItems.length;
   const isFreeShipping = subtotal >= freeShippingThreshold || appliedCoupon?.type === 'freeship' || shippingFee === 0;
-  const baseShippingCost = isFreeShipping ? 0 : (distinctProductsCount * (shippingFee ?? 49));
+  const baseShippingCost = isFreeShipping ? 0 : (distinctSellersCount * (shippingFee ?? 49));
   const totalShippingCost = baseShippingCost;
 
   let couponDiscount = 0;
@@ -923,9 +931,9 @@ export default function CheckoutPage({ onNavigate }) {
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
                       3 - 5 Business Days via BlueDart / Delhivery
-                      {!isFreeShipping && distinctProductsCount > 1 && (
+                      {!isFreeShipping && distinctSellersCount > 1 && (
                         <span className="block text-[11px] text-gray-500 font-semibold mt-0.5">
-                          ({distinctProductsCount} products × ₹{shippingFee ?? 49})
+                          ({distinctSellersCount} sellers/shipments × ₹{shippingFee ?? 49})
                         </span>
                       )}
                     </p>
@@ -1418,9 +1426,9 @@ export default function CheckoutPage({ onNavigate }) {
                 <div className="flex justify-between">
                   <span>
                     Delivery Speed
-                    {!isFreeShipping && distinctProductsCount > 1 && (
+                    {!isFreeShipping && distinctSellersCount > 1 && (
                       <span className="text-[11px] text-gray-400 block sm:inline sm:ml-1">
-                        ({distinctProductsCount} items × ₹{shippingFee ?? 49})
+                        ({distinctSellersCount} shipments × ₹{shippingFee ?? 49})
                       </span>
                     )}
                   </span>

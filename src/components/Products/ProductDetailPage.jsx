@@ -571,7 +571,7 @@ export default function ProductDetailPage({ onNavigate }) {
         <span>
           {shippingFee === 0
             ? 'Free Delivery on All Orders'
-            : `Delivery: ₹${shippingFee} per product (Free on orders ₹${freeShippingThreshold || 999}+)`}
+            : `Delivery: ₹${shippingFee} (Free on orders ₹${freeShippingThreshold || 999}+)`}
         </span>
       </div>
 

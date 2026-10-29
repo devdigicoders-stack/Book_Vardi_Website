@@ -35,9 +35,17 @@ export default function CartDrawer({ onNavigate }) {
   // Evaluate payment restrictions for chosen items to buy
   const cartPaymentRestrictions = getCartPaymentRestrictions(selectedCartItems, products);
 
+  const uniqueSellers = new Set(
+    selectedCartItems.map(item => {
+      const sId = item.sellerId?._id || item.sellerId || item.sellerDetails?.sellerId || item.sellerDetails?._id;
+      const sStore = (item.storeName || item.sellerStoreName || item.sellerName || item.sellerDetails?.storeName || '').trim().toLowerCase();
+      return sId ? String(sId) : (sStore || 'default_seller');
+    })
+  );
+  const distinctSellersCount = Math.max(1, uniqueSellers.size);
   const distinctProductsCount = selectedCartItems.length;
   const isFreeShipping = subtotal >= freeShippingThreshold || subtotal === 0 || shippingFee === 0;
-  const shippingCost = isFreeShipping ? 0 : (distinctProductsCount * (shippingFee ?? 49));
+  const shippingCost = isFreeShipping ? 0 : (distinctSellersCount * (shippingFee ?? 49));
 
   // Calculate extra GST for items configured as "GST Extra" (isGstInclusive === false)
   const extraTaxAmount = Math.round(
@@ -355,9 +363,9 @@ export default function CartDrawer({ onNavigate }) {
             <div className="flex justify-between text-xs text-gray-600">
               <span>
                 Shipping
-                {shippingCost > 0 && distinctProductsCount > 1 && (
+                {shippingCost > 0 && distinctSellersCount > 1 && (
                   <span className="text-[10px] text-gray-500 font-medium ml-1">
-                    ({distinctProductsCount} items × ₹{shippingFee ?? 49})
+                    ({distinctSellersCount} shipments × ₹{shippingFee ?? 49})
                   </span>
                 )}
               </span>
