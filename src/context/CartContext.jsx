@@ -852,6 +852,9 @@ export function CartProvider({ children }) {
               setSupportHours(res.supportHours);
               try { localStorage.setItem('bv_support_hours', res.supportHours); } catch {}
             }
+            try {
+              localStorage.setItem('bookvardi_platform_settings', JSON.stringify(res));
+            } catch {}
           }
         })
         .catch(() => {});
