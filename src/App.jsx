@@ -151,6 +151,33 @@ export const prefetchSecondaryRoutes = () => {
   });
 };
 
+const extractDeliveryTokenFromUrl = () => {
+  try {
+    if (typeof window === 'undefined') return '';
+    const full = window.location.href;
+    const sp = new URLSearchParams(window.location.search);
+    let t = sp.get('token') || sp.get('orderId') || sp.get('t');
+    if (!t && window.location.hash) {
+      const parts = window.location.hash.split('?');
+      if (parts[1]) {
+        const hp = new URLSearchParams(parts[1]);
+        t = hp.get('token') || hp.get('orderId') || hp.get('t');
+      }
+    }
+    if (!t) {
+      const m = full.match(/(?:token|orderId)=([^&#/?]+)/i) || full.match(/\b(DLV-[A-Za-z0-9_-]+)/i);
+      if (m && m[1]) t = decodeURIComponent(m[1]).trim();
+    }
+    if (t) {
+      try { sessionStorage.setItem('bv_active_delivery_token', t); } catch {}
+      return t;
+    }
+    try { return sessionStorage.getItem('bv_active_delivery_token') || ''; } catch { return ''; }
+  } catch {
+    return '';
+  }
+};
+
 function getInitialPage() {
   try {
     const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
@@ -235,7 +262,8 @@ function MainStore() {
     // Initialize base history state if not present
     if (!window.history.state || !window.history.state.page) {
       const initPage = getInitialPage();
-      const initUrl = initPage === 'home' ? window.location.pathname : `#${initPage}`;
+      const currentFullUrl = (window.location.pathname || '') + (window.location.search || '') + (window.location.hash || '');
+      const initUrl = initPage === 'home' ? (window.location.pathname || '/') : (currentFullUrl || `#${initPage}`);
       try {
         window.history.replaceState({ page: initPage, root: initPage === 'home' }, '', initUrl);
         // Also push a guard entry on home so first back doesn't dump outside
@@ -553,7 +581,7 @@ function MainStore() {
           )}
 
           {activePage === 'delivery-partner' && (
-            <DeliveryPartnerPage onNavigate={navigateTo} />
+            <DeliveryPartnerPage onNavigate={navigateTo} initialToken={extractDeliveryTokenFromUrl()} />
           )}
 
           {/* 404 Fallback */}

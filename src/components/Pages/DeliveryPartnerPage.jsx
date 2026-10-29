@@ -68,8 +68,33 @@ export const formatItemQuantity = (item) => {
   return String(rawQty);
 };
 
-export default function DeliveryPartnerPage({ onNavigate }) {
-  const [token, setToken] = useState('');
+const resolveIncomingToken = (init) => {
+  if (init && typeof init === 'string' && init.trim()) return init.trim();
+  try {
+    if (typeof window === 'undefined') return '';
+    const sp = new URLSearchParams(window.location.search);
+    const q = sp.get('token') || sp.get('orderId') || sp.get('t');
+    if (q) return q.trim();
+    if (window.location.hash) {
+      const parts = window.location.hash.split('?');
+      if (parts[1]) {
+        const hp = new URLSearchParams(parts[1]);
+        const hq = hp.get('token') || hp.get('orderId') || hp.get('t');
+        if (hq) return hq.trim();
+      }
+    }
+    const full = window.location.href;
+    const m = full.match(/(?:token|orderId)=([^&#/?]+)/i) || full.match(/\b(DLV-[A-Za-z0-9_-]+)/i);
+    if (m && m[1]) return decodeURIComponent(m[1]).trim();
+    return (sessionStorage.getItem('bv_active_delivery_token') || '').trim();
+  } catch {
+    return '';
+  }
+};
+
+export default function DeliveryPartnerPage({ onNavigate, initialToken }) {
+  const [token, setToken] = useState(() => resolveIncomingToken(initialToken));
+  const [manualTokenInput, setManualTokenInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [order, setOrder] = useState(null);
@@ -133,27 +158,15 @@ export default function DeliveryPartnerPage({ onNavigate }) {
 
   // Resolve token from URL hash or query string
   useEffect(() => {
-    try {
-      const searchParams = new URLSearchParams(window.location.search);
-      let queryToken = searchParams.get('token') || searchParams.get('orderId');
-
-      if (!queryToken && window.location.hash) {
-        const hashStr = window.location.hash.split('?')[1];
-        if (hashStr) {
-          const hashParams = new URLSearchParams(hashStr);
-          queryToken = hashParams.get('token') || hashParams.get('orderId');
-        }
-      }
-
-      if (queryToken) {
-        setToken(queryToken);
-      } else {
-        setToken('');
-      }
-    } catch {
-      setToken('');
+    const active = resolveIncomingToken(initialToken || token);
+    if (active) {
+      if (active !== token) setToken(active);
+      try { sessionStorage.setItem('bv_active_delivery_token', active); } catch {}
+      loadOrder(active);
+    } else {
+      setLoading(false);
     }
-  }, []);
+  }, [initialToken]);
 
   const loadOrder = async (targetToken) => {
     const activeToken = targetToken || token;
@@ -600,21 +613,50 @@ export default function DeliveryPartnerPage({ onNavigate }) {
         <div className="w-16 h-16 rounded-3xl bg-amber-100 text-amber-800 flex items-center justify-center mb-4 shadow-sm border border-amber-200">
           <ShieldCheck size={32} />
         </div>
-        <h2 className="text-xl font-black text-slate-900 mb-2">Delivery Executive Portal Restricted</h2>
-        <p className="text-xs text-slate-600 max-w-sm mb-6 leading-relaxed">
-          This portal is reserved strictly for authorized BookVardi delivery executives and riders.
-          <br /><br />
-          If you are a customer/buyer, you can view your live order status and checkpoints inside <strong>My Orders</strong> using your Tracking ID.
+        <h2 className="text-xl font-black text-slate-900 mb-2">Delivery Executive Portal</h2>
+        <p className="text-xs text-slate-600 max-w-sm mb-4 leading-relaxed">
+          Authorized BookVardi delivery executives and riders: Enter your Tracking Token or Order ID to view customer address, delivery checklist, and verify delivery PIN.
         </p>
-        <button
-          onClick={() => {
-            if (onNavigate) onNavigate('profile');
-            else window.location.hash = '#profile';
+
+        {/* Manual Rider Token Access Form */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const clean = manualTokenInput.trim();
+            if (!clean) return;
+            setToken(clean);
+            try { sessionStorage.setItem('bv_active_delivery_token', clean); } catch {}
+            loadOrder(clean);
           }}
-          className="px-5 py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+          className="w-full max-w-xs space-y-2.5 mb-6"
         >
-          Return to My Orders
-        </button>
+          <input
+            type="text"
+            value={manualTokenInput}
+            onChange={(e) => setManualTokenInput(e.target.value)}
+            placeholder="e.g. DLV-FIX113744 or Order ID"
+            className="w-full px-3.5 py-2.5 text-xs border border-gray-300 rounded-xl bg-white font-mono uppercase focus:ring-2 focus:ring-teal-700 outline-none text-center font-bold tracking-wider"
+          />
+          <button
+            type="submit"
+            className="w-full py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+          >
+            Access Rider Portal & PIN
+          </button>
+        </form>
+
+        <div className="pt-3 border-t border-gray-200 w-full max-w-xs">
+          <p className="text-[11px] text-gray-500 mb-2">Are you a buyer checking order status?</p>
+          <button
+            onClick={() => {
+              if (onNavigate) onNavigate('profile');
+              else window.location.hash = '#profile';
+            }}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+          >
+            Return to My Orders
+          </button>
+        </div>
       </div>
     );
   }
