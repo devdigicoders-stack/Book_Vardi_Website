@@ -254,7 +254,7 @@ export function parseLocationDetails(data = {}) {
  * Reverse geocodes using Google Maps Geocoding API if key is supplied
  */
 export async function reverseGeocodeWithGoogle(lat, lng) {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBEss4wpsQ0o9WPBjDgHsSByUzFuo2oSNE';
   if (!apiKey) return null;
   try {
     const controller = new AbortController();
@@ -443,6 +443,48 @@ export async function fetchDetailsFromPincode(pincode) {
     }
   } catch (err) {
     console.warn('India Post Pincode API lookup failed, trying fallback:', err);
+  }
+
+  // Secondary API: Google Maps Geocoding API for Pincode
+  const gmapApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBEss4wpsQ0o9WPBjDgHsSByUzFuo2oSNE';
+  if (gmapApiKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${pin},India&key=${gmapApiKey}`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
+          const comps = data.results[0].address_components || [];
+          let city = '';
+          let state = '';
+          let locality = '';
+          for (const c of comps) {
+            const types = c.types || [];
+            if (types.includes('locality')) city = c.long_name;
+            else if (!city && types.includes('administrative_area_level_2')) city = c.long_name;
+            else if (types.includes('administrative_area_level_1')) state = c.long_name;
+            else if (types.includes('sublocality') || types.includes('neighborhood')) locality = c.long_name;
+          }
+          if (city || state) {
+            return {
+              pincode: pin,
+              state: state || 'Uttarakhand',
+              city: city || 'Dehradun',
+              district: city || 'Dehradun',
+              locality,
+              areaName: locality
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Google Maps pincode lookup error:', e);
+    }
   }
 
   // Fallback API: OpenStreetMap Nominatim Postal Search
