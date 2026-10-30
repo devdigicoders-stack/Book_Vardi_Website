@@ -928,7 +928,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                             <span>Download Credit Note (Returned Item)</span>
                           </button>
                         )}
-                        {isExchange && (
+                        {isExchange && (['exchange_dispatched', 'exchanged', 'completed'].includes(retReqStatus) || ['exchange_dispatched', 'exchanged'].includes(currentStatus)) && (
                           <button
                             type="button"
                             onClick={(e) => {

@@ -2603,6 +2603,9 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 const isCancelled = currentStatus === 'cancelled' || Boolean(order.cancelledAt);
                                 const canDownloadCreditNote = isExchangeReq ? isReturnAccepted : (isReturnAccepted || isCancelled);
                                 const isPendingReturnApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
+                                const isExchangeDispatched = ['exchange_dispatched', 'exchanged', 'completed'].some(s => retStatus.includes(s)) ||
+                                  ['exchange_dispatched', 'exchanged'].includes(currentStatus);
+                                const canDownloadExchangeInvoice = isExchangeReq && isExchangeDispatched;
 
                                 return (
                                   <div className="pt-2 mt-1 border-t border-gray-200/60 flex flex-wrap items-center gap-2">
@@ -2631,7 +2634,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                       </span>
                                     )}
 
-                                    {isExchangeReq && (
+                                    {canDownloadExchangeInvoice && (
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -2733,6 +2736,9 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                 const isCancelled = currentStatus === 'cancelled' || Boolean(order.cancelledAt);
                                 const canDownloadCreditNote = isExchangeReq ? isReturnAccepted : (isReturnAccepted || isCancelled);
                                 const isPendingReturnApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
+                                const isExchangeDispatched = ['exchange_dispatched', 'exchanged', 'completed'].some(s => retStatus.includes(s)) ||
+                                  ['exchange_dispatched', 'exchanged'].includes(currentStatus);
+                                const canDownloadExchangeInvoice = isExchangeReq && isExchangeDispatched;
 
                                 if (isOrderRefundedOrReturnOrExchange(order) || currentStatus === 'cancelled') {
                                   return (
@@ -2760,7 +2766,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                           <span>Credit Note (Pending Approval)</span>
                                         </span>
                                       )}
-                                      {isExchangeReq && (
+                                      {canDownloadExchangeInvoice && (
                                         <button
                                           type="button"
                                           onClick={(e) => {
