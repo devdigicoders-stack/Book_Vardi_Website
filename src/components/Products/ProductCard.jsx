@@ -1,0 +1,281 @@
+import React, { useState } from 'react';
+import { Heart, Star, ShoppingCart, Eye, Loader2, Package } from 'lucide-react';
+import { useCart } from '../../context/CartContext';
+import { resolveImageUrl, getProductMainImage } from '../../utils/api';
+
+import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
+
+function ProductCard({ product }) {
+  if (!product) return null;
+  const isKit = product?.category === 'kits' || product?.bundleType === 'kit' || (Array.isArray(product?.kitItems) && product.kitItems.length > 0);
+  const appStat = String(product?.approvalStatus || product?.approval_status || '').trim().toLowerCase();
+  if (isKit && (appStat !== 'approved' || product.isDeleted || product.status === 'deleted' || product.status === 'inactive')) {
+    return null;
+  }
+
+  const { wishlist, toggleWishlist, addToCart, openProductDetails, cartItems, showToast } = useCart();
+  
+  const [imgLoading, setImgLoading] = useState(true);
+  const [imgError, setImgError] = useState(false);
+
+  const paymentRestrictions = getProductPaymentRestrictions(product);
+
+  const productId = product?._id || product?.id;
+  const isWishlisted = wishlist.some((id) => String(id) === String(productId));
+  const cartItem = cartItems?.find((item) => String(item._id || item.id) === String(productId));
+  const countInCart = cartItem ? cartItem.quantity : 0;
+
+  const title = product?.name || 'Product';
+  const subtitle = product?.subtitle || product?.description || product?.category || '';
+  const basePrice = product?.price || 0;
+  const sizeVariants = Array.isArray(product?.sizeVariants) && product.sizeVariants.length > 0 ? product.sizeVariants : [];
+  const cleanSizeVariants = sizeVariants.filter(v => 
+    !v.isBase && 
+    String(v.size || '').trim().toLowerCase() !== 'base product' && 
+    String(v.measureValue || '').trim().toLowerCase() !== 'base product'
+  );
+  const variantPrices = cleanSizeVariants.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+  const allPrices = cleanSizeVariants.length > 0 ? (variantPrices.length > 0 ? variantPrices : [basePrice]) : [basePrice];
+  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : basePrice;
+  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : basePrice;
+  const hasPriceRange = minPrice < maxPrice;
+
+  const availableSizes = cleanSizeVariants.length > 0
+    ? cleanSizeVariants.map(v => v.size || v.measureValue)
+    : (Array.isArray(product?.sizes) ? product.sizes.filter(s => String(s).trim().toLowerCase() !== 'base product') : []);
+
+  const totalStock = cleanSizeVariants.length > 0
+    ? cleanSizeVariants.reduce((sum, v) => sum + Math.max(0, Number(v.stock !== undefined ? v.stock : (v.stockQuantity !== undefined ? v.stockQuantity : 0))), 0)
+    : Number(product?.stock !== undefined ? product.stock : (product?.stockQuantity !== undefined ? product.stockQuantity : 50));
+  const isOutOfStock = totalStock <= 0;
+
+  const price = minPrice;
+  const originalPrice = product?.originalPrice || product?.mrp || (price > 0 && product?.discountPercentage ? Math.round(price / (1 - product.discountPercentage / 100)) : null);
+  const rawImg = getProductMainImage(product);
+  const image = rawImg ? resolveImageUrl(rawImg) : '';
+  const rawRating = product?.rating ?? product?.averageRating;
+  const rating = rawRating !== undefined && rawRating !== null ? Number(rawRating) : 0;
+  const rawReviewsCount = product?.reviewsCount ?? product?.reviews ?? product?.numReviews;
+  const reviewsCount = rawReviewsCount !== undefined && rawReviewsCount !== null ? Number(rawReviewsCount) : 0;
+  const badge = product?.discountBadge || (Array.isArray(product?.tags) && product.tags[0]) || (product?.discountPercentage ? `${product.discountPercentage}% OFF` : '');
+
+  const getBadgeStyle = (badgeText) => {
+    if (!badgeText) return '';
+    const b = String(badgeText).toLowerCase();
+    if (b.includes('off') || b.includes('sale') || b.includes('deal')) return 'bg-brand-pink text-white';
+    if (b.includes('popular') || b.includes('bestseller') || b.includes('top')) return 'bg-brand-yellow text-brand-teal-dark';
+    return 'bg-brand-ochre text-white';
+  };
+
+  return (
+    <div
+      onMouseEnter={() => {
+        try { import('./ProductDetailPage'); } catch {}
+      }}
+      onClick={() => openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount })}
+      className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl overflow-hidden flex flex-col hover:shadow-xl hover:border-brand-teal/20 transition-all duration-300 transform hover:-translate-y-1 group cursor-pointer"
+    >
+      {/* Product Image Area */}
+      <div className="relative w-full pt-[100%] bg-gray-50 overflow-hidden flex items-center justify-center">
+        {badge && (
+          <span
+            className={`absolute top-2 left-2 sm:top-3 sm:left-3 z-10 text-[9px] sm:text-[10px] font-extrabold tracking-wider px-1.5 sm:px-2 py-0.5 rounded uppercase shadow-xs ${getBadgeStyle(
+              badge
+            )}`}
+          >
+            {badge}
+          </span>
+        )}
+
+        <button
+          type="button"
+          className={`absolute top-2 right-2 sm:top-3 sm:right-3 z-10 w-7 h-7 sm:w-8 sm:h-8 rounded-full backdrop-blur border flex items-center justify-center transition-all duration-200 active:scale-75 cursor-pointer shadow-xs ${
+            isWishlisted
+              ? 'text-brand-pink bg-pink-50 border-brand-pink/40 scale-105 shadow-sm'
+              : 'bg-white/90 border-gray-200 text-gray-400 hover:text-brand-pink hover:bg-white hover:scale-110'
+          }`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleWishlist(productId, product);
+          }}
+          aria-label={isWishlisted ? `Remove ${title} from wishlist` : `Add ${title} to wishlist`}
+          title={isWishlisted ? 'Liked' : 'Like'}
+        >
+          <Heart
+            size={14}
+            className={`sm:w-4 sm:h-4 transition-transform duration-200 ${isWishlisted ? 'scale-110' : ''}`}
+            fill={isWishlisted ? 'currentColor' : 'none'}
+          />
+        </button>
+
+        {/* Skeleton Loader Overlay */}
+        {(imgLoading || imgError || !image) && (
+          <div className="absolute inset-0 bg-gray-200 animate-pulse flex flex-col items-center justify-center z-10">
+            <Package className="w-10 h-10 text-gray-300/80 mb-1" />
+            <div className="w-16 h-2 bg-gray-300/60 rounded-full" />
+          </div>
+        )}
+
+        {image && !imgError && (
+          <img
+            src={image}
+            alt={title ? `${title} - Bookvardi` : 'Bookvardi Product'}
+            className={`absolute inset-0 w-full h-full object-cover text-xs font-semibold italic text-gray-400 leading-snug p-2 text-center transition-all duration-500 group-hover:scale-105 ${
+              imgLoading ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+            }`}
+            loading="lazy"
+            decoding="async"
+            onLoad={() => setImgLoading(false)}
+            onError={() => {
+              setImgError(true);
+              setImgLoading(false);
+            }}
+          />
+        )}
+
+        {/* Quick View Hover Indicator */}
+        <div className="absolute inset-0 bg-black/15 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none z-10">
+          <span className="inline-flex items-center gap-1.5 bg-white/95 backdrop-blur text-brand-teal text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-md transform translate-y-2 group-hover:translate-y-0 transition-transform">
+            <Eye size={14} />
+            <span>Quick View</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Details */}
+      <div className="p-2.5 sm:p-4 flex flex-col flex-grow">
+        <h3
+          className="text-xs sm:text-sm font-bold text-brand-teal line-clamp-1 group-hover:text-brand-teal-light leading-snug"
+          title={title}
+        >
+          {title}
+        </h3>
+        <p className="text-[10px] sm:text-xs text-gray-500 line-clamp-1 mb-1.5">
+          {subtitle}
+        </p>
+
+        {/* Available Size Badges */}
+        {availableSizes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            {availableSizes.slice(0, 4).map((s, idx) => (
+              <span key={idx} className="text-[9px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded border border-gray-200">
+                {s}
+              </span>
+            ))}
+            {availableSizes.length > 4 && (
+              <span className="text-[9px] font-bold text-gray-400">
+                +{availableSizes.length - 4}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-auto flex flex-col gap-1.5 sm:gap-2">
+          {(() => {
+            const isUnstitched = Boolean(
+              product.isMeterBased === true ||
+              product.unit === 'meter' ||
+              String(product.category || '').toLowerCase().includes('unstitched') ||
+              String(product.subCategory || '').toLowerCase().includes('unstitched') ||
+              String(product.name || '').toLowerCase().includes('unstitched')
+            );
+            return (
+              <>
+                {/* Price */}
+                <div className="flex items-baseline gap-1.5 sm:gap-2">
+                  {hasPriceRange ? (
+                    <span className="text-sm sm:text-base font-extrabold text-brand-teal">
+                      ₹{minPrice} - ₹{maxPrice}
+                    </span>
+                  ) : (
+                    <span className="text-sm sm:text-base font-extrabold text-brand-teal">
+                      ₹{isUnstitched ? Number(price).toFixed(2) : price}{isUnstitched ? '/m' : ''}
+                    </span>
+                  )}
+                  {originalPrice && originalPrice > price && (
+                    <span className="text-[10px] sm:text-xs text-red-500 line-through font-semibold decoration-red-500">
+                      ₹{isUnstitched ? Number(originalPrice).toFixed(2) : originalPrice}
+                    </span>
+                  )}
+                </div>
+
+                {/* Rating */}
+                <div className="flex items-center gap-1 text-[11px] text-gray-600">
+                  <div className="flex items-center gap-0.5 text-brand-ochre">
+                    {[...Array(5)].map((_, i) => (
+                      <Star
+                        key={i}
+                        size={10}
+                        className="sm:w-3 sm:h-3"
+                        fill={i < Math.floor(rating) && rating > 0 ? 'currentColor' : 'none'}
+                        stroke="currentColor"
+                      />
+                    ))}
+                  </div>
+                  <span className="font-bold text-gray-700">{rating.toFixed(1)}</span>
+                  <span className="text-[10px] sm:text-[11px] text-gray-400 hidden xs:inline">
+                    ({reviewsCount.toLocaleString()})
+                  </span>
+                </div>
+
+                {/* Add to Cart / Select Size Button with Live Item Count */}
+                <button
+                  disabled={paymentRestrictions.allDisabled || isOutOfStock}
+                  className={`w-full mt-1.5 sm:mt-2 py-1.5 sm:py-2 px-2 sm:px-3 font-bold rounded-lg text-[11px] sm:text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                    countInCart > 0
+                      ? 'bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark border border-brand-yellow-hover ring-2 ring-brand-yellow/30 font-extrabold'
+                      : isOutOfStock
+                      ? 'bg-gray-100 text-gray-400 border border-gray-200'
+                      : 'bg-brand-yellow/25 hover:bg-brand-yellow text-brand-teal border border-brand-yellow/60'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (paymentRestrictions.allDisabled) {
+                      if (showToast) showToast('⚠️ Payment disabled by seller for this item');
+                      return;
+                    }
+                    if (isOutOfStock) {
+                      if (showToast) showToast('⚠️ This product is out of stock');
+                      return;
+                    }
+                    if (isUnstitched || sizeVariants.length > 0) {
+                      openProductDetails({ ...product, id: productId, image, originalPrice, subtitle, rating, reviewsCount });
+                    } else {
+                      addToCart(product);
+                    }
+                  }}
+                  aria-label={`Add ${product.name} to cart`}
+                >
+                  <ShoppingCart size={13} className="shrink-0" />
+                  <span className="truncate">
+                    {paymentRestrictions.allDisabled
+                      ? 'Payment Disabled'
+                      : isOutOfStock
+                      ? 'Out of Stock'
+                      : isUnstitched
+                      ? (countInCart > 0 ? `Selected (${Number(countInCart).toFixed(2)}m)` : 'Select Length')
+                      : sizeVariants.length > 0 
+                        ? (countInCart > 0 ? `Select Size (${countInCart})` : 'Select Size')
+                        : (countInCart > 0 ? `Add to Cart (${countInCart})` : 'Add to Cart')}
+                  </span>
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default React.memo(ProductCard, (prevProps, nextProps) => {
+  return (
+    prevProps.product?.id === nextProps.product?.id &&
+    prevProps.product?._id === nextProps.product?._id &&
+    prevProps.product?.price === nextProps.product?.price &&
+    prevProps.product?.stock === nextProps.product?.stock &&
+    prevProps.product?.mrp === nextProps.product?.mrp &&
+    prevProps.product?.name === nextProps.product?.name
+  );
+});

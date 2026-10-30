@@ -1,0 +1,885 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Heart, ShoppingCart, User, Menu, X, ChevronDown, LogOut, LogIn, UserPlus, Package, Store, ArrowRight, ShieldCheck, MapPin, RotateCcw } from 'lucide-react';
+import { useCart } from '../../context/CartContext';
+import { useLocation } from '../../context/LocationContext';
+import { NAV_LINKS } from '../../constants/navigation';
+import GlobalSearch from './GlobalSearch';
+import { backendEnabled, fetchUserProfileFromBackend, fetchCategoryTreeFromBackend, resolveImageUrl } from '../../utils/api';
+
+// Extracted from original Navbar DesktopProfileDropdown
+function DesktopProfileDropdown({
+  isAuthenticated,
+  userProfile,
+  currentPage,
+  onNavigate,
+  onClose,
+  logout,
+  wishlistCount,
+  isSeller,
+  isAdmin,
+  onMouseEnter,
+  onMouseLeave
+}) {
+  const getDisplayName = (profile) => {
+    if (profile?.name && String(profile.name).trim() !== '' && String(profile.name).trim() !== 'Student Account') {
+      return String(profile.name).trim();
+    }
+    const phone = profile?.phone || '';
+    const digits = String(phone).replace(/\D/g, '');
+    if (digits.length >= 4) {
+      return `User${digits.slice(-4)}`;
+    }
+    return profile?.name?.trim() || 'User';
+  };
+
+  const getDisplayEmail = (profile) => {
+    if (profile?.email && String(profile.email).trim() !== '') {
+      return String(profile.email).trim();
+    }
+    return 'No Email Provided';
+  };
+
+  const displayName = getDisplayName(userProfile);
+  const displayEmail = getDisplayEmail(userProfile);
+
+  return (
+    <div
+      className="absolute top-full right-0 pt-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="w-64 bg-white rounded-2xl shadow-xl border border-gray-100 p-3 space-y-2 text-left">
+      {isAuthenticated ? (
+        <div className="space-y-2">
+          {/* User Profile Header */}
+          <button 
+            onClick={() => {
+              onNavigate('profile', null, 'profile');
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 bg-brand-teal/5 border border-brand-teal/10 rounded-xl hover:bg-brand-teal/10 transition-colors cursor-pointer text-left"
+          >
+            <div className="w-8 h-8 rounded-full bg-brand-teal text-white flex items-center justify-center font-extrabold text-xs shrink-0 shadow-sm">
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-gray-900 truncate">
+                {displayName}
+              </p>
+              <p className="text-[10px] text-gray-500 truncate">
+                {displayEmail}
+              </p>
+            </div>
+          </button>
+
+          {/* Quick Nav Links */}
+          <div className="space-y-0.5 pt-1">
+            <button
+              onClick={() => {
+                onNavigate('profile', null, 'profile');
+                onClose();
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                currentPage === 'profile'
+                  ? 'bg-brand-teal text-white'
+                  : 'text-gray-700 hover:bg-brand-teal/5 hover:text-brand-teal'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <User size={15} />
+                <span>My Profile</span>
+              </span>
+              <ChevronDown size={13} className="-rotate-90 text-gray-400" />
+            </button>
+
+            <button
+              onClick={() => {
+                onNavigate('profile', null, 'orders');
+                onClose();
+              }}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-gray-700 hover:bg-brand-teal/5 hover:text-brand-teal transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Package size={15} />
+                <span>Order History</span>
+              </span>
+              <ChevronDown size={13} className="-rotate-90 text-gray-400" />
+            </button>
+
+            <button
+              onClick={() => {
+                onNavigate('profile', null, 'wishlist');
+                onClose();
+              }}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-gray-700 hover:bg-brand-teal/5 hover:text-brand-teal transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Heart size={15} />
+                <span>Liked Items ({wishlistCount})</span>
+              </span>
+              <ChevronDown size={13} className="-rotate-90 text-gray-400" />
+            </button>
+
+            {isSeller && (
+              <button
+                onClick={() => {
+                  onNavigate('seller-dashboard');
+                  onClose();
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                  currentPage === 'seller-dashboard'
+                    ? 'bg-brand-yellow text-brand-teal-dark'
+                    : 'text-gray-700 hover:bg-brand-yellow/20 hover:text-brand-teal'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Store size={15} />
+                  <span>Seller Login / Portal</span>
+                </span>
+                <ChevronDown size={13} className="-rotate-90 text-gray-400" />
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  onNavigate('admin-dashboard');
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold bg-teal-50 text-teal-800 hover:bg-brand-teal hover:text-white transition-all cursor-pointer border border-teal-200/60"
+                title="Open Admin Console"
+              >
+                <span className="flex items-center gap-2">
+                  <ShieldCheck size={15} className="text-teal-700 group-hover:text-white" />
+                  <span>Admin Dashboard</span>
+                </span>
+                <ChevronDown size={13} className="-rotate-90 opacity-60" />
+              </button>
+            )}
+          </div>
+
+          {/* Logout Button inside Profile for lg devices */}
+          <div className="pt-2 border-t border-gray-100">
+            <button
+              onClick={() => {
+                logout();
+                if (currentPage === 'profile') {
+                  onNavigate('home');
+                }
+                onClose();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+            >
+              <LogOut size={15} />
+              <span>Log Out</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
+      </div>
+    </div>
+  );
+}
+
+export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchChange, hasAnnouncement = true }) {
+  const {
+    totalItemsCount,
+    wishlist,
+    setIsCartOpen,
+    isWishlistOpen,
+    setIsWishlistOpen,
+    isAuthenticated,
+    openAuthModal,
+    logout,
+    userProfile,
+    setUserProfile,
+    sellerStatus,
+    isAdmin,
+    isSeller,
+  } = useCart();
+  const { locationLabel, userSubdistrict, schoolRadiusKm, nearbySchoolsCount, setIsPermissionModalOpen, requestBrowserLocation, isLocating } = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [categoriesTree, setCategoriesTree] = useState([]);
+
+  useEffect(() => {
+    fetchCategoryTreeFromBackend()
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setCategoriesTree(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (backendEnabled && isAuthenticated && (userProfile?.phone || userProfile?.id)) {
+      const identifier = userProfile?.phone || userProfile?.id;
+      fetchUserProfileFromBackend(identifier)
+        .then((dbData) => {
+          if (dbData && setUserProfile) {
+            setUserProfile((prev) => ({
+              ...prev,
+              id: dbData.id || dbData._id || prev?.id,
+              name: dbData.name !== undefined && dbData.name !== null ? dbData.name : prev?.name,
+              email: dbData.email !== undefined && dbData.email !== null ? dbData.email : prev?.email,
+              phone: dbData.phone || prev?.phone,
+              avatar: dbData.avatar || prev?.avatar,
+              role: dbData.role || prev?.role,
+              addresses: Array.isArray(dbData.addresses) && dbData.addresses.length > 0 ? dbData.addresses : (prev?.addresses || [])
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated, userProfile?.phone, userProfile?.id, setUserProfile]);
+
+
+  const getDisplayName = (profile) => {
+    if (profile?.name && String(profile.name).trim() !== '' && String(profile.name).trim() !== 'Student Account') {
+      return String(profile.name).trim();
+    }
+    const phone = profile?.phone || '';
+    const digits = String(phone).replace(/\D/g, '');
+    if (digits.length >= 4) {
+      return `User${digits.slice(-4)}`;
+    }
+    return profile?.name?.trim() || 'User';
+  };
+
+  const getDisplayEmail = (profile) => {
+    if (profile?.email && String(profile.email).trim() !== '') {
+      return String(profile.email).trim();
+    }
+    return 'No Email Provided';
+  };
+
+  const displayName = getDisplayName(userProfile);
+  const displayEmail = getDisplayEmail(userProfile);
+  
+  // Profile dropdown
+  const [actionProfileOpen, setActionProfileOpen] = useState(false);
+  const actionProfileRef = useRef(null);
+  const profileTimerRef = useRef(null);
+  
+  // Mega Menu for Categories
+  const [megaMenuOpen, setMegaMenuOpen] = useState(false);
+  const megaMenuRef = useRef(null);
+  const megaMenuTimerRef = useRef(null);
+  const [categoryClickCount, setCategoryClickCount] = useState(0);
+
+  const [activeHomeSection, setActiveHomeSection] = useState('home');
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  const handleActionProfileEnter = () => {
+    if (profileTimerRef.current) clearTimeout(profileTimerRef.current);
+    setActionProfileOpen(true);
+  };
+  const handleActionProfileLeave = () => {
+    profileTimerRef.current = setTimeout(() => setActionProfileOpen(false), 250);
+  };
+
+  const handleMegaMenuEnter = () => {
+    if (megaMenuTimerRef.current) clearTimeout(megaMenuTimerRef.current);
+    setMegaMenuOpen(true);
+  };
+  const handleMegaMenuLeave = () => {
+    megaMenuTimerRef.current = setTimeout(() => {
+      setMegaMenuOpen(false);
+      setCategoryClickCount(0); // reset on leave
+    }, 400); // Increased from 250ms to prevent accidental closing
+  };
+
+  const headerRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (actionProfileRef.current && !actionProfileRef.current.contains(e.target)) {
+        setActionProfileOpen(false);
+      }
+      if (megaMenuRef.current && !megaMenuRef.current.contains(e.target)) {
+        setMegaMenuOpen(false);
+        setCategoryClickCount(0);
+      }
+      if (headerRef.current && !headerRef.current.contains(e.target)) {
+        setMobileMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Track scroll position for sticky header elevation & active home section
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      setIsScrolled(scrollY > 20);
+
+      if (currentPage !== 'home') return;
+      const categoriesEl = document.getElementById('categories');
+      const bestsellersEl = document.getElementById('bestsellers');
+      if (!categoriesEl || !bestsellersEl) return;
+      const catRect = categoriesEl.getBoundingClientRect();
+      const bestRect = bestsellersEl.getBoundingClientRect();
+      const triggerY = 140; 
+      if (catRect.top > triggerY) setActiveHomeSection('home');
+      else if (catRect.top <= triggerY && bestRect.top > triggerY) setActiveHomeSection('categories');
+      else if (bestRect.top <= triggerY) setActiveHomeSection('bestsellers');
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [currentPage]);
+
+  const handleLinkClick = (view, e) => {
+    e.preventDefault();
+
+    if (view === 'categories') {
+      // If it's a large device (desktop), direct click goes to categories page
+      if (window.innerWidth >= 1024) {
+        setMobileMenuOpen(false);
+        setMegaMenuOpen(false);
+        setCategoryClickCount(0);
+        onNavigate('all-categories');
+        return;
+      }
+
+      // Mobile logic (double tap)
+      if (categoryClickCount === 0) {
+        // First tap: toggle mega menu
+        setMegaMenuOpen(!megaMenuOpen);
+        setCategoryClickCount(1);
+        
+        // Reset the click count after 400ms to simulate a double-tap window
+        setTimeout(() => {
+          setCategoryClickCount(0);
+        }, 400);
+        return;
+      } else {
+        // Second tap within 400ms: navigate to dedicated page
+        setMobileMenuOpen(false);
+        setMegaMenuOpen(false);
+        setCategoryClickCount(0);
+        onNavigate('all-categories');
+        return;
+      }
+    }
+
+    // Reset others
+    setMobileMenuOpen(false);
+    setMegaMenuOpen(false);
+    setCategoryClickCount(0);
+
+    if (view === 'bestsellers') {
+      setActiveHomeSection('bestsellers');
+      if (currentPage !== 'home') {
+        onNavigate('home');
+        setTimeout(() => {
+          const el = document.getElementById('bestsellers');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }, 150);
+      } else {
+        const el = document.getElementById('bestsellers');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }
+      return;
+    }
+
+    if (view === 'home') {
+      setActiveHomeSection('home');
+      if (currentPage !== 'home') {
+        onNavigate('home');
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      return;
+    }
+
+    onNavigate(view);
+  };
+
+  const activeCategoriesTree = Array.isArray(categoriesTree) ? categoriesTree : [];
+
+  const renderMegaMenu = (isMobile = false) => {
+    return (
+      <div 
+        className={`${
+          isMobile 
+            ? 'mt-2 pl-4 border-l-2 border-brand-yellow/30 space-y-4' 
+            : 'absolute top-full left-0 w-full bg-white shadow-2xl border-t border-gray-100 z-50 p-6 animate-in fade-in slide-in-from-top-1 duration-200'
+        }`}
+      >
+        <div className={isMobile ? 'flex flex-col gap-4' : 'container mx-auto px-4 flex flex-wrap gap-8 justify-center'}>
+          {activeCategoriesTree.map((category) => {
+            const catName = category.name || category.title || 'Category';
+            const catId = category.slug || category._id || category.id || catName;
+            const subList = Array.isArray(category.subCategories) ? category.subCategories : [];
+
+              return (
+                <div key={category._id || category.id || catId} className={isMobile ? 'flex flex-col gap-2' : 'flex flex-col gap-3 min-w-[140px] max-w-[180px]'}>
+                  <button 
+                    onClick={() => {
+                      setMegaMenuOpen(false);
+                      setMobileMenuOpen(false);
+                      onNavigate('products', catName);
+                    }}
+                    className="font-extrabold text-brand-teal hover:text-brand-pink text-sm uppercase tracking-wider text-left transition-colors flex items-center justify-between group cursor-pointer"
+                  >
+                    <span>{catName}</span>
+                    {!isMobile && <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity transform -translate-x-2 group-hover:translate-x-0" />}
+                  </button>
+                  
+                  <div className="flex flex-col gap-2">
+                    {subList.map((sub, idx) => {
+                      const subName = typeof sub === 'string' ? sub : sub?.name;
+                      return (
+                        <button 
+                          key={sub._id || sub.slug || idx}
+                          onClick={() => {
+                            setMegaMenuOpen(false);
+                            setMobileMenuOpen(false);
+                            onNavigate('products', catName, subName);
+                          }}
+                          className="text-xs font-semibold text-gray-500 hover:text-brand-teal hover:bg-brand-teal/5 py-1 px-2 -ml-2 rounded-lg text-left transition-colors cursor-pointer"
+                        >
+                          {subName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+          
+          {/* Quick View All Link */}
+          {!isMobile && (
+            <div className="w-full flex justify-center mt-4 pt-4 border-t border-gray-100 lg:hidden">
+              <button
+                onClick={() => {
+                  setMegaMenuOpen(false);
+                  onNavigate('all-categories');
+                }}
+                className="text-xs font-bold text-brand-teal hover:text-brand-pink transition-colors inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer bg-brand-teal/5 px-4 py-2 rounded-xl"
+              >
+                <span>View All Categories</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <header 
+      ref={headerRef} 
+      className={`fixed left-0 right-0 ${hasAnnouncement ? 'top-[28px]' : 'top-0'} z-50 w-full bg-white/95 backdrop-blur-md border-b border-gray-200/80 transition-all duration-200 ${
+        isScrolled ? 'shadow-md bg-white/98' : 'shadow-xs'
+      }`}
+    >
+      <div className="container mx-auto px-2.5 sm:px-4 flex items-center justify-between h-[76px] gap-2 sm:gap-3 lg:gap-4 xl:gap-6 max-w-full">
+        {/* Brand Logo & Location Subdistrict Badge */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          {/* Logo Icon */}
+          <button
+            onClick={() => {
+              setActiveHomeSection('home');
+              onNavigate('home');
+            }}
+            className="cursor-pointer group focus:outline-none shrink-0"
+          >
+            <img
+              src="/logo.png"
+              alt="Book Vardi"
+              className="h-10 sm:h-12 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+            />
+          </button>
+
+          {/* Text + Location Badge stacked vertically parallel to logo icon */}
+          <div className="flex flex-col items-start justify-center min-w-0">
+            <button
+              onClick={() => {
+                setActiveHomeSection('home');
+                onNavigate('home');
+              }}
+              className="font-display text-base sm:text-xl font-extrabold text-black tracking-tight leading-none cursor-pointer focus:outline-none"
+            >
+              BOOK<span className="text-brand-yellow">VARDI</span>
+            </button>
+
+            {/* Location subdistrict badge directly below text, parallel to brand icon */}
+            <div className="flex items-center gap-1 text-[11px] sm:text-xs font-bold text-emerald-700 bg-emerald-50/90 border border-emerald-200/80 px-1.5 sm:px-2 py-0.5 rounded-full mt-1 shadow-2xs max-w-[130px] sm:max-w-[180px]">
+              <button
+                type="button"
+                onClick={() => setIsPermissionModalOpen(true)}
+                className="flex items-center gap-1 hover:underline cursor-pointer truncate min-w-0"
+                title="Click to change delivery subdistrict or city"
+              >
+                <MapPin size={11} className="text-emerald-600 shrink-0" />
+                <span className="truncate"> <span className="text-emerald-800 font-extrabold truncate">{userSubdistrict || locationLabel || 'allow location'}</span></span>
+              </button>
+
+              {/* Sync with Live GPS Location symbol */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  requestBrowserLocation();
+                }}
+                className="p-0.5 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer text-emerald-700 hover:text-emerald-900 shrink-0"
+                title="Click to sync with live GPS location"
+              >
+                <RotateCcw size={10} className={`stroke-[2.5] ${isLocating ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+        </div>
+        
+
+        {/* Global Search Bar (Desktop) */}
+        <div className="hidden xl:flex justify-center px-1 min-w-[140px] max-w-xs w-full shrink">
+          <div className="w-full max-w-xs">
+            <GlobalSearch
+              onNavigate={onNavigate}
+              onSearch={onSearchChange}
+              currentQuery={searchQuery}
+            />
+          </div>
+        </div>
+
+        {/* Desktop Navigation Links */}
+        <nav className="hidden lg:flex items-center gap-3.5 xl:gap-6 h-full shrink-0">
+          {NAV_LINKS.map((link, idx) => {
+            const isActive =
+              currentPage === 'home'
+                ? link.view === activeHomeSection
+                : link.view === currentPage;
+            
+            const isCategories = link.view === 'categories';
+
+            return (
+              <div 
+                key={idx} 
+                className="h-full flex items-center"
+                ref={isCategories ? megaMenuRef : null}
+                onMouseEnter={isCategories ? handleMegaMenuEnter : undefined}
+                onMouseLeave={isCategories ? handleMegaMenuLeave : undefined}
+              >
+                <button
+                  onClick={(e) => handleLinkClick(link.view, e)}
+                  className={`text-xs xl:text-sm font-semibold text-gray-600 hover:text-brand-teal transition-colors inline-flex items-center gap-1 py-1 relative cursor-pointer ${
+                    isActive || (isCategories && megaMenuOpen) ? 'text-brand-teal font-bold' : ''
+                  }`}
+                  title={isCategories ? 'Double tap to open all categories' : ''}
+                >
+                  {link.label}
+                  {isCategories && (
+                    <ChevronDown
+                      size={14}
+                      className={`transition-transform duration-200 ${(isActive || megaMenuOpen) ? 'text-brand-teal' : 'text-gray-400'} ${megaMenuOpen ? 'rotate-180' : ''}`}
+                    />
+                  )}
+                  {(isActive || (isCategories && megaMenuOpen)) && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-yellow rounded-full" />
+                  )}
+                </button>
+                {isCategories && megaMenuOpen && renderMegaMenu(false)}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Actions (Location, Wishlist, User, Cart) */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto lg:ml-0">
+          
+
+          {isAuthenticated && (
+            <button
+              className={`relative p-2 rounded-full transition-all duration-200 active:scale-75 cursor-pointer shrink-0 ${
+                isWishlistOpen
+                  ? 'text-brand-pink bg-pink-50 ring-2 ring-brand-pink/20 shadow-xs'
+                  : 'text-brand-teal hover:bg-brand-teal/5'
+              }`}
+              onClick={() => setIsWishlistOpen(true)}
+            >
+              <Heart
+                size={20}
+                fill={wishlist.length > 0 ? 'currentColor' : 'none'}
+                className={wishlist.length > 0 ? 'text-brand-pink' : ''}
+              />
+              {wishlist.length > 0 && (
+                <span className="absolute top-1 right-1 bg-brand-pink text-white text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center border-2 border-white shadow-xs">
+                  {wishlist.length}
+                </span>
+              )}
+            </button>
+          )}
+
+          {isAuthenticated ? (
+            <div
+              className="hidden lg:flex items-center gap-1 relative shrink-0"
+              ref={actionProfileRef}
+              onMouseEnter={handleActionProfileEnter}
+              onMouseLeave={handleActionProfileLeave}
+            >
+              <button
+                type="button"
+                className={`flex items-center gap-2 rounded-full border transition-all cursor-pointer ${
+                  currentPage === 'profile' || actionProfileOpen
+                    ? 'border-brand-teal bg-brand-teal text-white shadow-xs'
+                    : 'border-gray-200 bg-white text-brand-teal hover:bg-brand-teal/5'
+                } px-2.5 py-1.5`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigate('profile', null, 'profile');
+                  setActionProfileOpen(!actionProfileOpen);
+                }}
+              >
+                <div className="relative flex items-center justify-center shrink-0">
+                  {userProfile?.avatar ? (
+                    <img
+                      src={resolveImageUrl(userProfile.avatar)}
+                      alt={displayName}
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover ring-2 ring-white/80"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-current/10 flex items-center justify-center text-[11px] font-extrabold ring-2 ring-white/80">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 rounded-full ring-2 ring-white" />
+                </div>
+
+                <div className="hidden xl:flex flex-col text-left leading-tight min-w-0">
+                  <span className="text-[10px] font-extrabold truncate max-w-[110px]">
+                    {displayName}
+                  </span>
+                  <span className={`text-[9px] truncate max-w-[110px] ${currentPage === 'profile' || actionProfileOpen ? 'text-white/80' : 'text-gray-500'}`}>
+                    {displayEmail}
+                  </span>
+                </div>
+
+                <ChevronDown
+                  size={14}
+                  className={`hidden sm:block transition-transform duration-200 ${actionProfileOpen ? 'rotate-180' : ''} ${currentPage === 'profile' || actionProfileOpen ? 'text-white' : 'text-gray-400'}`}
+                />
+              </button>
+              {actionProfileOpen && (
+                <DesktopProfileDropdown
+                  isAuthenticated={isAuthenticated}
+                  userProfile={userProfile}
+                  currentPage={currentPage}
+                  onNavigate={onNavigate}
+                  onClose={() => setActionProfileOpen(false)}
+                  logout={logout}
+                  wishlistCount={wishlist.length}
+                  isSeller={isSeller}
+                  isAdmin={isAdmin}
+                  onMouseEnter={handleActionProfileEnter}
+                  onMouseLeave={handleActionProfileLeave}
+                />
+              )}
+            </div>
+          ) : (
+            <div className="hidden lg:flex items-center ml-1 shrink-0">
+              <button
+                onClick={() => openAuthModal()}
+                className="px-4 py-2 text-xs font-extrabold bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark rounded-xl transition-all shadow-xs hover:shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0 active:scale-95"
+              >
+                <User size={15} />
+                <span>Login / Sign Up</span>
+              </button>
+            </div>
+          )}
+
+          {/* Cart Icon Button - Positioned right after Profile Card (Icon & Badge only) */}
+          <button
+            type="button"
+            className="relative p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 transition-all active:scale-95 cursor-pointer shrink-0 border border-transparent hover:border-brand-teal/10"
+            onClick={() => setIsCartOpen(true)}
+            title="Open Shopping Cart"
+            aria-label="Open Shopping Cart"
+          >
+            <ShoppingCart size={22} className="text-brand-teal" />
+            {totalItemsCount > 0 ? (
+              <span className="absolute top-0.5 right-0.5 bg-brand-yellow text-brand-teal-dark text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-white shadow-xs">
+                {totalItemsCount}
+              </span>
+            ) : (
+              <span className="absolute top-0.5 right-0.5 bg-gray-200 text-gray-700 text-[9px] font-bold min-w-[14px] h-[14px] rounded-full flex items-center justify-center border border-white">
+                0
+              </span>
+            )}
+          </button>
+
+          <button
+            className="p-2 rounded-full text-brand-teal hover:bg-brand-teal/5 lg:hidden cursor-pointer shrink-0"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
+      </div>
+      
+      {/* Mobile Drawer Menu */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden border-t border-gray-100 bg-white px-4 py-4 space-y-3 shadow-lg max-h-[calc(100vh-76px)] overflow-y-auto">
+          {/* Global Search Bar (Mobile) */}
+          <div className="pb-3 border-b border-gray-100 mb-3">
+            <GlobalSearch
+              onNavigate={(page) => {
+                setMobileMenuOpen(false);
+                onNavigate(page);
+              }}
+              onSearch={onSearchChange}
+              currentQuery={searchQuery}
+            />
+          </div>
+
+          <div className="flex flex-col space-y-2">
+            {NAV_LINKS.map((link, idx) => {
+              const isMobileActive =
+                currentPage === 'home'
+                  ? link.view === activeHomeSection
+                  : link.view === currentPage;
+              const isCategories = link.view === 'categories';
+
+              return (
+                <div key={idx} className="flex flex-col">
+                  <button
+                    onClick={(e) => handleLinkClick(link.view, e)}
+                    className={`text-left text-sm font-semibold py-1.5 cursor-pointer flex items-center justify-between ${
+                      isMobileActive || (isCategories && megaMenuOpen)
+                        ? 'text-brand-teal font-bold'
+                        : 'text-gray-700 hover:text-brand-teal'
+                    }`}
+                  >
+                    <span className="relative pb-0.5">
+                      {link.label}
+                      {isCategories && categoryClickCount === 1 && <span className="ml-2 text-[10px] text-gray-400 font-normal italic">Tap again to view all</span>}
+                      {(isMobileActive || (isCategories && megaMenuOpen)) && (
+                        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-yellow rounded-full" />
+                      )}
+                    </span>
+                    {isCategories && (
+                      <ChevronDown size={14} className={`transition-transform duration-200 ${(isMobileActive || megaMenuOpen) ? 'text-brand-teal' : 'text-gray-400'} ${megaMenuOpen ? 'rotate-180' : '-rotate-90'}`} />
+                    )}
+                  </button>
+                  {isCategories && megaMenuOpen && renderMegaMenu(true)}
+                </div>
+              );
+            })}
+
+            {/* Profile & Account Actions for Small Devices */}
+            <div className="pt-3 mt-2 border-t border-gray-100 space-y-2">
+              {isAuthenticated ? (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      onNavigate('profile', null, 'profile');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 bg-brand-teal/5 border border-brand-teal/10 rounded-xl hover:bg-brand-teal/10 transition-colors cursor-pointer text-left"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-brand-teal text-white flex items-center justify-center font-extrabold text-xs shrink-0 shadow-sm">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-gray-900 truncate">
+                        {displayName}
+                      </p>
+                      <p className="text-[11px] text-gray-500 truncate">
+                        {displayEmail}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onNavigate('profile', null, 'profile');
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between text-left text-sm font-bold py-2 px-3 rounded-xl transition-colors cursor-pointer ${
+                      currentPage === 'profile'
+                        ? 'bg-brand-teal text-white shadow-xs'
+                        : 'text-brand-teal hover:bg-brand-teal/5 bg-gray-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <User size={18} />
+                      <span>My Profile</span>
+                    </span>
+                    <ChevronDown size={14} className={`-rotate-90 ${currentPage === 'profile' ? 'text-white' : 'text-gray-400'}`} />
+                  </button>
+                  {isSeller && (
+                    <button
+                      onClick={() => {
+                        onNavigate('seller-dashboard');
+                        setMobileMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between text-left text-sm font-bold py-2 px-3 rounded-xl transition-colors cursor-pointer ${
+                        currentPage === 'seller-dashboard'
+                          ? 'bg-brand-yellow text-brand-teal-dark shadow-xs'
+                          : 'text-brand-teal hover:bg-brand-yellow/20 bg-gray-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Store size={18} />
+                        <span>Seller Login / Portal</span>
+                      </span>
+                      <ChevronDown size={14} className="-rotate-90 text-gray-400" />
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        onNavigate('admin-dashboard');
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between text-left text-sm font-bold py-2 px-3 rounded-xl transition-colors cursor-pointer bg-teal-50 text-teal-800 hover:bg-brand-teal hover:text-white border border-teal-200/60"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <ShieldCheck size={18} className="text-teal-700" />
+                        <span>Admin Dashboard</span>
+                      </span>
+                      <ChevronDown size={14} className="-rotate-90 opacity-60" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      logout();
+                      if (currentPage === 'profile') onNavigate('home');
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 text-left text-sm font-bold text-red-600 hover:text-red-700 hover:bg-red-50 py-2 px-3 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <LogOut size={18} />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-1">
+                  <button
+                    onClick={() => {
+                      openAuthModal();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full py-2.5 text-center text-xs font-extrabold bg-brand-yellow text-brand-teal-dark rounded-xl hover:bg-brand-yellow-hover flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-95 transition-all"
+                  >
+                    <User size={16} />
+                    <span>Login / Sign Up</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
