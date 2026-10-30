@@ -312,7 +312,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     if (c.includes('dtdc')) return `https://www.dtdc.in/tracking/shipment-tracking.asp?awb=${tracking}`;
     if (c.includes('ekart')) return `https://ekartlogistics.com/shipmenttrack/${tracking}`;
     if (c.includes('indiapost') || c.includes('speedpost')) return `https://www.indiapost.gov.in/_layouts/15/dpt.cept.tracking/trackconsignment.aspx`;
-    return `https://track.shiprocket.in/tracking/${tracking}`;
+    return `https://shiprocket.co/tracking/${tracking}`;
   };
 
   const carrierTrackingUrl = order.trackingUrl || trackingData?.trackingUrl || (isSelfDelivery ? (selfDetails?.trackingUrl || (selfToken ? `${window.location.origin}/#delivery-partner?token=${encodeURIComponent(selfToken)}` : '')) : resolveCarrierUrl(courierPartnerName, awbNumber));
