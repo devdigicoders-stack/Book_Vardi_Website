@@ -11,12 +11,29 @@ export const isItemUnstitched = (item) => {
     ? item.product
     : ((typeof item.productId === 'object' && item.productId !== null) ? item.productId : {});
 
-  const isMeterFlag = Boolean(
-    item.isMeterBased === true ||
-    item.isMeterBased === 'true' ||
-    prod.isMeterBased === true ||
-    prod.isMeterBased === 'true'
-  );
+  const catStr = [
+    item.category,
+    prod.category,
+    item.subCategory,
+    prod.subCategory,
+    item.name,
+    prod.name
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  // EXCLUSION 1: Footwear / Shoes are NEVER unstitched fabric
+  if (catStr.includes('footwear') || catStr.includes('shoe') || catStr.includes('boot') || catStr.includes('sandal') || catStr.includes('sneaker') || catStr.includes('sock')) {
+    return false;
+  }
+
+  // EXCLUSION 2: Books / Textbooks are NEVER unstitched fabric
+  if (catStr.includes('book') || catStr.includes('ncert') || catStr.includes('textbook') || catStr.includes('atlas') || catStr.includes('syllabus')) {
+    return false;
+  }
+
+  // EXCLUSION 3: Notebooks / Stationery / Bags are NEVER unstitched fabric
+  if (catStr.includes('notebook') || catStr.includes('register') || catStr.includes('stationery') || catStr.includes('pen') || catStr.includes('pencil') || catStr.includes('bag') || catStr.includes('geometry')) {
+    return false;
+  }
 
   const rawUnit = String(
     item.unit ||
@@ -32,47 +49,46 @@ export const isItemUnstitched = (item) => {
     rawUnit === 'meter' ||
     rawUnit === 'meters' ||
     rawUnit === 'mtr' ||
-    rawUnit === 'm' ||
-    rawUnit.includes('meter')
+    rawUnit === 'm'
   );
 
-  const cand = [
-    item.category,
-    prod.category,
-    item.subCategory,
-    prod.subCategory,
-    item.name,
-    prod.name,
-    item.title,
-    prod.title,
-    rawUnit
-  ].filter(Boolean).join(' ').toLowerCase();
+  const isExplicitMeterBased = Boolean(
+    item.isMeterBased === true ||
+    item.isMeterBased === 'true' ||
+    prod.isMeterBased === true ||
+    prod.isMeterBased === 'true' ||
+    isMeterUnit
+  );
 
+  // If item has a discrete apparel/shoe size and is NOT explicitly marked meter-based, it's not unstitched fabric
+  if (Boolean(item.size || prod.size) && !isExplicitMeterBased) {
+    return false;
+  }
+
+  // If unit is piece, pair, set, pack, box, bundle and not explicitly meter-based, it is not unstitched fabric
+  if (['piece', 'pair', 'set', 'pack', 'box', 'bundle', 'pcs', 'unit'].includes(rawUnit) && !isExplicitMeterBased) {
+    return false;
+  }
+
+  // INCLUSION: Only true fabric materials (unstitched, fabric material, shirting, suiting, kapda, than)
   const hasFabricKeyword = (
-    cand.includes('unstitched') ||
-    cand.includes('unstiched') ||
-    cand.includes('cloth') ||
-    cand.includes('fabric') ||
-    cand.includes('shirting') ||
-    cand.includes('suiting') ||
-    cand.includes('kapda') ||
-    cand.includes('than') ||
-    cand.includes('dress material')
+    catStr.includes('unstitched') ||
+    catStr.includes('unstiched') ||
+    catStr.includes('shirting') ||
+    catStr.includes('suiting') ||
+    catStr.includes('kapda') ||
+    catStr.includes('than') ||
+    catStr.includes('dress material') ||
+    (catStr.includes('fabric') && !catStr.includes('fabric shoe') && !catStr.includes('fabric bag'))
   );
 
   const rawQty = Number(item.quantity ?? item.qty);
   const isDecimalQuantity = !isNaN(rawQty) && (rawQty % 1 !== 0);
-  const hasMeterRules = Boolean(
-    Number(item.minMeter || prod.minMeter) > 0 ||
-    Number(item.meterStep || prod.meterStep) > 0
-  );
 
   return Boolean(
-    isMeterFlag ||
-    isMeterUnit ||
-    hasFabricKeyword ||
-    isDecimalQuantity ||
-    hasMeterRules
+    isExplicitMeterBased ||
+    (hasFabricKeyword && !catStr.includes('ready to wear') && !catStr.includes('stitched')) ||
+    (isDecimalQuantity && hasFabricKeyword)
   );
 };
 
@@ -197,17 +213,13 @@ export const DEFECT_REPLACEMENT_VARIANT = 'Same Item Replacement (Defective / Da
 // -------------------------------------------------------------
 
 export const getItemCategoryType = (activeItem = {}, fetchedProduct = null) => {
-  if (isItemUnstitched(activeItem) || isItemUnstitched(fetchedProduct)) {
-    return 'unstitched';
-  }
-
   const cat = String(activeItem?.category || fetchedProduct?.category || '').toLowerCase();
   const subCat = String(activeItem?.subCategory || fetchedProduct?.subCategory || '').toLowerCase();
   const name = String(activeItem?.name || fetchedProduct?.name || '').toLowerCase();
   const currentSize = String(activeItem?.size || '').toLowerCase().trim();
 
-  // 1. Footwear
-  if (cat.includes('shoe') || cat.includes('footwear') || subCat.includes('shoe') || name.includes('shoe') || name.includes('boot') || name.includes('sneaker') || name.includes('sandal')) {
+  // 1. Footwear (HIGHEST PRIORITY - ALWAYS FOOTWEAR)
+  if (cat.includes('shoe') || cat.includes('footwear') || subCat.includes('shoe') || subCat.includes('footwear') || name.includes('shoe') || name.includes('boot') || name.includes('sneaker') || name.includes('sandal') || name.includes('footwear')) {
     return 'footwear';
   }
 
@@ -225,6 +237,12 @@ export const getItemCategoryType = (activeItem = {}, fetchedProduct = null) => {
   if (cat.includes('stationery') || subCat.includes('stationery') || name.includes('pen') || name.includes('pencil') || name.includes('geometry') || name.includes('color') || name.includes('eraser') || name.includes('bag')) {
     return 'stationery_general';
   }
+
+  // 5. Unstitched Fabric (ONLY genuine unstitched fabric)
+  if (isItemUnstitched(activeItem) || isItemUnstitched(fetchedProduct)) {
+    return 'unstitched';
+  }
+
 
   // 5. Apparel Bottoms (Pants, Trousers, Shorts, Skirts)
   const isBottom = subCat.includes('pant') || subCat.includes('trouser') || subCat.includes('skirt') || subCat.includes('short') || subCat.includes('lower') ||

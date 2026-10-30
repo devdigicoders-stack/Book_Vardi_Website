@@ -526,7 +526,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
               <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
                 <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-amber-900">
                   <RotateCcw size={16} className="text-amber-700" />
-                  <span>{(order.returnRequest?.requestType || order.returnRequest?.type) === 'exchange' ? '🔄 Product Exchange Tracking' : '📦 Return & Refund Tracking'}</span>
+                  <span>{(order.returnRequest?.requestType || order.returnRequest?.type) === 'exchange' ? `🔄 Product Exchange Tracking${order.returnRequest?.itemName ? `: ${order.returnRequest.itemName}` : ''}` : `📦 Return & Refund Tracking${order.returnRequest?.itemName ? `: ${order.returnRequest.itemName}` : ''}`}</span>
                 </div>
                 <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
                   order.returnRequest?.status?.includes('approved') ? 'bg-blue-100 text-blue-900 border-blue-300' :
@@ -643,7 +643,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                     {isReturnOtpActive
                       ? 'Provide this 4-digit code to the pickup executive at your doorstep when they arrive to inspect and collect the item.'
                       : isExchangeOtpActive
-                      ? 'Provide this 4-digit code to the delivery executive at your doorstep upon handing over the old item and receiving your replacement.'
+                      ? `Provide this 4-digit code to the delivery executive at your doorstep upon handing over ${order.returnRequest?.itemName ? `"${order.returnRequest.itemName}"` : 'the old item'} and receiving your replacement.`
                       : (isSelfDelivery
                         ? 'Provide this 4-digit code to the store delivery executive at your doorstep to safely verify receipt.'
                         : 'Provide this 4-digit code to the courier delivery partner at your doorstep to safely confirm parcel handover.')}

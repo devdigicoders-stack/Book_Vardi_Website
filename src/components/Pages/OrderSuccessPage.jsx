@@ -1261,19 +1261,108 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                             String(item.name || '').toLowerCase().includes('unstitched')
                           );
                           const lineQty = isMeter ? `${Number(item.quantity || 1).toFixed(2)}m` : (item.quantity || 1);
-                          const linePrice = Number(item.price || 0).toFixed(2);
-                          const lineTotal = (Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2);
+                          const linePrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+                          const grossPrice = Math.round((linePrice * Number(item.quantity || 1)) * 100) / 100;
+                          const anyItemHasSpecificDiscount = (order.items || []).some(
+                            it => (it.offerDiscount !== undefined && it.offerDiscount !== null && !isNaN(Number(it.offerDiscount)) && Number(it.offerDiscount) > 0) ||
+                                  (it.discount !== undefined && it.discount !== null && !isNaN(Number(it.discount)) && Number(it.discount) > 0) ||
+                                  Boolean(it.couponCode) ||
+                                  (Number(it.finalPrice) > 0 && Number(it.price) > Number(it.finalPrice))
+                          );
+                          const isProductSpecificCoupon = Boolean(
+                            order.couponDetails?.applicableScope === 'specific_product' ||
+                            (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
+                          );
+                          const eligibleProductIds = new Set(
+                            (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
+                              .filter(Boolean)
+                              .map(id => String(id))
+                          );
+                          const isEligible = !isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || ''));
+
+                          const orderCouponDiscount = Number(order.discountAmount ?? order.discount ?? 0);
+                          const rawItemsSubtotal = (order.items || []).reduce(
+                            (acc, it) => acc + (Number(it.originalPrice ?? it.price ?? 0) * Number(it.quantity || 1)), 0
+                          );
+                          let itemDiscount = 0;
+                          if (anyItemHasSpecificDiscount) {
+                            itemDiscount = Number(item.offerDiscount || item.discount || 0);
+                            if (itemDiscount === 0 && Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice)) {
+                              itemDiscount = Math.round((Number(item.price) - Number(item.finalPrice)) * Number(item.quantity || 1) * 100) / 100;
+                            }
+                          } else if (orderCouponDiscount > 0 && rawItemsSubtotal > 0 && isEligible) {
+                            itemDiscount = Math.round((orderCouponDiscount * (grossPrice / rawItemsSubtotal)) * 100) / 100;
+                          }
+                          itemDiscount = Math.min(grossPrice, Math.max(0, itemDiscount));
+                          const netPrice = Math.max(0, Math.round((grossPrice - itemDiscount) * 100) / 100);
+                          const itemCouponCode = (itemDiscount > 0) ? (item.couponCode || item.appliedCouponCode || order.couponCode || order.appliedCouponCode || '') : '';
+
                           return (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {isMeter ? 'Length: ' : 'Quantity: '}<strong className="text-gray-700 font-mono">{lineQty}</strong> × ₹{linePrice}{isMeter ? '/m' : ''}
-                            </p>
+                            <>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {isMeter ? 'Length: ' : 'Quantity: '}<strong className="text-gray-700 font-mono">{lineQty}</strong> × ₹{linePrice.toFixed(2)}{isMeter ? '/m' : ''}
+                              </p>
+                              {itemDiscount > 0 && (
+                                <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
+                                  <span>🏷️ Coupon {itemCouponCode ? `(${itemCouponCode})` : 'Applied'}: -₹{itemDiscount.toFixed(2)} off</span>
+                                </div>
+                              )}
+                            </>
                           );
                         })()}
                       </div>
                       <div className="text-right">
-                        <span className="font-extrabold text-sm text-gray-900 font-mono">
-                          ₹{(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}
-                        </span>
+                        {(() => {
+                          const itemUnitPrice = Number(item.originalPrice ?? item.price ?? item.finalPrice ?? 0);
+                          const grossPrice = Math.round((itemUnitPrice * Number(item.quantity || 1)) * 100) / 100;
+                          const anyItemHasSpecificDiscount = (order.items || []).some(
+                            it => (it.offerDiscount !== undefined && it.offerDiscount !== null && !isNaN(Number(it.offerDiscount)) && Number(it.offerDiscount) > 0) ||
+                                  (it.discount !== undefined && it.discount !== null && !isNaN(Number(it.discount)) && Number(it.discount) > 0) ||
+                                  Boolean(it.couponCode) ||
+                                  (Number(it.finalPrice) > 0 && Number(it.price) > Number(it.finalPrice))
+                          );
+                          const isProductSpecificCoupon = Boolean(
+                            order.couponDetails?.applicableScope === 'specific_product' ||
+                            (Array.isArray(order.couponDetails?.applicableProducts) && order.couponDetails.applicableProducts.length > 0)
+                          );
+                          const eligibleProductIds = new Set(
+                            (order.couponDetails?.applicableProducts || [order.couponDetails?.specificProductId])
+                              .filter(Boolean)
+                              .map(id => String(id))
+                          );
+                          const isEligible = !isProductSpecificCoupon || eligibleProductIds.has(String(item.productId || item.id || item._id || ''));
+
+                          const orderCouponDiscount = Number(order.discountAmount ?? order.discount ?? 0);
+                          const rawItemsSubtotal = (order.items || []).reduce(
+                            (acc, it) => acc + (Number(it.originalPrice ?? it.price ?? 0) * Number(it.quantity || 1)), 0
+                          );
+                          let itemDiscount = 0;
+                          if (anyItemHasSpecificDiscount) {
+                            itemDiscount = Number(item.offerDiscount || item.discount || 0);
+                            if (itemDiscount === 0 && Number(item.finalPrice) > 0 && Number(item.price) > Number(item.finalPrice)) {
+                              itemDiscount = Math.round((Number(item.price) - Number(item.finalPrice)) * Number(item.quantity || 1) * 100) / 100;
+                            }
+                          } else if (orderCouponDiscount > 0 && rawItemsSubtotal > 0 && isEligible) {
+                            itemDiscount = Math.round((orderCouponDiscount * (grossPrice / rawItemsSubtotal)) * 100) / 100;
+                          }
+                          itemDiscount = Math.min(grossPrice, Math.max(0, itemDiscount));
+                          const netPrice = Math.max(0, Math.round((grossPrice - itemDiscount) * 100) / 100);
+
+                          if (itemDiscount > 0) {
+                            return (
+                              <div className="text-right">
+                                <div className="font-extrabold text-sm text-emerald-700 font-mono">₹{netPrice.toFixed(2)}</div>
+                                <div className="text-xs text-gray-400 line-through font-mono">₹{grossPrice.toFixed(2)}</div>
+                                <div className="text-[10px] text-emerald-600 font-semibold">(-₹{itemDiscount.toFixed(2)} off)</div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <span className="font-extrabold text-sm text-gray-900 font-mono">
+                              ₹{grossPrice.toFixed(2)}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -1336,7 +1425,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               const shipVal = Number(order.shippingFee ?? order.shippingCost ?? shippingFee ?? 0);
               const couponVal = Number(order.discountAmount ?? order.discount ?? 0);
               const pointsVal = Number(order.pointsDiscount ?? 0);
-              const grandVal = Number(order.total || order.totalAmount || (subtotalVal + shipVal - couponVal - pointsVal));
+              const grandVal = Math.max(0, Math.round((subtotalVal + shipVal - couponVal - pointsVal) * 100) / 100);
 
               return (
                 <div className="pt-4 border-t border-gray-100 space-y-2.5 text-xs bg-gray-50/70 p-4 rounded-2xl border border-gray-200/80">

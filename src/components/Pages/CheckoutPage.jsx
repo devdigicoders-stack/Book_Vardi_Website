@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -283,6 +283,10 @@ export default function CheckoutPage({ onNavigate }) {
     isCouponCapped = details.isCapped;
     maxCap = details.maxDiscount;
   }
+
+  const itemsWithAllocatedDiscounts = useMemo(() => {
+    return allocateCouponDiscountToItems(appliedCoupon, selectedCartItems);
+  }, [appliedCoupon, selectedCartItems]);
 
   // Calculate extra GST for items configured as "GST Extra" (isGstInclusive === false)
   const extraTaxAmount = Math.round(
@@ -1072,13 +1076,19 @@ export default function CheckoutPage({ onNavigate }) {
                             </span>
                           )}
                         </div>
-                        {appliedCoupon && isCouponApplicableToProduct(appliedCoupon, item) && (
-                          <div className="mt-0.5">
-                            <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
-                              🏷️ Coupon {appliedCoupon.code} Applied
-                            </span>
-                          </div>
-                        )}
+                        {(() => {
+                          const allocatedItem = itemsWithAllocatedDiscounts.find(
+                            (it) => (it.cartItemId || getCartItemKey(it)) === itemKey
+                          );
+                          const itemOfferDiscount = allocatedItem?.offerDiscount || 0;
+                          return itemOfferDiscount > 0 ? (
+                            <div className="mt-0.5">
+                              <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
+                                🏷️ Coupon {appliedCoupon.code} Applied (-₹{itemOfferDiscount.toFixed(2)} off)
+                              </span>
+                            </div>
+                          ) : null;
+                        })()}
 
                         {(() => {
                           const isMeter = Boolean(
@@ -1090,10 +1100,22 @@ export default function CheckoutPage({ onNavigate }) {
                           );
                           const minMeter = isMeter ? (Number(item.minMeter) > 0 ? Number(item.minMeter) : 0.5) : 1;
                           const meterStep = isMeter ? (Number(item.meterStep) > 0 ? Number(item.meterStep) : 0.5) : 1;
+                          const allocatedItem = itemsWithAllocatedDiscounts.find(
+                            (it) => (it.cartItemId || getCartItemKey(it)) === itemKey
+                          );
+                          const itemOfferDiscount = allocatedItem?.offerDiscount || 0;
+
                           return (
                             <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
                               <span className="text-[11px] font-extrabold text-brand-teal font-mono flex items-center gap-1.5 flex-wrap">
-                                <span>₹{Number(item.price).toFixed(2)}{isMeter ? '/m' : ''}</span>
+                                <span className={itemOfferDiscount > 0 ? "line-through text-gray-400 font-normal" : ""}>
+                                  ₹{Number(item.price).toFixed(2)}{isMeter ? '/m' : ''}
+                                </span>
+                                {itemOfferDiscount > 0 && allocatedItem && (
+                                  <span className="text-emerald-700 font-bold">
+                                    ₹{Number(allocatedItem.finalPrice).toFixed(2)}{isMeter ? '/m' : ''}
+                                  </span>
+                                )}
                                 {isMeter && (
                                   <span className="text-[9px] font-bold text-teal-800 bg-teal-50 px-1 py-0.2 rounded border border-teal-200">
                                     Min: {minMeter}m
