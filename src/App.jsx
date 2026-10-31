@@ -285,6 +285,15 @@ function MainStore() {
     }
 
     const handlePopState = (event) => {
+      // 0. If any modal was just closed or popped by useModalBackTrap, don't navigate page
+      if (
+        (window.__bv_modal_open_count && window.__bv_modal_open_count > 0) ||
+        (window.__bv_modal_popping && Date.now() < window.__bv_modal_popping) ||
+        (event.state && (event.state.modalBackTrap || event.state.customerModalOpen))
+      ) {
+        return;
+      }
+
       // 1. If Cart Drawer is open, back button simply closes it
       if (isCartOpenRef.current) {
         setIsCartOpen(false);
