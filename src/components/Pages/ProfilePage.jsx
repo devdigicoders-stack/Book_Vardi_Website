@@ -4386,6 +4386,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
           setInvoiceModalOrder(null);
         }}
         order={invoiceModalOrder}
+        allOrders={orders}
         userProfile={userProfile}
         role="user"
       />

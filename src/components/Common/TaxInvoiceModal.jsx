@@ -236,7 +236,7 @@ export function parseStateInfo(sourceObj, fallbackString = '') {
   return { key: 'uttar_pradesh', name: 'Uttar Pradesh' };
 }
 
-export default function TaxInvoiceModal({ isOpen, onClose, order }) {
+export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = [] }) {
   const { customerCareEmail } = useCart();
   const invoiceSupportEmail = customerCareEmail || 'support@bookvardi.in';
   if (!isOpen || !order) return null;
@@ -848,12 +848,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order }) {
   const resolvedSeller = resolveSeller();
 
   const resolvedInvoiceNumber = useMemo(() => {
-    return getSellerInvoiceNumber(order, resolvedSeller);
-  }, [order, resolvedSeller]);
+    return getSellerInvoiceNumber(order, resolvedSeller, allOrders);
+  }, [order, resolvedSeller, allOrders]);
 
   const resolvedCreditNoteNumber = useMemo(() => {
-    return getSellerCreditNoteNumber(order, resolvedSeller);
-  }, [order, resolvedSeller]);
+    return getSellerCreditNoteNumber(order, resolvedSeller, allOrders);
+  }, [order, resolvedSeller, allOrders]);
 
   const [platformSettings, setPlatformSettings] = useState(() => {
     try {
