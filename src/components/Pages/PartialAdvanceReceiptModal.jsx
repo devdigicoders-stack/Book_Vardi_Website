@@ -14,8 +14,11 @@ import {
   Clock
 } from 'lucide-react';
 import { API_BASE_URL } from '../../utils/api';
+import useModalBackTrap from '../../hooks/useModalBackTrap';
 
 export default function PartialAdvanceReceiptModal({ isOpen, onClose, order }) {
+  useModalBackTrap(isOpen, onClose);
+
   if (!isOpen || !order) return null;
 
   const refId = order.referenceId || order.id || 'BULK-2026';

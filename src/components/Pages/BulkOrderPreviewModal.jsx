@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import TaxInvoiceModal from '../Common/TaxInvoiceModal';
 import OrderTrackingModal from '../Common/OrderTrackingModal';
+import PartialAdvanceReceiptModal from './PartialAdvanceReceiptModal';
 import NegotiationTimelineDiv from './NegotiationTimelineDiv';
 import QuotationVersionComparisonModal from './QuotationVersionComparisonModal';
 import {
@@ -370,6 +371,7 @@ export default function BulkOrderPreviewModal({
   const [quoteNotes, setQuoteNotes] = useState(existingSellerQuote ? (existingSellerQuote.notes || '') : '');
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
 
   // Buyer Quotation Acceptance & Order Size Adjustment Modal State
   const [acceptQuoteModalData, setAcceptQuoteModalData] = useState(null);
@@ -1292,11 +1294,11 @@ export default function BulkOrderPreviewModal({
                               {order.advancePaymentStatus === 'paid' && (
                                 <button
                                   type="button"
-                                  onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                  onClick={() => setIsReceiptModalOpen(true)}
                                   className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-1"
                                 >
-                                  <Download size={13} className="text-emerald-700" />
-                                  <span>Prepayment Invoice (PDF)</span>
+                                  <FileText size={13} className="text-emerald-700" />
+                                  <span>Prepayment Invoice</span>
                                 </button>
                               )}
 
@@ -2190,10 +2192,10 @@ export default function BulkOrderPreviewModal({
                                   <div className="flex flex-col sm:flex-row items-end gap-1.5">
                                     <button
                                       type="button"
-                                      onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                      onClick={() => setIsReceiptModalOpen(true)}
                                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-400 font-extrabold text-[11px] rounded-lg shadow-2xs transition-colors cursor-pointer"
                                     >
-                                      <Download size={12} className="text-emerald-700" />
+                                      <FileText size={12} className="text-emerald-700" />
                                       <span>Advance Receipt (PDF)</span>
                                     </button>
 
@@ -2317,10 +2319,10 @@ export default function BulkOrderPreviewModal({
                                         </span>
                                         <button
                                           type="button"
-                                          onClick={() => window.open(`${API_BASE_URL}/schools/bulk-orders/${order._id || order.id || order.referenceId}/advance-receipt`, '_blank')}
+                                          onClick={() => setIsReceiptModalOpen(true)}
                                           className="px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
                                         >
-                                          <Download size={13} className="text-emerald-700" />
+                                          <FileText size={13} className="text-emerald-700" />
                                           <span>Receipt PDF</span>
                                         </button>
                                       </div>
@@ -3341,6 +3343,15 @@ export default function BulkOrderPreviewModal({
           isOpen={isInvoiceOpen}
           onClose={() => setIsInvoiceOpen(false)}
           order={taxInvoiceOrder}
+        />
+      )}
+
+      {/* Partial Advance Payment Receipt Modal */}
+      {isReceiptModalOpen && (
+        <PartialAdvanceReceiptModal
+          isOpen={isReceiptModalOpen}
+          onClose={() => setIsReceiptModalOpen(false)}
+          order={order}
         />
       )}
 
