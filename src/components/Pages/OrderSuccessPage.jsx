@@ -1521,17 +1521,38 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
               const subtotalVal = isNaN(rawSubtotal) ? 0 : rawSubtotal;
               const rawShip = Number(order.shippingFee ?? order.shippingCost ?? shippingFee ?? 0);
               const shipVal = isNaN(rawShip) ? 0 : rawShip;
-              const rawCod = Number(order.codFee ?? order.appliedCodFee ?? 0);
-              const codVal = isNaN(rawCod) ? 0 : rawCod;
               const rawCoupon = Number(order.discountAmount ?? order.discount ?? 0);
               const couponVal = isNaN(rawCoupon) ? 0 : rawCoupon;
               const rawPoints = Number(order.pointsDiscount ?? 0);
               const pointsVal = isNaN(rawPoints) ? 0 : rawPoints;
-              const rawGrand = order.totalAmount !== undefined && Number(order.totalAmount) > 0
+              const isCodPayment = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
+              const rawGrandTotal = order.totalAmount !== undefined && Number(order.totalAmount) > 0
                 ? Number(order.totalAmount)
-                : (order.total !== undefined && Number(order.total) > 0
-                    ? Number(order.total)
-                    : Math.max(0, Math.round((subtotalVal + shipVal + codVal - couponVal - pointsVal) * 100) / 100));
+                : (order.total !== undefined && Number(order.total) > 0 ? Number(order.total) : 0);
+
+              let rawCod = Number(
+                order.codFee ?? 
+                order.appliedCodFee ?? 
+                order.codCharges ?? 
+                order.settlement?.codChargeAmount ?? 
+                order.items?.[0]?.codChargeAmount ?? 
+                0
+              );
+
+              // Resilient auto-detection: If backend/cache didn't include explicit codFee,
+              // but this is a COD order whose total exceeds (subtotal + shipping - discounts),
+              // reconstruct the COD fee from the difference.
+              if ((isNaN(rawCod) || rawCod <= 0) && isCodPayment && rawGrandTotal > 0) {
+                const baseExpected = Math.round((subtotalVal + shipVal - couponVal - pointsVal) * 100) / 100;
+                if (rawGrandTotal > baseExpected) {
+                  rawCod = Math.round((rawGrandTotal - baseExpected) * 100) / 100;
+                }
+              }
+              const codVal = isNaN(rawCod) ? 0 : rawCod;
+
+              const rawGrand = rawGrandTotal > 0
+                ? rawGrandTotal
+                : Math.max(0, Math.round((subtotalVal + shipVal + codVal - couponVal - pointsVal) * 100) / 100);
               const grandVal = isNaN(rawGrand) ? 0 : rawGrand;
 
               return (
@@ -1552,7 +1573,7 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                     <div className="flex justify-between items-center text-gray-700 font-medium">
                       <span>COD Handling Fee:</span>
                       <span className="font-semibold text-gray-900 font-mono">
-                        ₹{codVal.toFixed(2)}
+                        +₹{codVal.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -1637,6 +1658,28 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                   <span className="text-gray-500">Method:</span>
                   <span className="font-bold text-gray-800">{order.paymentMethod || 'UPI'}</span>
                 </div>
+                {(() => {
+                  const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
+                  let cFee = Number(order.codFee ?? order.appliedCodFee ?? order.codCharges ?? order.settlement?.codChargeAmount ?? 0);
+                  if ((isNaN(cFee) || cFee <= 0) && isCod) {
+                    const sTotal = Number(order.subtotal || (order.items || []).reduce((acc, i) => acc + (Number(i.price || 0) * Number(i.quantity || 1)), 0) || 0);
+                    const sFee = Number(order.shippingFee ?? order.shippingCost ?? 0);
+                    const gTotal = Number(order.totalAmount || order.total || 0);
+                    const disc = Number(order.discountAmount ?? order.discount ?? 0) + Number(order.pointsDiscount ?? 0);
+                    if (gTotal > 0 && gTotal > (sTotal + sFee - disc)) {
+                      cFee = Math.round((gTotal - (sTotal + sFee - disc)) * 100) / 100;
+                    }
+                  }
+                  if (cFee > 0) {
+                    return (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">COD Fee Included:</span>
+                        <span className="font-bold text-gray-900 font-mono">₹{cFee.toFixed(2)}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Status:</span>
                   {isPaymentVerified ? (
