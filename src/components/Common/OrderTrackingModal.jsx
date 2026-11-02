@@ -369,9 +369,9 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
   const retReqType = String(order.returnRequest?.type || order.returnRequest?.requestType || '').toLowerCase().trim();
   const retReqStatus = String(order.returnRequest?.status || order.status || order.overallStatus || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
-  const isExchange = retReqType === 'exchange' || currentStatus.includes('exchange');
+  const isExchange = retReqType === 'exchange' || currentStatus.includes('exchange') || Boolean(order.returnRequest?.exchangeSize || order.returnRequest?.exchangeLength) || String(order.deliveryStatus || '').toLowerCase().includes('swap') || String(order.selfDeliveryDetails?.status || '').toLowerCase().includes('swap');
 
-  const isExchangeCompleted = retReqStatus === 'exchanged' || currentStatus === 'exchanged' || currentStatus === 'completed';
+  const isExchangeCompleted = retReqStatus === 'exchanged' || retReqStatus === 'exchange_completed' || currentStatus === 'exchanged' || currentStatus === 'exchange_completed' || currentStatus === 'completed' || String(order.deliveryStatus || '').toLowerCase().includes('swap completed') || String(order.selfDeliveryDetails?.status || '').toLowerCase().includes('swap completed');
   const isExchangeRejected = retReqStatus.includes('reject') || currentStatus.includes('reject');
   const isExchangeOtpActive = isReturnOrExchangeOrRefund && isExchange && !isExchangeCompleted && !isExchangeRejected && !isCancelled;
 
@@ -389,7 +389,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
     { key: 'pickup_scheduled', label: 'Pickup Scheduled', desc: 'Pickup date booked', icon: Calendar },
     { key: 'product_received', label: 'Product Received', desc: 'Item received & verified', icon: Boxes },
     { key: 'exchange_dispatched', label: 'Replacement Dispatched', desc: 'Dispatched via courier', icon: Truck },
-    { key: 'exchanged', label: 'Exchange Completed', desc: 'Replacement delivered', icon: ShieldCheck }
+    { key: 'exchanged', label: 'Doorstep Swap Completed', desc: 'Replacement delivered & old item restocked', icon: ShieldCheck }
   ] : [
     { key: 'return_requested', label: 'Return Requested', desc: 'Return request submitted', icon: RotateCcw },
     { key: 'return_approved', label: 'Return Approved', desc: 'Store approved return', icon: CheckCircle2 },
@@ -400,8 +400,8 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
 
   let returnActiveIndex = 0;
   if (isExchange) {
-    if (retReqStatus === 'exchanged' || currentStatus === 'exchanged') {
-      returnActiveIndex = 5;
+    if (isExchangeCompleted) {
+      returnActiveIndex = returnSteps.length - 1;
     } else if (retReqStatus === 'exchange_dispatched' || currentStatus === 'exchange_dispatched') {
       returnActiveIndex = 4;
     } else if (retReqStatus === 'product_received' || retReqStatus === 'product_return_received' || currentStatus === 'product_received' || currentStatus === 'product_return_received') {
@@ -529,12 +529,13 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   <span>{(order.returnRequest?.requestType || order.returnRequest?.type) === 'exchange' ? `🔄 Product Exchange Tracking${order.returnRequest?.itemName ? `: ${order.returnRequest.itemName}` : ''}` : `📦 Return & Refund Tracking${order.returnRequest?.itemName ? `: ${order.returnRequest.itemName}` : ''}`}</span>
                 </div>
                 <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
+                  isExchange && isExchangeCompleted ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
                   order.returnRequest?.status?.includes('approved') ? 'bg-blue-100 text-blue-900 border-blue-300' :
                   order.returnRequest?.status?.includes('completed') || order.returnRequest?.status === 'exchanged' || order.returnRequest?.status === 'refund_completed' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
                   order.returnRequest?.status === 'rejected' ? 'bg-rose-100 text-rose-900 border-rose-300' :
                   'bg-amber-100 text-amber-900 border-amber-300'
                 }`}>
-                  {(order.returnRequest?.status || order.status || '').replace(/_/g, ' ')}
+                  {isExchange && isExchangeCompleted ? 'Doorstep Swap Completed' : ((order.returnRequest?.status || order.status || '').replace(/_/g, ' '))}
                 </span>
               </div>
 
@@ -741,7 +742,7 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   {isCancelled
                     ? 'Order Cancelled'
                     : isReturnOrExchangeOrRefund
-                    ? (returnSteps[returnActiveIndex]?.label || (isExchange ? 'Exchange Requested' : 'Return Requested'))
+                    ? (isExchange && isExchangeCompleted ? 'Doorstep Swap Completed' : (returnSteps[returnActiveIndex]?.label || (isExchange ? 'Exchange Requested' : 'Return Requested')))
                     : steps[activeIndex]?.label}
                 </h4>
                 <p className="text-[11px] text-teal-100/90 font-medium">
