@@ -539,7 +539,7 @@ export default function Navbar({ currentPage, onNavigate, searchQuery, onSearchC
         
 
         {/* Global Search Bar (Desktop) */}
-        <div className="hidden xl:flex justify-center px-1 min-w-[140px] max-w-xs w-full shrink">
+        <div className="hidden lg:flex justify-center px-1 min-w-[140px] max-w-xs w-full shrink">
           <div className="w-full max-w-xs">
             <GlobalSearch
               onNavigate={onNavigate}

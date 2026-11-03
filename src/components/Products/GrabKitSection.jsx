@@ -150,6 +150,16 @@ export default function GrabKitSection({ onNavigate }) {
                   setSchoolQuery(e.target.value);
                   setShowSchoolDropdown(true);
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setShowSchoolDropdown(false);
+                    window.dispatchEvent(new CustomEvent('kitSearchUpdate', { detail: { school: schoolQuery, className: selectedClass } }));
+                    const kitRow = document.getElementById('school-kits-row');
+                    if (kitRow) {
+                      kitRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }
+                }}
                 className="w-full pl-9 pr-3 py-3 md:py-2 bg-transparent text-sm md:text-base focus:outline-none"
               />
               {showSchoolDropdown && (filteredNearbySchools.length > 0 || filteredOtherSchools.length > 0) && (

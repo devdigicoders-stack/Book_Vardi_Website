@@ -8,6 +8,7 @@ import FeaturesBar from './components/Features/FeaturesBar';
 import CategorySection from './components/Categories/CategorySection';
 import HomeProductSections from './components/Products/HomeProductSections';
 import SchoolKitsRow from './components/Products/SchoolKitsRow';
+import GrabKitSection from './components/Products/GrabKitSection';
 import PromoBanners from './components/Promotions/PromoBanners';
 import NewsletterSection from './components/Newsletter/NewsletterSection';
 import Footer from './components/Footer/Footer';
@@ -507,8 +508,13 @@ function MainStore() {
           <PageErrorBoundary activePage={activePage} onNavigate={navigateTo}>
           {activePage === 'home' && (
             <>
-              <HeroSection onNavigate={navigateTo} />
-              <PromoBanners onNavigate={navigateTo} />
+              {/* Temporarily commented out: Hero banner carousel & promo banner deals */}
+              {/* <HeroSection onNavigate={navigateTo} /> */}
+
+              {/* Homepage Search Bar (GrabKitSection) kept as requested */}
+              <GrabKitSection onNavigate={navigateTo} />
+
+              {/* School Kits Row for search results */}
               <SchoolKitsRow onNavigate={navigateTo} />
               <CategorySection
                 activeCategory={activeCategory}

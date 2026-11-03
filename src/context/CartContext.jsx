@@ -2357,8 +2357,8 @@ export function CartProvider({ children }) {
           }
         }
 
-        const resolvedSellerId = item.sellerId || item.seller?._id || item.seller?.id || catProd?.sellerId || catProd?.seller?._id || catProd?.seller?.id || (typeof catProd?.seller === 'string' ? catProd.seller : null) || null;
-        const resolvedStoreName = item.storeName || item.sellerStoreName || item.sellerName || catProd?.sellerStoreName || catProd?.storeName || catProd?.sellerName || "BookVardi Verified Seller";
+        const resolvedSellerId = catProd?.sellerId || catProd?.seller?._id || catProd?.seller?.id || (typeof catProd?.seller === 'string' ? catProd.seller : null) || item.sellerId || item.seller?._id || item.seller?.id || null;
+        const resolvedStoreName = catProd?.sellerStoreName || catProd?.storeName || catProd?.sellerName || item.sellerStoreName || item.storeName || item.sellerName || "BookVardi Verified Seller";
 
         const itemOfferDiscount = Number(item.offerDiscount !== undefined ? item.offerDiscount : (item.discount || 0)) || 0;
         const basePrice = Number(item.price !== undefined ? item.price : item.finalPrice) || 0;
