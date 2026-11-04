@@ -719,9 +719,20 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                         {order.trackingNumber && (
                           <>
                             <span className="text-gray-400 font-bold">•</span>
-                            <span className="font-mono text-xs text-gray-700 font-bold">
-                              AWB #{order.trackingNumber}
-                            </span>
+                            <a
+                              href={
+                                order.trackingUrl ||
+                                order.shipmentDetails?.trackingUrl ||
+                                `https://shiprocket.co/tracking/${order.trackingNumber}`
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-mono text-xs font-black text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-300 transition-colors cursor-pointer group/awb"
+                              title="Click to track live on Delhivery / Courier portal"
+                            >
+                              <span>AWB #{order.trackingNumber}</span>
+                              <ExternalLink size={11} className="text-blue-600 group-hover/awb:translate-x-0.5 transition-transform" />
+                            </a>
                           </>
                         )}
                       </>
@@ -741,7 +752,24 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                 </div>
 
                 {/* Launch Live Tracking Modal CTA Button */}
-                <div className="shrink-0 flex items-center">
+                <div className="shrink-0 flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  {isThirdParty && order.trackingNumber && (
+                    <a
+                      href={
+                        order.trackingUrl ||
+                        order.shipmentDetails?.trackingUrl ||
+                        `https://shiprocket.co/tracking/${order.trackingNumber}`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs sm:text-sm font-extrabold uppercase tracking-wider bg-blue-600 hover:bg-blue-700 text-white transition-all shadow-md hover:shadow-lg cursor-pointer"
+                      title="Open Live Courier Tracking in New Tab"
+                    >
+                      <ExternalLink size={15} />
+                      <span>Live Courier Track</span>
+                    </a>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => setIsTrackingModalOpen(true)}
@@ -1182,6 +1210,48 @@ export default function OrderSuccessPage({ onNavigate, isDetailsOnly = false, se
                               Package handed over securely
                             </span>
                           </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Courier Partner Live Tracking Card (Third Party Logistics) */}
+                  {isThirdParty && (
+                    <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black shrink-0 shadow-xs">
+                          <Truck size={22} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-blue-900 bg-blue-200/80 px-2 py-0.5 rounded">
+                              Live Courier Partner
+                            </span>
+                            <span className="text-xs font-black text-blue-950">
+                              {order.courierName || 'Delhivery Air'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-700 mt-1 font-medium">
+                            AWB Consignment: <strong className="font-mono text-gray-900 font-extrabold">{order.trackingNumber || 'Processing'}</strong>
+                          </p>
+                        </div>
+                      </div>
+
+                      {order.trackingNumber && (
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <a
+                            href={
+                              order.trackingUrl ||
+                              order.shipmentDetails?.trackingUrl ||
+                              `https://shiprocket.co/tracking/${order.trackingNumber}`
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-xs transition-colors cursor-pointer"
+                          >
+                            <ExternalLink size={14} />
+                            <span>Track on {order.courierName || 'Courier'} Portal ↗</span>
+                          </a>
                         </div>
                       )}
                     </div>

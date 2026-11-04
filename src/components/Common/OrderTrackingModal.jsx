@@ -931,6 +931,20 @@ export default function OrderTrackingModal({ isOpen, onClose, order }) {
                   <span className="text-[10px] text-gray-500">Fulfillment Transport</span>
                 </div>
               </div>
+
+              {isThirdParty && awbNumber && (
+                <div className="pt-2 border-t border-blue-200/60 flex justify-end">
+                  <a
+                    href={carrierTrackingUrl || `https://shiprocket.co/tracking/${awbNumber}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-xs transition-colors cursor-pointer"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Track on {courierPartnerName || 'Courier'} Portal (AWB: {awbNumber}) ↗</span>
+                  </a>
+                </div>
+              )}
             </div>
           )}
 
