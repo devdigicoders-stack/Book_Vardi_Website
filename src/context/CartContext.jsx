@@ -1445,7 +1445,7 @@ export function CartProvider({ children }) {
         isPrepaidOnly: catalogMatch.isPrepaidOnly !== undefined ? catalogMatch.isPrepaidOnly : item.isPrepaidOnly,
         isOnlineOnly: catalogMatch.isOnlineOnly !== undefined ? catalogMatch.isOnlineOnly : item.isOnlineOnly,
         isGstInclusive: catalogMatch.isGstInclusive !== undefined ? catalogMatch.isGstInclusive : item.isGstInclusive,
-        gst: catalogMatch.gst !== undefined ? catalogMatch.gst : item.gst
+        gst: catalogMatch.gst ?? catalogMatch.gstPercentage ?? catalogMatch.gstPercent ?? catalogMatch.gstRate ?? item.gst
       };
     });
   }, [isAuthenticated, cartItems, products]);
@@ -2396,7 +2396,7 @@ export function CartProvider({ children }) {
           size: typeof item.selectedSize === "object" ? (item.selectedSize?.size || "") : String(item.selectedSize || item.size || ""),
           color: typeof item.selectedColor === "object" ? (item.selectedColor?.name || "") : String(item.selectedColor || item.color || ""),
           isGstInclusive: item.isGstInclusive !== undefined ? item.isGstInclusive : (catProd?.isGstInclusive !== false),
-          gst: item.gst ?? item.gstPercent ?? catProd?.gst ?? 5,
+          gst: catProd?.gst ?? catProd?.gstPercentage ?? catProd?.gstPercent ?? catProd?.gstRate ?? item.gst ?? item.gstPercent ?? 5,
           status: item.status || "pending",
           deliveryOtp: customerDeliveryOtp || ""
         };

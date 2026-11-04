@@ -340,8 +340,8 @@ export default function CheckoutPage({ onNavigate }) {
 
       if (!isInclusive) {
         const rate = Number(
-          item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ??
-          catalogProduct?.gst ?? catalogProduct?.gstPercentage ?? 5
+          catalogProduct?.gst ?? catalogProduct?.gstPercentage ?? catalogProduct?.gstPercent ?? catalogProduct?.gstRate ??
+          item.gst ?? item.gstPercent ?? item.gstPercentage ?? item.gstRate ?? 5
         ) || 0;
         const itemTotal = (Number(item.price) || 0) * (Number(item.quantity) || 1);
         return acc + (itemTotal * rate) / 100;
