@@ -1198,7 +1198,7 @@ export async function trackAwbApi(awbNumber) {
   });
 }
 
-export async function checkServiceabilityWebsiteApi(deliveryPincode, weightKg = 1) {
+export async function checkServiceabilityWebsiteApi(deliveryPincode, weightKg = 0.5) {
   return requestApi('/delivery/serviceability', {
     method: 'POST',
     data: { deliveryPincode, weightKg },
