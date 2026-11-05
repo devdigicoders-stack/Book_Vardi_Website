@@ -14,7 +14,7 @@ import {
 
 export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess }) {
   const safeOrder = order || {};
-  const orderId = safeOrder.id || safeOrder.orderId || safeOrder._id || '';
+  const orderId = String(safeOrder.id || safeOrder.orderId || safeOrder._id || '').replace(/^#+/, '').trim();
   const userPhone = safeOrder.customer?.phone || safeOrder.shippingAddress?.phone || '';
   const orderItems = Array.isArray(safeOrder.items) ? safeOrder.items : [];
   const getItemId = (it) => String(it?._id || it?.id || it?.productId || '');
@@ -103,8 +103,21 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
   }, [selectedItemId, activeItem?.size, activeItem?.quantity, isFabricItem, activeType]);
 
+  // Detect if paid online via Razorpay/prepaid
+  const rawPaymentMethod = String(safeOrder.paymentMethod || safeOrder.paymentMode || '').toLowerCase();
+  const isOnlinePayment = !rawPaymentMethod.includes('cod') && !rawPaymentMethod.includes('cash') && Boolean(
+    safeOrder.razorpayPaymentId || 
+    safeOrder.paymentDetails?.razorpayPaymentId || 
+    rawPaymentMethod.includes('online') || 
+    rawPaymentMethod.includes('upi') || 
+    rawPaymentMethod.includes('card') || 
+    rawPaymentMethod.includes('razorpay') ||
+    safeOrder.paymentId
+  );
+
   // Refund payout details state for return / partial refund
-  const [payoutMode, setPayoutMode] = useState('UPI'); // 'UPI' | 'BANK'
+  // If paid online via Razorpay, default to ORIGINAL source automated refund
+  const [payoutMode, setPayoutMode] = useState(() => isOnlinePayment ? 'ORIGINAL' : 'UPI'); // 'ORIGINAL' | 'UPI' | 'BANK'
   const [upiId, setUpiId] = useState('');
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
@@ -287,7 +300,13 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     let refundDetailsPayload = null;
     const isPayoutRequired = activeType === 'return' || (activeType === 'exchange' && priceAdjustmentType === 'partial_refund');
     if (isPayoutRequired) {
-      if (payoutMode === 'UPI') {
+      if (payoutMode === 'ORIGINAL') {
+        refundDetailsPayload = {
+          method: 'ORIGINAL_SOURCE',
+          note: 'Refund to original payment source (Razorpay Auto-Refund)',
+          isOnlineRefund: true
+        };
+      } else if (payoutMode === 'UPI') {
         if (!upiId.trim() || !upiId.includes('@')) {
           setLoading(false);
           setErrorMsg('Please enter a valid UPI ID (e.g. username@bank)');
@@ -358,6 +377,9 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     : (catType.includes('stationery') || catType === 'book')
     ? 'Exchange Variant'
     : 'Exchange Size';
+
+  const orderRawStatus = String(safeOrder.overallStatus || safeOrder.status || '').toLowerCase().trim();
+  const isOrderDelivered = ['delivered', 'completed', 'fulfilled', 'received'].includes(orderRawStatus) || Boolean(safeOrder.deliveredAt || safeOrder.deliveryDetails?.deliveredAt);
 
   if (!isOpen || !order) return null;
 
@@ -440,6 +462,18 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs text-gray-800">
+          {!isOrderDelivered && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 flex items-start gap-2.5">
+              <AlertCircle size={17} className="text-amber-700 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-extrabold block">Parcel Status: {orderRawStatus === 'shipped' ? 'Shipped & In Transit' : orderRawStatus || 'Processing'}</span>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  According to return policy, return & refund doorstep pickup can be scheduled once the parcel reaches your address. If you wish to cancel an in-transit order, please contact support.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Order Item Selection if Multiple Items */}
           {orderItems.length > 1 && (
             <div className="space-y-1.5">
@@ -829,30 +863,52 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                 </p>
 
                 {/* Mode Selector */}
-                <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl mb-3">
+                <div className={`grid ${isOnlinePayment ? 'grid-cols-3' : 'grid-cols-2'} gap-2 bg-gray-100 p-1 rounded-xl mb-3`}>
+                  {isOnlinePayment && (
+                    <button
+                      type="button"
+                      onClick={() => setPayoutMode('ORIGINAL')}
+                      className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                        payoutMode === 'ORIGINAL' ? 'bg-white text-emerald-800 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      <CreditCard size={13} />
+                      <span className="truncate">Original (Razorpay)</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setPayoutMode('UPI')}
-                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                       payoutMode === 'UPI' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    <CreditCard size={14} />
+                    <Sparkles size={13} />
                     <span>UPI ID</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPayoutMode('BANK')}
-                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                       payoutMode === 'BANK' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
-                    <Building2 size={14} />
+                    <Building2 size={13} />
                     <span>Bank Transfer</span>
                   </button>
                 </div>
 
-                {payoutMode === 'UPI' ? (
+                {payoutMode === 'ORIGINAL' ? (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2.5">
+                    <CheckCircle2 size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <span className="font-extrabold block">Direct Refund via Razorpay</span>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        Refund of <strong>₹{(activeType === 'exchange' ? Math.abs(priceDifference) : originalPrice).toFixed(2)}</strong> will be credited directly to your original payment method (UPI / Card / Netbanking) via Razorpay automatically once the product return is received.
+                      </p>
+                    </div>
+                  </div>
+                ) : payoutMode === 'UPI' ? (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Receiving UPI ID *</label>
                     <input

@@ -1217,11 +1217,11 @@ export async function cancelOrderApi(orderId, payload = '', phone = '') {
 }
 
 export async function requestReturnExchangeApi(orderId, payload = {}, phone = '') {
-  return requestApi(`/orders/${orderId}/return-exchange`, {
+  const cleanId = String(orderId || '').replace(/^#+/, '').trim();
+  return requestApi(`/orders/${encodeURIComponent(cleanId)}/return-exchange`, {
     method: 'POST',
     data: payload,
-    headers: phone ? { 'x-user-phone': phone } : {},
-    fallback: { success: true, message: `${payload.type === 'exchange' ? 'Exchange' : 'Return'} requested successfully` }
+    headers: phone ? { 'x-user-phone': phone } : {}
   });
 }
 
