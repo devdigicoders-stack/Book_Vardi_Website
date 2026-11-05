@@ -236,20 +236,36 @@ export function parseStateInfo(sourceObj, fallbackString = '') {
   return { key: 'uttar_pradesh', name: 'Uttar Pradesh' };
 }
 
-export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = [] }) {
+function TaxInvoiceModalContent({ isOpen, onClose, order, allOrders = [], initialMode = "invoice" }) {
   const { customerCareEmail } = useCart();
   const invoiceSupportEmail = customerCareEmail || 'support@bookvardi.in';
-  if (!isOpen || !order) return null;
 
   // Intercept browser back button safely so user never gets kicked out of the portal
   useModalBackTrap(isOpen, onClose);
 
+  const [documentMode, setDocumentMode] = useState(initialMode || 'invoice');
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedSellerKey, setSelectedSellerKey] = useState(null);
+
+  useEffect(() => {
+    if (initialMode) {
+      setDocumentMode(initialMode);
+    }
+  }, [initialMode]);
 
   const rawStatus = String(order.overallStatus || order.status || order.deliveryStatus || '').toLowerCase().trim();
   const normStatus = rawStatus.replace(/[\s-]+/g, '_');
   const isCancelled = normStatus === 'cancelled' || normStatus === 'canceled' || order.isCancelled || Boolean(order.cancelledAt);
+  const hasCreditNote = Boolean(
+    order.creditNoteNumber || 
+    order.sellerCreditNoteNo || 
+    order.settlementStatus === 'refunded' || 
+    isCancelled || 
+    ['refund_completed', 'refund_processed', 'refunded'].includes(normStatus) ||
+    Boolean(order.returnRequest && ['refund_completed', 'refund_processed', 'refunded', 'approved'].includes(String(order.returnRequest.status || order.returnRequest.refundStatus || '').toLowerCase().trim())) ||
+    Boolean(order.refundStatus && ['refund completed', 'refund_completed', 'refunded', 'completed', 'refund processed', 'refund_processed'].includes(String(order.refundStatus).toLowerCase().trim()))
+  );
+  const isCreditNote = documentMode === 'credit_note';
 
   const isBulkOrder = Boolean(
     order.isBulkOrder ||
@@ -939,7 +955,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
       const token = localStorage.getItem('token') || localStorage.getItem('bv_user_jwt_token');
       const rawId = order.id || order.orderId || order._id || '';
       const orderIdentifier = String(rawId).replace(/^#/, '').trim();
-      const endpoint = isCancelled ? 'credit-note' : 'invoice';
+      const endpoint = isCreditNote ? 'credit-note' : 'invoice';
       const sellerParam = activeSellerGroup?.sellerId || activeSellerGroup?.storeName || '';
       const targetUrl = `${SERVER_URL}/orders/${orderIdentifier}/${endpoint}?view=customer${sellerParam ? `&sellerId=${encodeURIComponent(sellerParam)}` : ''}`;
       const res = await fetch(targetUrl, {
@@ -953,7 +969,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
         const link = document.createElement('a');
         link.href = url;
         const sellerSlug = activeSellerGroup?.storeName ? `_${activeSellerGroup.storeName.replace(/\s+/g, '_')}` : '';
-        link.download = `${isCancelled ? 'CreditNote' : 'Invoice'}_${orderIdentifier}${sellerSlug}.pdf`;
+        link.download = `${isCreditNote ? 'CreditNote' : 'Invoice'}_${orderIdentifier}${sellerSlug}.pdf`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -984,7 +1000,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
 
     const rawId = order.id || order.orderId || order._id || 'ORDER';
     const cleanId = resolvedInvoiceNumber || String(rawId).replace(/^#/, '').trim();
-    const docTitle = `${isCancelled ? 'CreditNote' : 'Tax_Invoice'}_${cleanId}`;
+    const docTitle = `${isCreditNote ? 'CreditNote' : 'Tax_Invoice'}_${cleanId}`;
 
     const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
       .map(el => el.outerHTML)
@@ -1073,12 +1089,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
               <ArrowLeft size={14} />
               <span>Back</span>
             </button>
-            <div className={`w-8 h-8 rounded-lg ${isCancelled ? 'bg-rose-600' : 'bg-brand-teal'} text-white flex items-center justify-center font-bold`}>
+            <div className={`w-8 h-8 rounded-lg ${isCreditNote ? 'bg-rose-600' : 'bg-brand-teal'} text-white flex items-center justify-center font-bold`}>
               <FileText size={16} />
             </div>
             <div>
               <h3 className="font-display font-bold text-xs sm:text-sm text-white leading-tight">
-                {isCancelled ? 'Official Credit Note & Cancellation Certificate' : 'Tax Invoice & Certificate of Order'}
+                {isCreditNote ? 'Official Credit Note & Cancellation Certificate' : 'Tax Invoice & Certificate of Order'}
               </h3>
               <p className="text-[10px] text-gray-400">Order ID: #{order.id || order.orderId}</p>
             </div>
@@ -1090,17 +1106,17 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
                 <button
                   onClick={handleDownloadPDF}
                   disabled={isDownloading}
-                  className={`px-3 py-1.5 ${isCancelled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50`}
-                  title={`Download Official GST ${isCancelled ? 'Credit Note' : 'Tax Invoice'} PDF`}
+                  className={`px-3 py-1.5 ${isCreditNote ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50`}
+                  title={`Download Official GST ${isCreditNote ? 'Credit Note' : 'Tax Invoice'} PDF`}
                 >
                   <Download size={13} className={isDownloading ? 'animate-bounce' : ''} />
                   {isDownloading ? 'Downloading...' : 'Download PDF'}
                 </button>
                 <button
                   onClick={handlePrint}
-                  className={`px-3 py-1.5 ${isCancelled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-brand-teal hover:bg-teal-700'} text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs`}
+                  className={`px-3 py-1.5 ${isCreditNote ? 'bg-rose-600 hover:bg-rose-700' : 'bg-brand-teal hover:bg-teal-700'} text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs`}
                 >
-                  <Printer size={13} /> {isCancelled ? 'Print Credit Note' : 'Print Invoice'}
+                  <Printer size={13} /> {isCreditNote ? 'Print Credit Note' : 'Print Invoice'}
                 </button>
               </>
             )}
@@ -1112,6 +1128,42 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
             </button>
           </div>
         </div>
+
+        {/* Document Mode Switcher (Tax Invoice vs GST Credit Note) */}
+        {hasCreditNote && (
+          <div className="bg-gray-900 border-b border-gray-800 px-5 py-2 flex items-center justify-between gap-2 print:hidden">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider">Document View:</span>
+              <button
+                type="button"
+                onClick={() => setDocumentMode('invoice')}
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  !isCreditNote
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+              >
+                <FileText size={13} />
+                <span>Tax Invoice</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDocumentMode('credit_note')}
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isCreditNote
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+              >
+                <RotateCcw size={13} />
+                <span>GST Credit Note</span>
+              </button>
+            </div>
+            <span className="text-[10px] text-amber-400 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded">
+              {isCreditNote ? 'Viewing Statutory Credit Note' : 'Viewing Original Tax Invoice'}
+            </span>
+          </div>
+        )}
 
         {/* Multi-Seller Invoice Selector Tabs */}
         {sellerGroups.length > 1 && (
@@ -1203,8 +1255,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
               />
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className={`${isCancelled ? 'bg-rose-600' : 'bg-brand-teal'} text-white font-black text-xs px-2 py-0.5 rounded tracking-wider uppercase`}>Book Vardi</span>
-                  {isCancelled ? (
+                  <span className={`${isCreditNote ? 'bg-rose-600' : 'bg-brand-teal'} text-white font-black text-xs px-2 py-0.5 rounded tracking-wider uppercase`}>Book Vardi</span>
+                  {isCreditNote ? (
                     <span className="text-xs font-extrabold text-rose-700 flex items-center gap-1">
                       <ShieldCheck size={14} /> Official GST Credit Note
                     </span>
@@ -1221,30 +1273,30 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
               </div>
             </div>
 
-            <div className={`sm:text-right border-l-2 sm:border-l-0 sm:border-r-0 ${isCancelled ? 'border-rose-600' : 'border-brand-teal'} pl-3 sm:pl-0`}>
-              <h2 className={`font-display font-black text-lg uppercase tracking-wider ${isCancelled ? 'text-rose-600' : 'text-gray-900'}`}>
-                {isCancelled ? 'CREDIT NOTE' : 'TAX INVOICE'}
+            <div className={`sm:text-right border-l-2 sm:border-l-0 sm:border-r-0 ${isCreditNote ? 'border-rose-600' : 'border-brand-teal'} pl-3 sm:pl-0`}>
+              <h2 className={`font-display font-black text-lg uppercase tracking-wider ${isCreditNote ? 'text-rose-600' : 'text-gray-900'}`}>
+                {isCreditNote ? 'CREDIT NOTE' : 'TAX INVOICE'}
               </h2>
               <p className="text-xs font-bold text-gray-700">
-                {isCancelled ? 'Credit Note No: ' : 'Invoice No: '}
-                <strong className={`font-mono ${isCancelled ? 'text-rose-600' : 'text-brand-teal'}`}>
-                  {isCancelled ? resolvedCreditNoteNumber : resolvedInvoiceNumber}
+                {isCreditNote ? 'Credit Note No: ' : 'Invoice No: '}
+                <strong className={`font-mono ${isCreditNote ? 'text-rose-600' : 'text-brand-teal'}`}>
+                  {isCreditNote ? resolvedCreditNoteNumber : resolvedInvoiceNumber}
                 </strong>
               </p>
-              {isCancelled && (
+              {isCreditNote && (
                 <p className="text-[11px] text-gray-500 font-mono">
                   Original Ref: <strong>{resolvedInvoiceNumber}</strong>
                 </p>
               )}
               <p className="text-[11px] text-gray-500">
-                {isCancelled ? 'Reversal Date: ' : 'Invoice Date: '}
-                {order.cancelledAt ? new Date(order.cancelledAt).toLocaleDateString('en-GB') : (order.date || new Date().toLocaleDateString('en-GB'))}
+                {isCreditNote ? 'Reversal Date: ' : 'Invoice Date: '}
+                {isCreditNote && order.cancelledAt ? new Date(order.cancelledAt).toLocaleDateString('en-GB') : (order.date || new Date().toLocaleDateString('en-GB'))}
               </p>
             </div>
           </div>
 
           {/* Cancellation Alert Banner */}
-          {isCancelled && (
+          {isCreditNote && (
             <div className="p-3.5 bg-rose-50/90 rounded-xl border border-rose-200 text-xs text-rose-900 space-y-1 shadow-xs">
               <div className="flex items-center gap-2 font-black text-rose-950 uppercase tracking-wider text-[11px]">
                 <RotateCcw size={15} className="text-rose-600 shrink-0" />
@@ -1269,7 +1321,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs bg-gray-50 p-4 rounded-xl border border-gray-200">
                 <div>
                   <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">
-                    {isCancelled ? 'Issued By (Merchant / Seller Store)' : 'Sold By (Merchant / Seller Store)'}
+                    {isCreditNote ? 'Issued By (Merchant / Seller Store)' : 'Sold By (Merchant / Seller Store)'}
                   </span>
                   <p className="font-extrabold text-gray-900 text-sm">{primarySellerName}</p>
                   <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-sm border border-emerald-200">
@@ -1280,7 +1332,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-black text-gray-400 block mb-1">
-                    {isCancelled ? 'Issued To (Customer)' : 'Billed To (Customer)'}
+                    {isCreditNote ? 'Issued To (Customer)' : 'Billed To (Customer)'}
                   </span>
                   <p className="font-extrabold text-gray-900 text-sm">{typeof order.customerName === 'object' ? (order.customerName?.name || 'Customer') : (order.customerName || order.customer?.name || 'Customer')}</p>
                   <p className="text-gray-600 mt-0.5">
@@ -1308,13 +1360,13 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
             <table className="w-full text-left border-collapse min-w-[660px]">
               <thead>
                 <tr className="bg-gray-100 text-gray-700 border-b border-gray-200 font-extrabold uppercase text-[10px]">
-                  <th className="py-2.5 px-3 min-w-[140px]">{isCancelled ? 'Cancelled Item Details' : 'Item Details'}</th>
+                  <th className="py-2.5 px-3 min-w-[140px]">{isCreditNote ? 'Cancelled / Returned Item Details' : 'Item Details'}</th>
                   <th className="py-2.5 px-3 min-w-[110px]">Sold By (Seller Store)</th>
                   <th className="py-2.5 px-2 text-center w-10">Qty</th>
                   <th className="py-2.5 px-2.5 text-right w-20">Unit Price</th>
                   <th className="py-2.5 px-2.5 text-right w-22">Taxable Val</th>
                   <th className="py-2.5 px-3 text-right min-w-[130px]">Taxes</th>
-                  <th className="py-2.5 px-3 text-right w-24 pr-3.5">{isCancelled ? 'Refunded Gross' : 'Total Price'}</th>
+                  <th className="py-2.5 px-3 text-right w-24 pr-3.5">{isCreditNote ? 'Refunded Gross' : 'Total Price'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -1393,7 +1445,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold whitespace-nowrap pr-3.5">
-                        {isCancelled ? (
+                        {isCreditNote ? (
                           <span className="text-rose-700">-₹{displayTotal.toFixed(2)}</span>
                         ) : (
                           <>
@@ -1449,7 +1501,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono font-bold">
-                      {isCancelled ? (
+                      {isCreditNote ? (
                         <span className="text-rose-700">-₹{shippingCost.toFixed(2)}</span>
                       ) : (
                         <span className="text-gray-900">₹{shippingCost.toFixed(2)}</span>
@@ -1535,7 +1587,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
               <tfoot className="bg-gray-100/95 font-bold border-t-2 border-gray-300">
                 <tr>
                   <td colSpan={4} className="py-2.5 px-3 text-right font-black uppercase text-[10px] text-gray-700 tracking-wider">
-                    {isCancelled ? 'Total Reversal:' : 'Total / Order Payable:'}
+                    {isCreditNote ? 'Total Reversal:' : 'Total / Order Payable:'}
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900 text-xs">
                     ₹{adjustedTaxableValue.toFixed(2)}
@@ -1574,7 +1626,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
                     )}
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono text-base font-black whitespace-nowrap pr-3.5">
-                    {isCancelled ? (
+                    {isCreditNote ? (
                       <span className="text-rose-700">-₹{grandTotal.toFixed(2)}</span>
                     ) : (
                       <span className="text-gray-900">₹{grandTotal.toFixed(2)}</span>
@@ -1591,10 +1643,10 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
             <div className="bg-gray-50/80 p-4 rounded-xl border border-gray-200 flex flex-col justify-between space-y-3 text-xs">
               <div className="space-y-2">
                 <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">
-                  {isCancelled ? 'Refund Authorization & Status' : 'Payment & Authenticity'}
+                  {isCreditNote ? 'Refund Authorization & Status' : 'Payment & Authenticity'}
                 </span>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {isCancelled ? (
+                  {isCreditNote ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
                       <ShieldCheck size={13} /> Refund Processed
                     </span>
@@ -1619,14 +1671,14 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
 
                 <div className="bg-white rounded-lg p-2.5 border border-gray-200/90 mt-2">
                   <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">
-                    {isCancelled ? 'Amount in Words (Refunded Credit)' : 'Amount in Words'}
+                    {isCreditNote ? 'Amount in Words (Refunded Credit)' : 'Amount in Words'}
                   </span>
                   <p className="font-bold text-gray-800 text-[11px] italic mt-0.5 leading-snug">{numberToWords(grandTotal)}</p>
                 </div>
               </div>
 
               <div className="pt-2.5 border-t border-gray-200 text-[11px] text-gray-500 space-y-1">
-                {isCancelled ? (
+                {isCreditNote ? (
                   <>
                     <p className="leading-relaxed">
                       • Credit Note issued under Section 34 of CGST Act, 2017. Tax liability reversed in full.
@@ -1659,7 +1711,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
               <div className="space-y-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-200 pb-2 gap-1.5">
                   <span className="text-[10px] uppercase font-black text-gray-700 tracking-wider flex items-center gap-1 shrink-0">
-                    <ShieldCheck size={13} className="text-emerald-700" /> {isCancelled ? 'Place of Supply & Reversal Meta' : 'Place of Supply & Tax Meta'}
+                    <ShieldCheck size={13} className="text-emerald-700" /> {isCreditNote ? 'Place of Supply & Reversal Meta' : 'Place of Supply & Tax Meta'}
                   </span>
                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border w-fit shrink-0 ${
                     isIntraState 
@@ -1677,7 +1729,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Payment Mode:</span>
-                    <strong className="text-gray-900 font-sans">{order.paymentMethod || 'Online UPI'} ({order.paymentStatus || (isCancelled ? 'Refunded' : 'Paid')})</strong>
+                    <strong className="text-gray-900 font-sans">{order.paymentMethod || 'Online UPI'} ({order.paymentStatus || (isCreditNote ? 'Refunded' : 'Paid')})</strong>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Tax on Reverse Charge (RCM):</span>
@@ -1689,7 +1741,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
                   </div>
                 </div>
 
-                {isCancelled && (
+                {isCreditNote && (
                   <div className="bg-rose-50 rounded-lg p-2 border border-rose-200 text-rose-800 text-[11px]">
                     <span>Credit Note Status: </span>
                     <strong className="font-bold">Reversal processed under Section 34 of CGST Act.</strong>
@@ -1698,7 +1750,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
               </div>
 
               <div className="pt-2 border-t border-gray-200 text-[10px] text-gray-400 leading-relaxed italic">
-                • {isCancelled ? 'Official statutory credit note' : 'Official electronic tax invoice'} issued under CGST Act, 2017. Does not require physical signature.
+                • {isCreditNote ? 'Official statutory credit note' : 'Official electronic tax invoice'} issued under CGST Act, 2017. Does not require physical signature.
               </div>
             </div>
           </div>
@@ -1723,6 +1775,12 @@ export default function TaxInvoiceModal({ isOpen, onClose, order, allOrders = []
   );
 }
 
+export default function TaxInvoiceModal(props) {
+  if (!props.isOpen || !props.order) return null;
+  return <TaxInvoiceModalContent {...props} />;
+}
+
 export function CreditNoteModal(props) {
-  return <TaxInvoiceModal {...props} />;
+  if (!props.isOpen || !props.order) return null;
+  return <TaxInvoiceModalContent initialMode="credit_note" {...props} />;
 }

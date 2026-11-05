@@ -114,6 +114,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [invoiceModalOrder, setInvoiceModalOrder] = useState(null);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [invoiceModalInitialMode, setInvoiceModalInitialMode] = useState('invoice');
 
   const resolveOrderLifecycleStatus = (order) => {
     if (!order) return 'placed';
@@ -2599,7 +2600,16 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                   'pickup_scheduled', 'product_received', 'product_return_received',
                                   'refund_initiated', 'refund_processed', 'refund_completed', 'refunded'
                                 ];
-                                const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s));
+                                const hasCompletedRefundUI = Boolean(
+    ['refund_completed', 'refunded', 'completed', 'refund_processed'].includes(String(order.returnRequest?.refundStatus || '').toLowerCase().trim()) ||
+    ['refund completed', 'refund_completed', 'refunded', 'completed', 'refund processed', 'refund_processed'].includes(String(order.refundStatus || '').toLowerCase().trim()) ||
+    order.settlementStatus === 'refunded' ||
+    Boolean(order.returnRequest?.refundTxnId) ||
+    Boolean(order.refundTxnId) ||
+    Boolean(order.sellerCreditNoteNo) ||
+    Boolean(order.creditNoteNumber)
+  );
+  const isReturnAccepted = acceptedStatuses.some(s => retStatus.includes(s)) || hasCompletedRefundUI;
                                 const isCancelled = currentStatus === 'cancelled' || Boolean(order.cancelledAt);
                                 const canDownloadCreditNote = isExchangeReq ? isReturnAccepted : (isReturnAccepted || isCancelled);
                                 const isPendingReturnApproval = !isCancelled && (retType === 'return' || retType === 'exchange' || retStatus.includes('return') || retStatus.includes('exchange')) && !isReturnAccepted;
@@ -2803,6 +2813,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setInvoiceModalOrder(order);
+                                      setInvoiceModalInitialMode('invoice');
                                       setIsInvoiceModalOpen(true);
                                     }}
                                     className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
@@ -4387,6 +4398,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
         }}
         order={invoiceModalOrder}
         allOrders={allOrders}
+        initialMode={invoiceModalInitialMode}
         userProfile={userProfile}
         role="user"
       />

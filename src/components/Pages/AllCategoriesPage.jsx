@@ -1,3 +1,4 @@
+import { getCategoryDefaultImage } from '../Categories/CategorySection';
 import React, { useState, useEffect } from 'react';
 import { ArrowRight, ChevronRight, Layers, PackageOpen } from 'lucide-react';
 import { fetchCategoryTreeFromBackend } from '../../utils/api';
@@ -52,7 +53,8 @@ export default function AllCategoriesPage({ onNavigate }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {displayList.map((cat, idx) => {
             const catName = cat.name || cat.title || 'Category';
-            const catImg = cat.imageUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=400&auto=format&fit=crop&q=80';
+            const rawImg = cat.imageUrl || cat.image;
+            const catImg = (rawImg && typeof rawImg === 'string' && rawImg.trim() !== '') ? rawImg : getCategoryDefaultImage(catName);
             const subList = Array.isArray(cat.subCategories) ? cat.subCategories : [];
 
             return (
@@ -69,6 +71,10 @@ export default function AllCategoriesPage({ onNavigate }) {
                         alt={catName}
                         className="w-full h-full object-cover rounded-xl"
                         loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = getCategoryDefaultImage(catName);
+                        }}
                       />
                     </div>
                     <div>

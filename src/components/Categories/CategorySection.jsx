@@ -1,3 +1,26 @@
+export const getCategoryDefaultImage = (name = '') => {
+  const n = String(name || '').toLowerCase().trim();
+  if (n.includes('uniform') || n.includes('dress') || n.includes('shirt') || n.includes('pant') || n.includes('coat') || n.includes('skirt') || n.includes('blazer')) {
+    return 'https://images.unsplash.com/photo-1598033129183-c4f50c736f10?w=400&auto=format&fit=crop&q=80'; // School Uniform
+  }
+  if (n.includes('book') || n.includes('notebook') || n.includes('copy') || n.includes('ncert') || n.includes('guide') || n.includes('pustak')) {
+    return 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&auto=format&fit=crop&q=80'; // Books & Textbooks
+  }
+  if (n.includes('footwear') || n.includes('shoe') || n.includes('shoes') || n.includes('boot') || n.includes('sock') || n.includes('sneaker')) {
+    return 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400&auto=format&fit=crop&q=80'; // Shoes & Footwear
+  }
+  if (n.includes('cap') || n.includes('hat') || n.includes('belt') || n.includes('tie') || n.includes('badge') || n.includes('access')) {
+    return 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=400&auto=format&fit=crop&q=80'; // Cap & Accessories
+  }
+  if (n.includes('bag') || n.includes('backpack') || n.includes('bottle') || n.includes('lunch')) {
+    return 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=400&auto=format&fit=crop&q=80'; // School Bags
+  }
+  if (n.includes('station') || n.includes('pen') || n.includes('pencil') || n.includes('geometry') || n.includes('art') || n.includes('craft')) {
+    return 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?w=400&auto=format&fit=crop&q=80'; // Stationery Supplies
+  }
+  return 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=400&auto=format&fit=crop&q=80'; // Education General
+};
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { fetchCategoriesFromBackend } from '../../utils/api';
@@ -57,7 +80,8 @@ export default function CategorySection({ activeCategory, onSelectCategory, onNa
               categories.map((cat) => {
                 const catId = cat.slug || cat.id || cat._id || cat.name?.toLowerCase().replace(/\s+/g, '_');
                 const isSelected = activeCategory === catId;
-                const catImg = cat.imageUrl || 'https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=300&auto=format&fit=crop&q=80';
+                const rawImg = cat.imageUrl || cat.image;
+                const catImg = (rawImg && typeof rawImg === 'string' && rawImg.trim() !== '') ? rawImg : getCategoryDefaultImage(cat.name);
 
                 return (
                   <button
@@ -69,9 +93,9 @@ export default function CategorySection({ activeCategory, onSelectCategory, onNa
                   >
                     {/* Avatar */}
                     <div
-                      className={`w-18 h-18 sm:w-22 sm:h-22 md:w-24 md:h-24 rounded-full overflow-hidden mb-2.5 border-2 transition-all p-1 bg-gray-50 shadow-xs ${
+                      className={`w-20 h-20 sm:w-24 sm:h-24 md:w-26 md:h-26 rounded-full overflow-hidden mb-2.5 border-2 transition-all p-1 bg-white shadow-xs ${
                         isSelected
-                          ? 'border-brand-teal ring-4 ring-brand-yellow'
+                          ? 'border-brand-teal ring-4 ring-brand-yellow/80 shadow-md scale-105'
                           : 'border-gray-200 group-hover:border-brand-yellow group-hover:shadow-md'
                       }`}
                     >
@@ -81,6 +105,10 @@ export default function CategorySection({ activeCategory, onSelectCategory, onNa
                         className="w-full h-full object-cover rounded-full transition-transform duration-300 group-hover:scale-110"
                         loading="lazy"
                         decoding="async"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = getCategoryDefaultImage(cat.name);
+                        }}
                       />
                     </div>
 
