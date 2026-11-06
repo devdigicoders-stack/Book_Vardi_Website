@@ -52,7 +52,7 @@ import SchoolSelect from '../Common/SchoolSelect';
 import ClassSelect from '../Common/ClassSelect';
 import { useLocation } from '../../context/LocationContext';
 import { compressImageToWebP } from '../../utils/imageCompressor';
-import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi, confirmBuyerAcceptanceApi, API_BASE_URL, downloadInvoiceApi } from '../../utils/api';
+import { backendEnabled, uploadAvatarToBackend, resolveImageUrl, fetchCustomerSchoolBulkOrdersApi, submitBuyerCounterDemandApi, approveSellerQuotationApi, confirmBuyerAcceptanceApi, API_BASE_URL, downloadInvoiceApi, fetchSellerApplicationStatusApi, fetchSellerProfileApi } from '../../utils/api';
 import BulkOrderPreviewModal from './BulkOrderPreviewModal';
 import OrderTrackingModal, { isOrderRefundedOrReturnOrExchange } from '../Common/OrderTrackingModal';
 import CancelOrderModal from '../Common/CancelOrderModal';
@@ -531,30 +531,101 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     }
   });
 
-  // Re-read on tab focus or change, and listen to real-time status updates
+  const [liveSellerStatus, setLiveSellerStatus] = useState(() => {
+    try {
+      return localStorage.getItem('bv_seller_status') || 'none';
+    } catch {
+      return 'none';
+    }
+  });
+
+  // Re-read on tab focus or change, and listen to real-time status updates from backend
   useEffect(() => {
-    const loadSellerData = () => {
+    let isMounted = true;
+    const phone = userProfile?.phone || userProfile?.mobile || '';
+
+    const syncLiveSeller = async () => {
+      // 1. Check local storage first
       try {
         const saved = localStorage.getItem('bv_seller_reg_data');
-        if (saved) setSellerAppData(JSON.parse(saved));
+        if (saved && isMounted) setSellerAppData(JSON.parse(saved));
         else {
           const profileSaved = localStorage.getItem('book_vardi_seller_profile');
-          if (profileSaved) setSellerAppData(JSON.parse(profileSaved));
+          if (profileSaved && isMounted) setSellerAppData(JSON.parse(profileSaved));
         }
-      } catch (e) {
-        console.error(e);
+      } catch (e) {}
+
+      // 2. Fetch live application data from backend API
+      if (backendEnabled && phone) {
+        try {
+          const [statusRes, profileRes] = await Promise.allSettled([
+            fetchSellerApplicationStatusApi(phone),
+            fetchSellerProfileApi(phone)
+          ]);
+
+          if (isMounted) {
+            let nextStatus = null;
+            let mergedData = {};
+
+            if (statusRes.status === 'fulfilled' && statusRes.value?.success) {
+              const sVal = statusRes.value;
+              nextStatus = sVal.status || sVal.sellerStatus || sVal.approvalStatus;
+              mergedData = { ...mergedData, ...sVal };
+            }
+
+            if (profileRes.status === 'fulfilled' && profileRes.value && profileRes.value._id) {
+              const pVal = profileRes.value;
+              if (pVal.status || pVal.approvalStatus) {
+                nextStatus = pVal.status || pVal.approvalStatus;
+              }
+              mergedData = { ...mergedData, ...pVal };
+            }
+
+            if (nextStatus && nextStatus !== 'none' && isMounted) {
+              setLiveSellerStatus(nextStatus);
+              try {
+                localStorage.setItem('bv_seller_status', nextStatus);
+                localStorage.setItem('book_vardi_seller_status', JSON.stringify(nextStatus));
+              } catch (e) {}
+
+              setSellerAppData(prev => {
+                const combined = {
+                  ...prev,
+                  ...mergedData,
+                  sellerName: mergedData.name || mergedData.ownerDetails?.ownerFullName || prev.sellerName,
+                  sellerEmail: mergedData.email || prev.sellerEmail,
+                  sellerPhone: mergedData.phone || prev.sellerPhone,
+                  storeName: mergedData.storeName || prev.storeName,
+                  legalBusinessName: mergedData.legalBusinessName || mergedData.storeName || prev.legalBusinessName,
+                  status: nextStatus,
+                  submissionStatus: nextStatus,
+                  rejectionReason: mergedData.rejectionReason || prev.rejectionReason || '',
+                  highestStepReached: Math.max(prev.highestStepReached || 1, 11),
+                  currentStep: Math.max(prev.currentStep || 1, 11)
+                };
+                try {
+                  localStorage.setItem('bv_seller_reg_data', JSON.stringify(combined));
+                } catch (e) {}
+                return combined;
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('Seller live status sync notice:', err);
+        }
       }
     };
 
-    loadSellerData();
-    window.addEventListener('bv_seller_status_updated', loadSellerData);
-    window.addEventListener('storage', loadSellerData);
+    syncLiveSeller();
+    window.addEventListener('bv_seller_status_updated', syncLiveSeller);
+    window.addEventListener('storage', syncLiveSeller);
 
     return () => {
-      window.removeEventListener('bv_seller_status_updated', loadSellerData);
-      window.removeEventListener('storage', loadSellerData);
+      isMounted = false;
+      window.removeEventListener('bv_seller_status_updated', syncLiveSeller);
+      window.removeEventListener('storage', syncLiveSeller);
     };
-  }, [activeTab]);
+  }, [activeTab, userProfile?.phone, userProfile?.mobile]);
 
   // Synchronize tab when navigated externally (e.g. from navbar or footer)
   useEffect(() => {
@@ -642,6 +713,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     isSeller ||
     userProfile?.isSeller === true ||
     checkIsApproved(sellerStatus) ||
+    checkIsApproved(liveSellerStatus) ||
     checkIsApproved(userProfile?.sellerStatus) ||
     checkIsApproved(sellerAppData?.submissionStatus) ||
     checkIsApproved(sellerAppData?.status)
@@ -649,13 +721,16 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
   const hasFilledSellerForm = Boolean(
     (sellerStatus && sellerStatus !== 'none') ||
+    (liveSellerStatus && liveSellerStatus !== 'none') ||
     (userProfile?.sellerStatus && userProfile?.sellerStatus !== 'none') ||
     (sellerAppData && sellerAppData.submissionStatus && sellerAppData.submissionStatus !== 'draft') ||
-    (sellerAppData && (sellerAppData.sellerName || sellerAppData.legalBusinessName) && (sellerAppData.highestStepReached >= 11 || sellerAppData.currentStep >= 11))
+    (sellerAppData && (sellerAppData.sellerName || sellerAppData.legalBusinessName) && (sellerAppData.highestStepReached >= 11 || sellerAppData.currentStep >= 11)) ||
+    (sellerAppData && sellerAppData.status && sellerAppData.status !== 'draft')
   );
 
   const isSellerRejected = Boolean(
     checkIsRejected(sellerStatus) ||
+    checkIsRejected(liveSellerStatus) ||
     checkIsRejected(userProfile?.sellerStatus) ||
     checkIsRejected(sellerAppData?.submissionStatus) ||
     checkIsRejected(sellerAppData?.status)
@@ -663,9 +738,15 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
 
   const isSellerInReview = Boolean(
     checkIsInReview(sellerStatus) ||
+    checkIsInReview(liveSellerStatus) ||
     checkIsInReview(userProfile?.sellerStatus) ||
     checkIsInReview(sellerAppData?.submissionStatus) ||
-    checkIsInReview(sellerAppData?.status)
+    checkIsInReview(sellerAppData?.status) ||
+    String(sellerStatus || '').toLowerCase() === 'pending' ||
+    String(liveSellerStatus || '').toLowerCase() === 'pending' ||
+    String(userProfile?.sellerStatus || '').toLowerCase() === 'pending' ||
+    String(sellerAppData?.status || '').toLowerCase() === 'pending' ||
+    String(sellerAppData?.submissionStatus || '').toLowerCase() === 'pending'
   );
 
   const sellerStatusText = isApprovedSeller
@@ -673,7 +754,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
     : isSellerRejected
     ? 'Rejected'
     : isSellerInReview
-    ? 'In Review'
+    ? 'Pending Verification'
     : 'Pending Approval';
 
   // Order History Filter & Search State
@@ -1310,7 +1391,7 @@ export default function ProfilePage({ onNavigate, initialTab = 'profile' }) {
                   title="Click to view detailed seller application card"
                 >
                   <span className="flex items-center gap-2.5">
-                    <Clock size={18} className={activeTab === 'seller-data' ? 'text-brand-yellow' : isSellerRejected ? 'text-rose-600' : isSellerInReview ? 'text-amber-600' : 'text-blue-600'} />
+                    <Clock size={18} className={activeTab === 'seller-data' ? 'text-brand-yellow' : isSellerRejected ? 'text-rose-600' : isSellerInReview ? 'text-amber-600 animate-pulse' : 'text-blue-600'} />
                     <span>Status: {sellerStatusText}</span>
                   </span>
                   <span className="text-[10px] font-extrabold underline">

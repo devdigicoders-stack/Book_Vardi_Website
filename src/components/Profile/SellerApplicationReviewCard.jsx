@@ -13,7 +13,9 @@ import {
   ExternalLink,
   Edit3,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 import { ONBOARDING_STEPS } from './SellerRegistrationModal';
 import { resolveImageUrl } from '../../utils/api';
@@ -96,6 +98,86 @@ export default function SellerApplicationReviewCard({ applicationData, onEditSte
           )}
         </div>
       </div>
+
+      {/* Verification Status Notice */}
+      {data.submissionStatus !== 'approved' && data.status !== 'approved' && (
+        <div className={`p-5 rounded-2xl border ${
+          (data.submissionStatus === 'rejected' || data.status === 'rejected')
+            ? 'bg-rose-50 border-rose-300 text-rose-950'
+            : 'bg-amber-50/90 border-amber-300 text-amber-950'
+        } shadow-xs space-y-3`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                (data.submissionStatus === 'rejected' || data.status === 'rejected')
+                  ? 'bg-rose-200 text-rose-800'
+                  : 'bg-amber-200 text-amber-800'
+              }`}>
+                {(data.submissionStatus === 'rejected' || data.status === 'rejected') ? (
+                  <AlertCircle size={22} />
+                ) : (
+                  <Clock size={22} className="animate-pulse" />
+                )}
+              </div>
+              <div>
+                <h4 className="font-extrabold text-sm">
+                  {(data.submissionStatus === 'rejected' || data.status === 'rejected')
+                    ? 'Seller Application Requires Revision'
+                    : '⏳ Application Under Review & Verification'}
+                </h4>
+                <p className="text-xs opacity-80 mt-0.5">
+                  {(data.submissionStatus === 'rejected' || data.status === 'rejected')
+                    ? 'The platform admin desk has reviewed your application and requested revisions before verification.'
+                    : 'Your 10 onboarding sections and KYC documents have been submitted to BookVardi Admin. Verification is typically completed within 24 hours.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {(data.submissionStatus === 'rejected' || data.status === 'rejected') ? (
+                onEditStep && (
+                  <button
+                    onClick={() => onEditStep(1)}
+                    className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit3 size={13} />
+                    <span>Edit & Re-submit</span>
+                  </button>
+                )
+              ) : (
+                <div className="px-3.5 py-1.5 rounded-xl bg-amber-200/80 border border-amber-300 text-amber-900 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-600 animate-ping" />
+                  <span>Pending Admin Approval</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {(data.submissionStatus === 'rejected' || data.status === 'rejected') && data.rejectionReason && (
+            <div className="bg-white/80 p-3 rounded-xl border border-rose-200 text-xs">
+              <span className="font-bold text-rose-900 block text-[11px] uppercase">Reason provided by Admin:</span>
+              <p className="text-gray-800 italic mt-0.5 font-medium">"{data.rejectionReason}"</p>
+            </div>
+          )}
+
+          {!(data.submissionStatus === 'rejected' || data.status === 'rejected') && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+              <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                <span className="text-[10px] uppercase font-bold text-gray-500 block">Verification Stage</span>
+                <span className="font-bold text-amber-900">Desk KYC & Document Review</span>
+              </div>
+              <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                <span className="text-[10px] uppercase font-bold text-gray-500 block">Expected Turnaround</span>
+                <span className="font-bold text-amber-900">Within 24 Hours</span>
+              </div>
+              <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                <span className="text-[10px] uppercase font-bold text-gray-500 block">Notification Channel</span>
+                <span className="font-bold text-amber-900">SMS to Registered Mobile</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Control bar */}
       <div className="flex items-center justify-between px-1 text-xs">

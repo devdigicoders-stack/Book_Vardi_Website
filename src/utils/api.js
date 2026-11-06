@@ -909,6 +909,31 @@ export async function verifySellerPhoneOtpApi(phone, otp, isRegistration = true)
   });
 }
 
+export async function fetchSellerApplicationStatusApi(phone = '') {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('token');
+  return requestApi('/seller/auth/status', {
+    method: 'GET',
+    params: phone ? { phone } : undefined,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(phone ? { 'x-user-phone': phone, 'x-seller-phone': phone } : {})
+    },
+    fallback: null
+  });
+}
+
+export async function fetchSellerProfileApi(phone = '') {
+  const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('bv_seller_jwt_token') || localStorage.getItem('token');
+  return requestApi('/seller/profile', {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(phone ? { 'x-user-phone': phone, 'x-seller-phone': phone } : {})
+    },
+    fallback: null
+  });
+}
+
 export async function submitSchoolBulkOrderInBackend(payload) {
   const token = localStorage.getItem('book_vardi_auth_token') || localStorage.getItem('token');
   const userProfileStr = localStorage.getItem('book_vardi_user_profile');
