@@ -4,10 +4,19 @@ import { useCart } from '../../context/CartContext';
 import { submitContactMessageApi } from '../../utils/api';
 
 export default function ContactUsPage() {
-  const { isAuthenticated, userProfile, showToast, customerCarePhone, customerCareEmail, supportHours } = useCart();
+  const {
+    isAuthenticated,
+    userProfile,
+    showToast,
+    customerCarePhone,
+    customerCareEmail,
+    supportHours,
+    headOfficeAddress
+  } = useCart();
   const displayPhone = customerCarePhone || '+91 98765 43210';
   const displayEmail = customerCareEmail || 'support@bookvardi.in';
   const displayHours = supportHours || 'Mon - Sat, 9am to 6pm';
+  const displayAddress = headOfficeAddress || 'Shakhumbhari Road, Town Behat,\nDist. Saharanpur (U.P.) - 247121';
   const [formData, setFormData] = useState({
     name: isAuthenticated ? userProfile?.name || '' : '',
     email: isAuthenticated ? userProfile?.email || '' : '',
@@ -100,8 +109,16 @@ export default function ContactUsPage() {
                 <div>
                   <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Head Office</h4>
                   <p className="text-sm font-bold text-gray-900 leading-relaxed">
-                    Book Vardi Tower, Sector 14,<br />
-                    Gurugram, Haryana 122001
+                    {displayAddress.includes('\n') ? (
+                      displayAddress.split('\n').map((line, idx, arr) => (
+                        <React.Fragment key={idx}>
+                          {line}
+                          {idx < arr.length - 1 && <br />}
+                        </React.Fragment>
+                      ))
+                    ) : (
+                      displayAddress
+                    )}
                   </p>
                 </div>
               </div>

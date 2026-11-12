@@ -806,6 +806,14 @@ export function CartProvider({ children }) {
     }
   });
 
+  const [headOfficeAddress, setHeadOfficeAddress] = useState(() => {
+    try {
+      return localStorage.getItem('bv_head_office_address') || 'Shakhumbhari Road, Town Behat,\nDist. Saharanpur (U.P.) - 247121';
+    } catch {
+      return 'Shakhumbhari Road, Town Behat,\nDist. Saharanpur (U.P.) - 247121';
+    }
+  });
+
   useEffect(() => {
     if (backendEnabled) {
       fetchPublicSettingsFromBackend()
@@ -852,6 +860,11 @@ export function CartProvider({ children }) {
               setSupportHours(res.supportHours);
               try { localStorage.setItem('bv_support_hours', res.supportHours); } catch {}
             }
+            if (res.headOfficeAddress || res.companyAddress) {
+              const addr = res.headOfficeAddress || res.companyAddress;
+              setHeadOfficeAddress(addr);
+              try { localStorage.setItem('bv_head_office_address', addr); } catch {}
+            }
             if (res.schoolRadiusKm) {
               try { localStorage.setItem('bv_school_radius_km', String(res.schoolRadiusKm)); } catch {}
               window.dispatchEvent(new CustomEvent('bv_radius_updated', { detail: res.schoolRadiusKm }));
@@ -893,6 +906,11 @@ export function CartProvider({ children }) {
         if (e.detail.supportHours) {
           setSupportHours(e.detail.supportHours);
           try { localStorage.setItem('bv_support_hours', e.detail.supportHours); } catch {}
+        }
+        if (e.detail.headOfficeAddress || e.detail.companyAddress) {
+          const addr = e.detail.headOfficeAddress || e.detail.companyAddress;
+          setHeadOfficeAddress(addr);
+          try { localStorage.setItem('bv_head_office_address', addr); } catch {}
         }
       }
     };
@@ -2605,6 +2623,8 @@ export function CartProvider({ children }) {
     customerCareEmail,
     supportEmail: customerCareEmail,
     supportHours,
+    headOfficeAddress,
+    setHeadOfficeAddress,
     freeShippingProgress,
     freeShippingRemaining,
     setIsCartOpen: handleSetIsCartOpen,
@@ -2680,6 +2700,7 @@ export function CartProvider({ children }) {
     customerCarePhone,
     customerCareEmail,
     supportHours,
+    headOfficeAddress,
     freeShippingProgress,
     freeShippingRemaining,
     isAuthenticated,
