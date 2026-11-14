@@ -13,7 +13,7 @@ import {
   Clock,
   Store
 } from 'lucide-react';
-import { getSellerInvoiceNumber, getSellerCreditNoteNumber } from '../../utils/invoiceHelper';
+import { getSellerInvoiceNumber, getSellerCreditNoteNumber, resolveHsnCode } from '../../utils/invoiceHelper';
 import { useCart } from '../../context/CartContext';
 import useModalBackTrap from '../../hooks/useModalBackTrap';
 
@@ -731,8 +731,12 @@ function TaxInvoiceModalContent({ isOpen, onClose, order, allOrders = [], initia
     totalTaxableValue += taxableVal;
     totalTaxAmount += taxAmt;
 
+    const itemHsn = resolveHsnCode(item.hsnCode || item.hsn || item.productId?.hsnCode || item.productId?.hsn, item.category || item.productId?.category, item.subCategory || item.productId?.subCategory, item.name || item.productId?.name);
+
     return {
       ...item,
+      hsn: itemHsn,
+      hsnCode: itemHsn,
       qty: displayQty,
       rawQty,
       unitPrice,
@@ -928,6 +932,83 @@ function TaxInvoiceModalContent({ isOpen, onClose, order, allOrders = [], initia
   const shippingCgst = shippingTax > 0 && isIntraState ? Math.round((shippingTax / 2) * 100) / 100 : 0;
   const shippingSgst = shippingTax > 0 && isIntraState ? Math.round((shippingTax - shippingCgst) * 100) / 100 : 0;
   const shippingIgst = shippingTax > 0 && !isIntraState ? shippingTax : 0;
+
+  // HSN / SAC Summary Calculation for Tax Compliance (GSTR-1 Table 12)
+  const hsnSummaryList = useMemo(() => {
+    const summaryMap = {};
+    (itemBreakdowns || []).forEach(it => {
+      const code = it.hsn || '6203';
+      if (!summaryMap[code]) {
+        summaryMap[code] = {
+          hsn: code,
+          desc: it.category || it.name || 'School Product',
+          qty: 0,
+          taxableVal: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          totalTax: 0,
+          rate: it.rate || 0
+        };
+      }
+      summaryMap[code].qty += Number(it.rawQty || 1);
+      summaryMap[code].taxableVal += Number(it.taxableVal || 0);
+      const itCgst = it.rate > 0 && isIntraState ? Math.round((it.taxAmt / 2) * 100) / 100 : 0;
+      const itSgst = it.rate > 0 && isIntraState ? Math.round((it.taxAmt - itCgst) * 100) / 100 : 0;
+      const itIgst = it.rate > 0 && !isIntraState ? it.taxAmt : 0;
+      summaryMap[code].cgst += itCgst;
+      summaryMap[code].sgst += itSgst;
+      summaryMap[code].igst += itIgst;
+      summaryMap[code].totalTax += Number(it.taxAmt || 0);
+    });
+
+    if (shippingCost > 0 && shippingTaxable > 0) {
+      const shipSac = '9968';
+      if (!summaryMap[shipSac]) {
+        summaryMap[shipSac] = {
+          hsn: shipSac,
+          desc: 'Freight & Delivery Charges',
+          qty: 1,
+          taxableVal: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          totalTax: 0,
+          rate: shippingGstRate || 0
+        };
+      }
+      summaryMap[shipSac].taxableVal += shippingTaxable;
+      summaryMap[shipSac].cgst += (isIntraState ? shippingCgst : 0);
+      summaryMap[shipSac].sgst += (isIntraState ? shippingSgst : 0);
+      summaryMap[shipSac].igst += (!isIntraState ? shippingIgst : 0);
+      summaryMap[shipSac].totalTax += shippingTax;
+    }
+
+    if (isCod && rawCodFee > 0) {
+      const codSac = '998544';
+      if (!summaryMap[codSac]) {
+        summaryMap[codSac] = {
+          hsn: codSac,
+          desc: 'Doorstep Cash Collection',
+          qty: 1,
+          taxableVal: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          totalTax: 0,
+          rate: 0
+        };
+      }
+      summaryMap[codSac].taxableVal += rawCodFee;
+    }
+
+    return Object.values(summaryMap);
+  }, [itemBreakdowns, isIntraState, shippingCost, shippingTaxable, shippingGstRate, shippingCgst, shippingSgst, shippingIgst, shippingTax, isCod, rawCodFee]);
+
+  const hsnTotalTaxable = (hsnSummaryList || []).reduce((s, it) => s + (it.taxableVal || 0), 0);
+  const hsnTotalCgst = (hsnSummaryList || []).reduce((s, it) => s + (it.cgst || 0), 0);
+  const hsnTotalSgst = (hsnSummaryList || []).reduce((s, it) => s + (it.sgst || 0), 0);
+  const hsnTotalTax = (hsnSummaryList || []).reduce((s, it) => s + (it.totalTax || 0), 0);
 
   // Logistics tracking resolution
   const logisticsStatus = String(order.overallStatus || order.status || '').toLowerCase().replace(/_/g, ' ');
@@ -1382,7 +1463,10 @@ function TaxInvoiceModalContent({ isOpen, onClose, order, allOrders = [], initia
                     <tr key={idx} className="hover:bg-gray-50/50">
                       <td className="py-2.5 px-3">
                         <p className="font-bold text-gray-900 leading-snug">{item.name}</p>
-                        <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium mt-0.5">
+                        <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium mt-0.5 flex-wrap">
+                          <span className="font-mono font-bold text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[9.5px]">
+                            HSN: {item.hsn}
+                          </span>
                           {sizeInfo && (
                             <span>Size: <strong className="text-gray-700">{sizeInfo}</strong></span>
                           )}
@@ -1635,6 +1719,78 @@ function TaxInvoiceModalContent({ isOpen, onClose, order, allOrders = [], initia
                 </tr>
               </tfoot>
             </table>
+          </div>
+
+          {/* HSN / SAC Wise Tax Breakdown Table (Statutory GSTR-1 Table 12 Compliance) */}
+          <div className="border border-gray-200 rounded-xl overflow-hidden text-xs bg-white shadow-xs">
+            <div className="bg-gray-50 px-3.5 py-2 border-b border-gray-200 flex items-center justify-between">
+              <h4 className="font-extrabold text-[10.5px] text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                <span>📊</span> HSN / SAC Wise Tax Summary (GSTR-1 Table 12)
+              </h4>
+              <span className="text-[10px] font-bold text-gray-500 font-mono">
+                {hsnSummaryList.length} {hsnSummaryList.length === 1 ? 'Tax Slab' : 'Tax Slabs'}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[550px]">
+                <thead>
+                  <tr className="bg-gray-100/70 text-gray-600 border-b border-gray-200 font-bold uppercase text-[9.5px]">
+                    <th className="py-2 px-3">HSN/SAC</th>
+                    <th className="py-2 px-3">Taxable Value</th>
+                    {isIntraState ? (
+                      <>
+                        <th className="py-2 px-3 text-right">CGST</th>
+                        <th className="py-2 px-3 text-right">SGST</th>
+                      </>
+                    ) : (
+                      <th className="py-2 px-3 text-right">IGST</th>
+                    )}
+                    <th className="py-2 px-3 text-right pr-3.5">Total Tax Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-[11px]">
+                  {hsnSummaryList.map((entry, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50/50">
+                      <td className="py-2 px-3 font-mono font-bold text-teal-800">
+                        <span>{entry.hsn}</span>
+                        <span className="font-sans font-normal text-[10px] text-gray-500 ml-1.5">({entry.desc})</span>
+                      </td>
+                      <td className="py-2 px-3 font-mono text-gray-700">₹{entry.taxableVal.toFixed(2)}</td>
+                      {isIntraState ? (
+                        <>
+                          <td className="py-2 px-3 text-right font-mono text-gray-600">
+                            {entry.cgst > 0 ? `₹${entry.cgst.toFixed(2)} (${entry.rate / 2}%)` : '₹0.00'}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-gray-600">
+                            {entry.sgst > 0 ? `₹${entry.sgst.toFixed(2)} (${entry.rate / 2}%)` : '₹0.00'}
+                          </td>
+                        </>
+                      ) : (
+                        <td className="py-2 px-3 text-right font-mono text-gray-600">
+                          {entry.igst > 0 ? `₹${entry.igst.toFixed(2)} (${entry.rate}%)` : '₹0.00'}
+                        </td>
+                      )}
+                      <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 pr-3.5">₹{entry.totalTax.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-gray-50 font-bold border-t border-gray-200 text-[10.5px]">
+                  <tr>
+                    <td className="py-2 px-3 uppercase text-gray-700 font-black">HSN Total:</td>
+                    <td className="py-2 px-3 font-mono text-gray-900 font-bold">₹{hsnTotalTaxable.toFixed(2)}</td>
+                    {isIntraState ? (
+                      <>
+                        <td className="py-2 px-3 text-right font-mono text-teal-800">₹{hsnTotalCgst.toFixed(2)}</td>
+                        <td className="py-2 px-3 text-right font-mono text-teal-800">₹{hsnTotalSgst.toFixed(2)}</td>
+                      </>
+                    ) : (
+                      <td className="py-2 px-3 text-right font-mono text-teal-800">₹{hsnTotalTax.toFixed(2)}</td>
+                    )}
+                    <td className="py-2 px-3 text-right font-mono font-black text-gray-900 pr-3.5">₹{hsnTotalTax.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
 
           {/* Financial Settlement & Summary */}
