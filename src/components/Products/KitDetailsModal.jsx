@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Check, ShoppingCart, Info } from 'lucide-react';
+import { X, Check, ShoppingCart, Info, Sparkles } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { resolveImageUrl } from '../../utils/api';
 
