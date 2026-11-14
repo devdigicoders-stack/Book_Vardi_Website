@@ -712,6 +712,10 @@ export function normalizeKit(rawKit) {
 
     sizes.forEach(s => kitSizesSet.add(String(s).trim()));
 
+    const variants = (Array.isArray(item.sizeVariants) && item.sizeVariants.length > 0)
+      ? item.sizeVariants
+      : (item.productId && typeof item.productId === 'object' && Array.isArray(item.productId.sizeVariants) ? item.productId.sizeVariants : []);
+
     return {
       ...item,
       id: String(item.id || item._id || idx + 1),
@@ -720,6 +724,7 @@ export function normalizeKit(rawKit) {
       originalPrice: Number(item.originalPrice ?? item.mrp ?? item.unitPrice ?? 0),
       size: item.size || sizes[0] || '',
       availableSizes: sizes,
+      sizeVariants: variants,
       color: item.color || '',
       image: item.image || image
     };

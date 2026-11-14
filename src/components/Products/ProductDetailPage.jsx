@@ -38,6 +38,7 @@ import { getProductPaymentRestrictions } from '../../utils/paymentRestrictions';
 import { isCouponApplicableToProduct } from '../../utils/couponApplicability';
 import GrabKitSection from './GrabKitSection';
 import { getProductStockUnit, formatStockQty } from '../../utils/stockUnitHelper';
+import { getItemVariantForSize, getItemPriceForSize, getItemMrpForSize } from './KitDetailsModal';
 
 export { getProductPaymentRestrictions };
 
@@ -382,12 +383,19 @@ export default function ProductDetailPage({ onNavigate }) {
   };
 
   const normalizedKitItems = isKitProduct && Array.isArray(selectedProduct?.kitItems)
-    ? selectedProduct.kitItems.map((item, idx) => ({
-        ...item,
-        id: String(item.id || item._id || idx),
-        price: Number(item.price || 0),
-        availableSizes: getItemAvailableSizes(item)
-      }))
+    ? selectedProduct.kitItems.map((item, idx) => {
+        const variants = (Array.isArray(item.sizeVariants) && item.sizeVariants.length > 0)
+          ? item.sizeVariants
+          : (item.productId && typeof item.productId === 'object' && Array.isArray(item.productId.sizeVariants) ? item.productId.sizeVariants : []);
+        return {
+          ...item,
+          id: String(item.id || item._id || idx),
+          price: Number(item.price || item.unitPrice || 0),
+          originalPrice: Number(item.originalPrice || item.mrp || item.unitPrice || 0),
+          availableSizes: getItemAvailableSizes(item),
+          sizeVariants: variants
+        };
+      })
     : [];
 
   const kitAvailableSizes = useMemo(() => {
@@ -415,8 +423,9 @@ export default function ProductDetailPage({ onNavigate }) {
     setKitItemSizes(prev => {
       const updated = { ...prev };
       normalizedKitItems.forEach(item => {
-        if (item.availableSizes.includes(masterSize)) {
-          updated[item.id] = masterSize;
+        const hasSize = (item.availableSizes || []).some(s => String(s).trim().toLowerCase() === String(masterSize).trim().toLowerCase());
+        if (hasSize) {
+          updated[item.id] = String(masterSize).trim();
         } else if (item.availableSizes.length > 0 && !updated[item.id]) {
           updated[item.id] = item.availableSizes[0];
         }
@@ -428,27 +437,60 @@ export default function ProductDetailPage({ onNavigate }) {
   const handleKitItemSizeChange = (itemId, newSize) => {
     setKitItemSizes(prev => ({
       ...prev,
-      [itemId]: newSize
+      [itemId]: String(newSize).trim()
     }));
   };
 
   const isCustomizedKit = isKitProduct && (selectedBundleItems.length !== normalizedKitItems.length);
 
-  const kitSubtotal = normalizedKitItems
-    .filter((item) => selectedBundleItems.includes(item.id))
-    .reduce((sum, item) => sum + item.price, 0);
+  const baseKitItemsTotal = normalizedKitItems.reduce((sum, item) => sum + (Number(item.price || item.unitPrice || 0) * (item.quantity || 1)), 0);
+  const baseKitDiscountRatio = (baseKitItemsTotal > 0 && currentPrice > 0 && currentPrice < baseKitItemsTotal)
+    ? (currentPrice / baseKitItemsTotal)
+    : 1;
 
-  const effectiveProductPrice = (isKitProduct && isCustomizedKit) ? kitSubtotal : currentPrice;
+  const currentKitItemsTotal = normalizedKitItems
+    .filter((item) => selectedBundleItems.includes(item.id))
+    .reduce((sum, item) => {
+      const sz = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+      const vPrice = getItemPriceForSize(item, sz);
+      const qty = item.quantity || 1;
+      return sum + (vPrice * qty);
+    }, 0);
+
+  const currentKitItemsOriginalTotal = normalizedKitItems
+    .filter((item) => selectedBundleItems.includes(item.id))
+    .reduce((sum, item) => {
+      const sz = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+      const vMrp = getItemMrpForSize(item, sz);
+      const qty = item.quantity || 1;
+      return sum + (vMrp * qty);
+    }, 0);
+
+  const fullKitDynamicPrice = baseKitDiscountRatio < 1
+    ? Math.round(currentKitItemsTotal * baseKitDiscountRatio)
+    : currentKitItemsTotal;
+
+  const kitSubtotal = currentKitItemsTotal;
+  const effectiveProductPrice = (isKitProduct && isCustomizedKit) ? currentKitItemsTotal : (isKitProduct ? fullKitDynamicPrice : currentPrice);
+  const effectiveProductMrp = isKitProduct ? (currentKitItemsOriginalTotal > effectiveProductPrice ? currentKitItemsOriginalTotal : Math.max(currentMrp, effectiveProductPrice)) : currentMrp;
 
   const selectedKitProducts = isKitProduct
     ? normalizedKitItems
         .filter((item) => selectedBundleItems.includes(item.id))
         .map((item) => {
           const chosenSize = kitItemSizes[item.id] || item.size || item.availableSizes[0] || '';
+          const vPrice = getItemPriceForSize(item, chosenSize);
+          const vMrp = getItemMrpForSize(item, chosenSize);
+          const qty = item.quantity || 1;
           return {
             ...item,
             size: chosenSize,
-            selectedSize: chosenSize
+            selectedSize: chosenSize,
+            price: vPrice,
+            unitPrice: vPrice,
+            totalPrice: vPrice * qty,
+            originalPrice: vMrp,
+            mrp: vMrp
           };
         })
     : [];
@@ -465,8 +507,8 @@ export default function ProductDetailPage({ onNavigate }) {
       : (selectedProduct?.id || selectedProduct?._id),
     name: isCustomizedKit ? `${selectedProduct?.name} (Custom Bundle)` : selectedProduct?.name,
     price: effectiveProductPrice,
-    originalPrice: isCustomizedKit ? kitSubtotal : currentMrp,
-    mrp: isCustomizedKit ? kitSubtotal : currentMrp,
+    originalPrice: effectiveProductMrp,
+    mrp: effectiveProductMrp,
     stock: currentVariantStock,
     stockQuantity: currentVariantStock,
     image: variantImageOverride || activeVariant?.image || selectedProduct?.image,
@@ -1751,9 +1793,23 @@ export default function ProductDetailPage({ onNavigate }) {
                             </div>
 
                             <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pl-7 sm:pl-0">
-                              <span className={`text-xs font-extrabold ${isChecked ? 'text-brand-teal' : 'text-gray-400'}`}>
-                                ₹{item.price}
-                              </span>
+                              {(() => {
+                                const currentItemSize = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+                                const currentItemPrice = getItemPriceForSize(item, currentItemSize);
+                                const currentItemMrp = getItemMrpForSize(item, currentItemSize);
+                                return (
+                                  <div className="text-right">
+                                    <span className={`text-xs font-black font-mono ${isChecked ? 'text-brand-teal' : 'text-gray-400'}`}>
+                                      ₹{currentItemPrice.toFixed(2)}
+                                    </span>
+                                    {currentItemMrp > currentItemPrice && (
+                                      <span className="block text-[10px] text-gray-400 line-through font-mono">
+                                        ₹{currentItemMrp.toFixed(2)}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         );

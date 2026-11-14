@@ -3,6 +3,45 @@ import { X, Check, ShoppingCart, Info, Sparkles } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { resolveImageUrl } from '../../utils/api';
 
+export const getItemVariantForSize = (item, selectedSize) => {
+  if (!item) return null;
+  const variants = item.sizeVariants || item.variants || item.productId?.sizeVariants || item.productId?.variants || [];
+  if (!Array.isArray(variants) || variants.length === 0 || !selectedSize) return null;
+  const cleanSel = String(selectedSize).replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+  let match = variants.find(v => {
+    const vSize = String(typeof v === 'object' ? (v.size ?? v.measureValue ?? v.name ?? '') : v).replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+    return vSize === cleanSel;
+  });
+  if (!match) {
+    match = variants.find(v => {
+      const vSize = String(typeof v === 'object' ? (v.size ?? v.measureValue ?? v.name ?? '') : v).trim().toLowerCase();
+      const s = String(selectedSize).trim().toLowerCase();
+      return vSize === s || vSize.includes(s) || s.includes(vSize);
+    });
+  }
+  return match && typeof match === 'object' ? match : null;
+};
+
+export const getItemPriceForSize = (item, selectedSize) => {
+  if (!item) return 0;
+  const variant = getItemVariantForSize(item, selectedSize);
+  if (variant) {
+    const vPrice = Number(variant.price !== undefined ? variant.price : (variant.sellingPrice || variant.finalPrice));
+    if (!isNaN(vPrice) && vPrice > 0) return vPrice;
+  }
+  return Number(item.price !== undefined ? item.price : (item.unitPrice || 0));
+};
+
+export const getItemMrpForSize = (item, selectedSize) => {
+  if (!item) return 0;
+  const variant = getItemVariantForSize(item, selectedSize);
+  if (variant) {
+    const vMrp = Number(variant.mrp !== undefined ? variant.mrp : (variant.originalPrice || variant.regularPrice));
+    if (!isNaN(vMrp) && vMrp > 0) return vMrp;
+  }
+  return Number(item.originalPrice !== undefined ? item.originalPrice : (item.mrp || item.unitPrice || 0));
+};
+
 export default function KitDetailsModal({ isOpen, onClose, kit }) {
   const { addToCart, openProductDetails } = useCart();
 
@@ -45,6 +84,10 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
 
   const kitItems = (kit.items || kit.kitItems || []).map((item, idx) => {
     const avSizes = getItemAvailableSizes(item);
+    const variants = (Array.isArray(item.sizeVariants) && item.sizeVariants.length > 0)
+      ? item.sizeVariants
+      : (item.productId && typeof item.productId === 'object' && Array.isArray(item.productId.sizeVariants) ? item.productId.sizeVariants : []);
+
     return {
       ...item,
       id: String(item.id || item._id || item.productId || `item-${idx}`),
@@ -54,6 +97,7 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
       quantity: Math.max(1, Number(item.quantity || 1)),
       size: item.size || avSizes[0] || '',
       availableSizes: avSizes,
+      sizeVariants: variants,
       image: resolveImageUrl(item.image)
     };
   });
@@ -88,8 +132,9 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
     setKitItemSizes(prev => {
       const updated = { ...prev };
       kitItems.forEach(it => {
-        if (it.availableSizes.includes(sz)) {
-          updated[it.id] = sz;
+        const hasSize = (it.availableSizes || []).some(s => String(s).trim().toLowerCase() === String(sz).trim().toLowerCase());
+        if (hasSize) {
+          updated[it.id] = String(sz).trim();
         }
       });
       return updated;
@@ -99,7 +144,7 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
   const handleItemSizeChange = (itemId, sz) => {
     setKitItemSizes(prev => ({
       ...prev,
-      [itemId]: sz
+      [itemId]: String(sz).trim()
     }));
   };
 
@@ -110,7 +155,6 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
   const kitOriginalPrice = Number(kit.totalMrp !== undefined ? kit.totalMrp : (kit.mrp !== undefined ? kit.mrp : (kit.originalPrice || 0)));
   const kitImage = resolveImageUrl(kit.image || (Array.isArray(kit.images) && kit.images.length > 0 ? kit.images[0] : ''));
   const kitSubtitle = kit.subtitle || kit.description || '';
-  const discountBadge = kit.discountBadge || (kitOriginalPrice > kitPrice ? `${Math.round(((kitOriginalPrice - kitPrice) / kitOriginalPrice) * 100)}% OFF` : null);
 
   const [selectedItems, setSelectedItems] = useState(() => ({
     [kitId]: kitItems.map(i => i.id)
@@ -147,37 +191,80 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
   // Determine if the user has customized the bundle (selected subset or modified quantities)
   const isCustomized = selectedIds.length !== kitItems.length || kitItems.some(i => (itemQuantities[i.id] || 1) !== i.quantity);
 
-  const subtotal = kitItems
-    .filter((item) => selectedIds.includes(item.id))
-    .reduce((sum, item) => sum + (item.price * (itemQuantities[item.id] || 1)), 0);
+  // Base bundle baseline items total
+  const baseItemsTotal = kitItems.reduce((sum, item) => sum + (Number(item.price || item.unitPrice || 0) * (item.quantity || 1)), 0);
+  const bundleDiscountRatio = (baseItemsTotal > 0 && kitPrice > 0 && kitPrice < baseItemsTotal)
+    ? (kitPrice / baseItemsTotal)
+    : 1;
 
-  const subtotalOriginal = kitItems
+  // Active prices dynamically calculated based on selected variant sizes
+  const currentItemsTotal = kitItems
     .filter((item) => selectedIds.includes(item.id))
-    .reduce((sum, item) => sum + ((item.originalPrice || item.price) * (itemQuantities[item.id] || 1)), 0);
+    .reduce((sum, item) => {
+      const sz = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+      const price = getItemPriceForSize(item, sz);
+      const qty = itemQuantities[item.id] || 1;
+      return sum + (price * qty);
+    }, 0);
+
+  const currentItemsOriginalTotal = kitItems
+    .filter((item) => selectedIds.includes(item.id))
+    .reduce((sum, item) => {
+      const sz = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+      const mrp = getItemMrpForSize(item, sz);
+      const qty = itemQuantities[item.id] || 1;
+      return sum + (mrp * qty);
+    }, 0);
+
+  // Dynamic Full Bundle Price scales with variants while preserving bundle discount!
+  const fullBundleCurrentPrice = bundleDiscountRatio < 1
+    ? Math.round(currentItemsTotal * bundleDiscountRatio)
+    : currentItemsTotal;
 
   // Auto-calculated effective price
-  const effectivePrice = isCustomized ? subtotal : kitPrice;
-  const effectiveOriginalPrice = isCustomized ? subtotalOriginal : kitOriginalPrice;
+  const effectivePrice = isCustomized ? currentItemsTotal : fullBundleCurrentPrice;
+  const effectiveOriginalPrice = currentItemsOriginalTotal > effectivePrice ? currentItemsOriginalTotal : Math.max(kitOriginalPrice, effectivePrice);
+  const discountBadge = kit.discountBadge || (effectiveOriginalPrice > effectivePrice ? `${Math.round(((effectiveOriginalPrice - effectivePrice) / effectiveOriginalPrice) * 100)}% OFF` : null);
 
   const handleAddSelected = () => {
     const selectedProducts = kitItems
       .filter((item) => selectedIds.includes(item.id))
       .map((item) => {
         const sz = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+        const vPrice = getItemPriceForSize(item, sz);
+        const vMrp = getItemMrpForSize(item, sz);
+        const qty = itemQuantities[item.id] || 1;
         return {
           ...item,
-          quantity: itemQuantities[item.id] || 1,
+          quantity: qty,
           size: sz,
-          selectedSize: sz
+          selectedSize: sz,
+          price: vPrice,
+          unitPrice: vPrice,
+          totalPrice: vPrice * qty,
+          originalPrice: vMrp,
+          mrp: vMrp
         };
       });
 
-    const bundleItems = selectedProducts.length ? selectedProducts : kitItems.map(item => ({
-      ...item,
-      size: kitItemSizes[item.id] || item.size || '',
-      selectedSize: kitItemSizes[item.id] || item.size || ''
-    }));
-    const bundlePrice = isCustomized ? subtotal : kitPrice;
+    const bundleItems = selectedProducts.length ? selectedProducts : kitItems.map(item => {
+      const sz = kitItemSizes[item.id] || item.size || '';
+      const vPrice = getItemPriceForSize(item, sz);
+      const vMrp = getItemMrpForSize(item, sz);
+      const qty = itemQuantities[item.id] || 1;
+      return {
+        ...item,
+        quantity: qty,
+        size: sz,
+        selectedSize: sz,
+        price: vPrice,
+        unitPrice: vPrice,
+        totalPrice: vPrice * qty,
+        originalPrice: vMrp,
+        mrp: vMrp
+      };
+    });
+    const bundlePrice = isCustomized ? currentItemsTotal : fullBundleCurrentPrice;
 
     const sizeSummary = bundleItems
       .filter(it => it.size)
@@ -190,6 +277,8 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
       kitId: kitId,
       name: isCustomized ? `${kitName} (Custom Bundle)` : `${kitName} (Full Bundle)`,
       price: bundlePrice,
+      originalPrice: effectiveOriginalPrice,
+      mrp: effectiveOriginalPrice,
       kitItems: bundleItems,
       selectedSize: selectedMasterSize ? `Size ${selectedMasterSize}` : (bundleItems[0]?.size ? `Size ${bundleItems[0].size}` : 'Standard'),
       variantName: sizeSummary || (selectedMasterSize ? `Kit Size ${selectedMasterSize}` : 'Standard Kit'),
@@ -203,11 +292,23 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
   };
 
   const handleBuyFullKit = () => {
-    const bundleItems = kitItems.map(item => ({
-      ...item,
-      size: kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '',
-      selectedSize: kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || ''
-    }));
+    const bundleItems = kitItems.map(item => {
+      const sz = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+      const vPrice = getItemPriceForSize(item, sz);
+      const vMrp = getItemMrpForSize(item, sz);
+      const qty = itemQuantities[item.id] || 1;
+      return {
+        ...item,
+        quantity: qty,
+        size: sz,
+        selectedSize: sz,
+        price: vPrice,
+        unitPrice: vPrice,
+        totalPrice: vPrice * qty,
+        originalPrice: vMrp,
+        mrp: vMrp
+      };
+    });
 
     const sizeSummary = bundleItems
       .filter(it => it.size)
@@ -219,7 +320,9 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
       id: `${kitId}-${selectedMasterSize || 'std'}`,
       kitId: kitId,
       name: `${kitName} (Full Bundle)`,
-      price: kitPrice,
+      price: fullBundleCurrentPrice,
+      originalPrice: effectiveOriginalPrice,
+      mrp: effectiveOriginalPrice,
       image: kitImage,
       category: 'kits',
       bundleType: 'kit',
@@ -374,8 +477,10 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
               {kitItems.map((item) => {
                 const isSelected = selectedIds.includes(item.id);
                 const itemQty = itemQuantities[item.id] || 1;
-                const itemLineTotal = item.price * itemQty;
                 const currentItemSize = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+                const currentItemPrice = getItemPriceForSize(item, currentItemSize);
+                const currentItemMrp = getItemMrpForSize(item, currentItemSize);
+                const itemLineTotal = currentItemPrice * itemQty;
 
                 return (
                   <div
@@ -397,13 +502,14 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
                       <div className="min-w-0 flex-1">
                         <p className="text-xs sm:text-sm font-bold text-gray-800 truncate">{item.name}</p>
                         
-                        {/* Item Size Modifier */}
+                        {/* Item Size Modifier & Dynamic Rate */}
                         {item.availableSizes && item.availableSizes.length > 0 ? (
-                          <div className="flex items-center gap-1.5 mt-1" onClick={(e) => e.stopPropagation()}>
-                            <span className="text-[10px] font-bold text-gray-500 uppercase">Size:</span>
+                          <div className="flex flex-col gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-[10px] font-bold text-gray-500 uppercase">Size:</span>
                               {item.availableSizes.map((sz) => {
                                 const isItemSzSel = String(currentItemSize) === String(sz);
+                                const szPrice = getItemPriceForSize(item, sz);
                                 return (
                                   <button
                                     key={sz}
@@ -414,19 +520,26 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
                                     }}
                                     className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
                                       isItemSzSel
-                                        ? 'bg-brand-teal text-white font-black'
+                                        ? 'bg-brand-teal text-white font-black shadow-2xs scale-105'
                                         : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
                                     }`}
+                                    title={`Size ${sz}: ₹${szPrice.toFixed(2)}`}
                                   >
                                     {sz}
                                   </button>
                                 );
                               })}
                             </div>
+                            <div className="flex items-baseline gap-1.5 text-[11px] text-gray-600 font-mono">
+                              <span>Rate: <strong className="text-gray-900 font-black">₹{currentItemPrice.toFixed(2)}</strong></span>
+                              {currentItemMrp > currentItemPrice && (
+                                <span className="line-through text-gray-400 text-[10px]">₹{currentItemMrp.toFixed(2)}</span>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           <p className="text-[11px] text-gray-500 font-mono mt-0.5">
-                            Unit Price: ₹{item.price.toFixed(2)} {currentItemSize ? `• Size: ${currentItemSize}` : ''}
+                            Unit Price: <strong className="text-gray-900">₹{currentItemPrice.toFixed(2)}</strong> {currentItemSize ? `• Size: ${currentItemSize}` : ''}
                           </p>
                         )}
                       </div>
@@ -504,7 +617,7 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
               className="inline-flex items-center gap-2 bg-brand-yellow hover:bg-brand-yellow-hover text-brand-teal-dark font-black px-6 py-2.5 rounded-xl text-xs transition-all shadow-md active:scale-95 w-full sm:w-auto justify-center cursor-pointer"
             >
               <ShoppingCart size={15} />
-              <span>Add Full Bundle (₹{kitPrice.toFixed(2)})</span>
+              <span>Add Full Bundle (₹{effectivePrice.toFixed(2)})</span>
             </button>
           )}
         </div>
