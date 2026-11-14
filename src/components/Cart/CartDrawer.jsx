@@ -240,8 +240,9 @@ export default function CartDrawer({ onNavigate }) {
                       )}
                     </div>
                     {item.bundleType === 'kit' && item.kitItems?.length > 0 && (
-                      <div className="text-[10px] text-gray-500 mt-1 line-clamp-2">
-                        Includes: {item.kitItems.map((kitItem) => kitItem.name).join(', ')}
+                      <div className="text-[10px] text-gray-600 mt-1.5 bg-gray-50 p-1.5 rounded-lg border border-gray-100">
+                        <span className="font-bold text-gray-700">Bundle Articles:</span>{' '}
+                        {item.kitItems.map((kitItem) => `${kitItem.name}${kitItem.size ? ` [Size: ${kitItem.size}]` : ''}`).join(', ')}
                       </div>
                     )}
 

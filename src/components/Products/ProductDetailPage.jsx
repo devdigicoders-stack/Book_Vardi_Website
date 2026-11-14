@@ -165,6 +165,8 @@ export default function ProductDetailPage({ onNavigate }) {
   const [helpfulVotes, setHelpfulVotes] = useState({});
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [selectedBundleItems, setSelectedBundleItems] = useState([]);
+  const [kitItemSizes, setKitItemSizes] = useState({});
+  const [selectedKitMasterSize, setSelectedKitMasterSize] = useState(null);
   const [selectedCouponForDetails, setSelectedCouponForDetails] = useState(null);
   const [showAllCouponsModal, setShowAllCouponsModal] = useState(false);
   const [appliedProductCouponMap, setAppliedProductCouponMap] = useState({});
@@ -347,13 +349,88 @@ export default function ProductDetailPage({ onNavigate }) {
     (Array.isArray(selectedProduct?.kitItems) && selectedProduct.kitItems.length > 0)
   );
 
+  const getItemAvailableSizes = (item) => {
+    if (!item) return [];
+    if (Array.isArray(item.availableSizes) && item.availableSizes.length > 0) {
+      return item.availableSizes.map(s => String(s).trim()).filter(Boolean);
+    }
+    if (Array.isArray(item.sizes) && item.sizes.length > 0) {
+      return item.sizes.map(s => String(s).trim()).filter(Boolean);
+    }
+    if (item.productId && typeof item.productId === 'object') {
+      if (Array.isArray(item.productId.sizes) && item.productId.sizes.length > 0) {
+        return item.productId.sizes.map(s => String(s).trim()).filter(Boolean);
+      }
+      if (Array.isArray(item.productId.sizeVariants) && item.productId.sizeVariants.length > 0) {
+        return item.productId.sizeVariants
+          .map(v => typeof v === 'object' ? (v.size || v.measureValue) : v)
+          .map(s => String(s).trim())
+          .filter(Boolean);
+      }
+    }
+    const match = (item.name || '').match(/\b(1[6-8]|2[0-9]|3[0-9]|4[0-4]|XS|S|M|L|XL|2XL|3XL)\b/i);
+    const baseNum = parseInt(match ? match[1] : item.size);
+    if (!isNaN(baseNum) && baseNum >= 18 && baseNum <= 42) {
+      return ['20', '22', '24', '26', '28', '30', '32', '34', '36'].filter(
+        s => Math.abs(parseInt(s) - baseNum) <= 8
+      );
+    }
+    if (item.size && String(item.size).trim()) {
+      return [String(item.size).trim()];
+    }
+    return [];
+  };
+
   const normalizedKitItems = isKitProduct && Array.isArray(selectedProduct?.kitItems)
     ? selectedProduct.kitItems.map((item, idx) => ({
         ...item,
         id: String(item.id || item._id || idx),
-        price: Number(item.price || 0)
+        price: Number(item.price || 0),
+        availableSizes: getItemAvailableSizes(item)
       }))
     : [];
+
+  const kitAvailableSizes = useMemo(() => {
+    if (!isKitProduct) return [];
+    const set = new Set();
+    if (Array.isArray(selectedProduct?.sizes)) {
+      selectedProduct.sizes.forEach(s => set.add(String(s).trim()));
+    }
+    if (Array.isArray(selectedProduct?.availableSizes)) {
+      selectedProduct.availableSizes.forEach(s => set.add(String(s).trim()));
+    }
+    normalizedKitItems.forEach(item => {
+      item.availableSizes.forEach(s => set.add(String(s).trim()));
+    });
+    return Array.from(set).filter(Boolean).sort((a, b) => {
+      const numA = parseInt(a);
+      const numB = parseInt(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+  }, [isKitProduct, selectedProduct, normalizedKitItems]);
+
+  const handleSelectKitMasterSize = (masterSize) => {
+    setSelectedKitMasterSize(masterSize);
+    setKitItemSizes(prev => {
+      const updated = { ...prev };
+      normalizedKitItems.forEach(item => {
+        if (item.availableSizes.includes(masterSize)) {
+          updated[item.id] = masterSize;
+        } else if (item.availableSizes.length > 0 && !updated[item.id]) {
+          updated[item.id] = item.availableSizes[0];
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleKitItemSizeChange = (itemId, newSize) => {
+    setKitItemSizes(prev => ({
+      ...prev,
+      [itemId]: newSize
+    }));
+  };
 
   const isCustomizedKit = isKitProduct && (selectedBundleItems.length !== normalizedKitItems.length);
 
@@ -364,13 +441,27 @@ export default function ProductDetailPage({ onNavigate }) {
   const effectiveProductPrice = (isKitProduct && isCustomizedKit) ? kitSubtotal : currentPrice;
 
   const selectedKitProducts = isKitProduct
-    ? normalizedKitItems.filter((item) => selectedBundleItems.includes(item.id))
+    ? normalizedKitItems
+        .filter((item) => selectedBundleItems.includes(item.id))
+        .map((item) => {
+          const chosenSize = kitItemSizes[item.id] || item.size || item.availableSizes[0] || '';
+          return {
+            ...item,
+            size: chosenSize,
+            selectedSize: chosenSize
+          };
+        })
     : [];
+
+  const kitSizeSummary = selectedKitProducts
+    .filter(it => it.size)
+    .map(it => `${it.name.replace(/\s*\(\d+\)/, '')}: Size ${it.size}`)
+    .join(', ');
 
   const finalProductPayload = isKitProduct ? {
     ...selectedProduct,
     id: isCustomizedKit
-      ? `kit-${selectedProduct?.id || selectedProduct?._id}-${selectedBundleItems.slice().sort().join('-')}`
+      ? `kit-${selectedProduct?.id || selectedProduct?._id}-${selectedBundleItems.slice().sort().join('-')}-${selectedKitMasterSize || 'std'}`
       : (selectedProduct?.id || selectedProduct?._id),
     name: isCustomizedKit ? `${selectedProduct?.name} (Custom Bundle)` : selectedProduct?.name,
     price: effectiveProductPrice,
@@ -380,6 +471,9 @@ export default function ProductDetailPage({ onNavigate }) {
     stockQuantity: currentVariantStock,
     image: variantImageOverride || activeVariant?.image || selectedProduct?.image,
     kitItems: selectedKitProducts.length > 0 ? selectedKitProducts : normalizedKitItems,
+    selectedSize: selectedKitMasterSize ? `Size ${selectedKitMasterSize}` : (selectedKitProducts[0]?.size ? `Size ${selectedKitProducts[0].size}` : 'Standard'),
+    variantName: kitSizeSummary || (selectedKitMasterSize ? `Kit Size ${selectedKitMasterSize}` : 'Standard Kit'),
+    kitSizeSummary,
     bundleType: 'kit'
   } : productPayload;
 
@@ -725,8 +819,22 @@ export default function ProductDetailPage({ onNavigate }) {
       if (isKit && Array.isArray(selectedProduct.kitItems)) {
         const allIds = selectedProduct.kitItems.map((item, idx) => String(item.id || item._id || idx));
         setSelectedBundleItems(allIds);
+
+        const initialSizes = {};
+        let firstMaster = null;
+        selectedProduct.kitItems.forEach((item, idx) => {
+          const itemId = String(item.id || item._id || idx);
+          const avSizes = getItemAvailableSizes(item);
+          const itemSz = item.size || avSizes[0] || '';
+          initialSizes[itemId] = itemSz;
+          if (!firstMaster && itemSz) firstMaster = itemSz;
+        });
+        setKitItemSizes(initialSizes);
+        if (firstMaster) setSelectedKitMasterSize(firstMaster);
       } else {
         setSelectedBundleItems([]);
+        setKitItemSizes({});
+        setSelectedKitMasterSize(null);
       }
     }
   }, [selectedProduct, isMeterProduct, minMeter]);
@@ -1528,30 +1636,126 @@ export default function ProductDetailPage({ onNavigate }) {
                         Total: ₹{isCustomizedKit ? kitSubtotal : currentPrice}
                       </span>
                     </div>
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+
+                    {/* Master Kit Uniform Size Selector */}
+                    {kitAvailableSizes.length > 0 && (
+                      <div className="p-3 bg-white rounded-xl border border-brand-teal/20 space-y-1.5 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-extrabold uppercase tracking-wider text-brand-teal flex items-center gap-1.5">
+                            <Sparkles size={13} className="text-brand-yellow" />
+                            <span>Select Kit Uniform Size:</span>
+                            {selectedKitMasterSize && (
+                              <span className="text-xs font-black bg-brand-teal text-white px-2 py-0.5 rounded-md">
+                                Size {selectedKitMasterSize}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[10px] font-semibold text-gray-500">
+                            Applies to bundle items
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          {kitAvailableSizes.map((sz) => {
+                            const isSel = String(selectedKitMasterSize) === String(sz);
+                            return (
+                              <button
+                                key={sz}
+                                type="button"
+                                onClick={() => handleSelectKitMasterSize(sz)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                                  isSel
+                                    ? 'bg-brand-teal text-white shadow-xs ring-2 ring-brand-teal/40 scale-105'
+                                    : 'bg-gray-50 hover:bg-white text-gray-700 border border-gray-200'
+                                }`}
+                              >
+                                Size {sz}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                       {normalizedKitItems.map((item, itemIdx) => {
                         const isChecked = selectedBundleItems.includes(item.id);
                         return (
-                          <button
+                          <div
                             key={item.id || `kit-item-${itemIdx}`}
-                            type="button"
-                            onClick={() => setSelectedBundleItems((prev) =>
-                              prev.includes(item.id)
-                                ? prev.filter((id) => id !== item.id)
-                                : [...prev, item.id]
-                            )}
-                            className={`w-full flex items-center justify-between rounded-xl border p-2.5 text-left transition-all cursor-pointer ${
-                              isChecked ? 'border-brand-teal bg-white shadow-2xs' : 'border-gray-200 bg-white/60 text-gray-400 hover:border-brand-teal/30'
+                            className={`w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border p-2.5 text-left transition-all ${
+                              isChecked ? 'border-brand-teal bg-white shadow-2xs' : 'border-gray-200 bg-white/60 text-gray-400'
                             }`}
                           >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isChecked ? 'bg-brand-teal border-brand-teal text-white' : 'border-gray-300 bg-white'}`}>
+                            <div
+                              onClick={() => setSelectedBundleItems((prev) =>
+                                prev.includes(item.id)
+                                  ? prev.filter((id) => id !== item.id)
+                                  : [...prev, item.id]
+                              )}
+                              className="flex items-start sm:items-center gap-3 cursor-pointer flex-1 min-w-0"
+                            >
+                              <div className={`w-4 h-4 mt-0.5 sm:mt-0 rounded border flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-brand-teal border-brand-teal text-white' : 'border-gray-300 bg-white'}`}>
                                 {isChecked && <Check size={10} strokeWidth={3} />}
                               </div>
-                              <span className={`text-xs font-bold ${isChecked ? 'text-gray-800' : 'text-gray-400 line-through'}`}>{item.name}</span>
+                              {item.image && (
+                                <img
+                                  src={resolveImageUrl(item.image)}
+                                  alt={item.name}
+                                  className="w-9 h-9 rounded object-cover border border-gray-100 shrink-0"
+                                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <span className={`text-xs font-bold leading-tight block ${isChecked ? 'text-gray-800' : 'text-gray-400 line-through'}`}>
+                                  {item.name}
+                                </span>
+
+                                {/* Item Size Modifier */}
+                                {item.availableSizes && item.availableSizes.length > 0 ? (
+                                  <div className="flex items-center gap-1.5 mt-1.5" onClick={(e) => e.stopPropagation()}>
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Size:</span>
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      {item.availableSizes.map((sz) => {
+                                        const currentItemSize = kitItemSizes[item.id] || item.size || item.availableSizes[0];
+                                        const isItemSzSel = String(currentItemSize) === String(sz);
+                                        return (
+                                          <button
+                                            key={sz}
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleKitItemSizeChange(item.id, sz);
+                                            }}
+                                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                                              isItemSzSel
+                                                ? 'bg-brand-teal text-white shadow-2xs font-black ring-1 ring-brand-teal'
+                                                : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
+                                            }`}
+                                          >
+                                            {sz}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ) : item.size ? (
+                                  <span className="text-[10px] font-semibold text-gray-400 mt-1 block">
+                                    Size: {item.size}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold text-gray-400 mt-1 block">
+                                    Free / Standard Size
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <span className={`text-xs font-extrabold ${isChecked ? 'text-brand-teal' : 'text-gray-400'}`}>₹{item.price}</span>
-                          </button>
+
+                            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pl-7 sm:pl-0">
+                              <span className={`text-xs font-extrabold ${isChecked ? 'text-brand-teal' : 'text-gray-400'}`}>
+                                ₹{item.price}
+                              </span>
+                            </div>
+                          </div>
                         );
                       })}
                     </div>

@@ -681,12 +681,51 @@ export function normalizeKit(rawKit) {
   const image = images[0];
 
   const rawItems = Array.isArray(rawKit.kitItems) ? rawKit.kitItems : (Array.isArray(rawKit.items) ? rawKit.items : []);
-  const kitItems = rawItems.map((item, idx) => ({
-    id: item.id || item._id || idx + 1,
-    name: item.name || 'Kit Essential Item',
-    price: Number(item.price ?? item.totalPrice ?? item.unitPrice ?? 0),
-    image: item.image || image
-  }));
+  const kitSizesSet = new Set(Array.isArray(rawKit.sizes) ? rawKit.sizes : (Array.isArray(rawKit.availableSizes) ? rawKit.availableSizes : []));
+
+  const kitItems = rawItems.map((item, idx) => {
+    let sizes = Array.isArray(item.availableSizes) && item.availableSizes.length > 0 ? [...item.availableSizes] : [];
+
+    if (sizes.length === 0 && Array.isArray(item.sizes) && item.sizes.length > 0) {
+      sizes = [...item.sizes];
+    }
+
+    if (sizes.length === 0 && item.productId && typeof item.productId === 'object') {
+      if (Array.isArray(item.productId.sizes) && item.productId.sizes.length > 0) {
+        sizes = item.productId.sizes;
+      } else if (Array.isArray(item.productId.sizeVariants) && item.productId.sizeVariants.length > 0) {
+        sizes = item.productId.sizeVariants
+          .map(v => typeof v === 'object' ? (v.size || v.measureValue) : v)
+          .filter(Boolean);
+      }
+    }
+
+    if (sizes.length === 0) {
+      const match = (item.name || '').match(/\b(1[6-8]|2[0-9]|3[0-9]|4[0-4]|XS|S|M|L|XL|2XL|3XL)\b/i);
+      const baseNum = parseInt(match ? match[1] : item.size);
+      if (!isNaN(baseNum) && baseNum >= 18 && baseNum <= 42) {
+        sizes = ['20', '22', '24', '26', '28', '30', '32', '34', '36'].filter(s => Math.abs(parseInt(s) - baseNum) <= 8);
+      } else if (item.size && String(item.size).trim()) {
+        sizes = [String(item.size).trim()];
+      }
+    }
+
+    sizes.forEach(s => kitSizesSet.add(String(s).trim()));
+
+    return {
+      ...item,
+      id: String(item.id || item._id || idx + 1),
+      name: item.name || 'Kit Essential Item',
+      price: Number(item.price ?? item.totalPrice ?? item.unitPrice ?? 0),
+      originalPrice: Number(item.originalPrice ?? item.mrp ?? item.unitPrice ?? 0),
+      size: item.size || sizes[0] || '',
+      availableSizes: sizes,
+      color: item.color || '',
+      image: item.image || image
+    };
+  });
+
+  const combinedSizes = Array.from(kitSizesSet).filter(Boolean);
 
   return {
     ...rawKit,
@@ -705,6 +744,8 @@ export function normalizeKit(rawKit) {
     inStock,
     image,
     images,
+    sizes: combinedSizes,
+    availableSizes: combinedSizes,
     kitItems
   };
 }

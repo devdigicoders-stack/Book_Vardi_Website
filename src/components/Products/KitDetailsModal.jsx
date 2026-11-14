@@ -11,15 +11,97 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
   if (appStat !== 'approved' || kit.isDeleted || kit.status === 'deleted' || kit.status === 'inactive') return null;
 
   const kitId = kit.id || kit._id || 'kit';
-  const kitItems = (kit.items || kit.kitItems || []).map((item, idx) => ({
-    ...item,
-    id: String(item.id || item._id || item.productId || `item-${idx}`),
-    name: item.name || item.title || 'Constituent Item',
-    price: Number(item.price !== undefined ? item.price : (item.unitPrice || 0)),
-    originalPrice: Number(item.originalPrice !== undefined ? item.originalPrice : (item.mrp || item.unitPrice || 0)),
-    quantity: Math.max(1, Number(item.quantity || 1)),
-    image: resolveImageUrl(item.image)
-  }));
+  const getItemAvailableSizes = (item) => {
+    if (!item) return [];
+    if (Array.isArray(item.availableSizes) && item.availableSizes.length > 0) {
+      return item.availableSizes.map(s => String(s).trim()).filter(Boolean);
+    }
+    if (Array.isArray(item.sizes) && item.sizes.length > 0) {
+      return item.sizes.map(s => String(s).trim()).filter(Boolean);
+    }
+    if (item.productId && typeof item.productId === 'object') {
+      if (Array.isArray(item.productId.sizes) && item.productId.sizes.length > 0) {
+        return item.productId.sizes.map(s => String(s).trim()).filter(Boolean);
+      }
+      if (Array.isArray(item.productId.sizeVariants) && item.productId.sizeVariants.length > 0) {
+        return item.productId.sizeVariants
+          .map(v => typeof v === 'object' ? (v.size || v.measureValue) : v)
+          .map(s => String(s).trim())
+          .filter(Boolean);
+      }
+    }
+    const match = (item.name || '').match(/\b(1[6-8]|2[0-9]|3[0-9]|4[0-4]|XS|S|M|L|XL|2XL|3XL)\b/i);
+    const baseNum = parseInt(match ? match[1] : item.size);
+    if (!isNaN(baseNum) && baseNum >= 18 && baseNum <= 42) {
+      return ['20', '22', '24', '26', '28', '30', '32', '34', '36'].filter(
+        s => Math.abs(parseInt(s) - baseNum) <= 8
+      );
+    }
+    if (item.size && String(item.size).trim()) {
+      return [String(item.size).trim()];
+    }
+    return [];
+  };
+
+  const kitItems = (kit.items || kit.kitItems || []).map((item, idx) => {
+    const avSizes = getItemAvailableSizes(item);
+    return {
+      ...item,
+      id: String(item.id || item._id || item.productId || `item-${idx}`),
+      name: item.name || item.title || 'Constituent Item',
+      price: Number(item.price !== undefined ? item.price : (item.unitPrice || 0)),
+      originalPrice: Number(item.originalPrice !== undefined ? item.originalPrice : (item.mrp || item.unitPrice || 0)),
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      size: item.size || avSizes[0] || '',
+      availableSizes: avSizes,
+      image: resolveImageUrl(item.image)
+    };
+  });
+
+  const kitAvailableSizes = useMemo(() => {
+    const set = new Set();
+    if (Array.isArray(kit.sizes)) kit.sizes.forEach(s => set.add(String(s).trim()));
+    if (Array.isArray(kit.availableSizes)) kit.availableSizes.forEach(s => set.add(String(s).trim()));
+    kitItems.forEach(it => it.availableSizes.forEach(s => set.add(String(s).trim())));
+    return Array.from(set).filter(Boolean).sort((a, b) => {
+      const numA = parseInt(a);
+      const numB = parseInt(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+  }, [kit, kitItems]);
+
+  const [kitItemSizes, setKitItemSizes] = useState(() => {
+    const initial = {};
+    kitItems.forEach(it => {
+      initial[it.id] = it.size || it.availableSizes[0] || '';
+    });
+    return initial;
+  });
+
+  const [selectedMasterSize, setSelectedMasterSize] = useState(() => {
+    return kitAvailableSizes[0] || null;
+  });
+
+  const handleSelectMasterSize = (sz) => {
+    setSelectedMasterSize(sz);
+    setKitItemSizes(prev => {
+      const updated = { ...prev };
+      kitItems.forEach(it => {
+        if (it.availableSizes.includes(sz)) {
+          updated[it.id] = sz;
+        }
+      });
+      return updated;
+    });
+  };
+
+  const handleItemSizeChange = (itemId, sz) => {
+    setKitItemSizes(prev => ({
+      ...prev,
+      [itemId]: sz
+    }));
+  };
 
   const kitName = kit.name || kit.title || 'School Combo Kit';
   const kitSchool = kit.school || kit.schoolName || '';
@@ -80,21 +162,38 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
   const handleAddSelected = () => {
     const selectedProducts = kitItems
       .filter((item) => selectedIds.includes(item.id))
-      .map((item) => ({
-        ...item,
-        quantity: itemQuantities[item.id] || 1
-      }));
+      .map((item) => {
+        const sz = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
+        return {
+          ...item,
+          quantity: itemQuantities[item.id] || 1,
+          size: sz,
+          selectedSize: sz
+        };
+      });
 
-    const bundleItems = selectedProducts.length ? selectedProducts : kitItems;
+    const bundleItems = selectedProducts.length ? selectedProducts : kitItems.map(item => ({
+      ...item,
+      size: kitItemSizes[item.id] || item.size || '',
+      selectedSize: kitItemSizes[item.id] || item.size || ''
+    }));
     const bundlePrice = isCustomized ? subtotal : kitPrice;
+
+    const sizeSummary = bundleItems
+      .filter(it => it.size)
+      .map(it => `${it.name.replace(/\s*\(\d+\)/, '')}: Size ${it.size}`)
+      .join(', ');
 
     addToCart({
       ...kit,
-      id: isCustomized ? `kit-${kitId}-${selectedIds.slice().sort().join('-')}` : kitId,
+      id: isCustomized ? `kit-${kitId}-${selectedIds.slice().sort().join('-')}-${selectedMasterSize || 'std'}` : `${kitId}-${selectedMasterSize || 'std'}`,
       kitId: kitId,
       name: isCustomized ? `${kitName} (Custom Bundle)` : `${kitName} (Full Bundle)`,
       price: bundlePrice,
       kitItems: bundleItems,
+      selectedSize: selectedMasterSize ? `Size ${selectedMasterSize}` : (bundleItems[0]?.size ? `Size ${bundleItems[0].size}` : 'Standard'),
+      variantName: sizeSummary || (selectedMasterSize ? `Kit Size ${selectedMasterSize}` : 'Standard Kit'),
+      kitSizeSummary: sizeSummary,
       isCustomized: Boolean(isCustomized),
       isFullBundle: !isCustomized,
       category: 'kits',
@@ -104,15 +203,30 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
   };
 
   const handleBuyFullKit = () => {
+    const bundleItems = kitItems.map(item => ({
+      ...item,
+      size: kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '',
+      selectedSize: kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || ''
+    }));
+
+    const sizeSummary = bundleItems
+      .filter(it => it.size)
+      .map(it => `${it.name.replace(/\s*\(\d+\)/, '')}: Size ${it.size}`)
+      .join(', ');
+
     addToCart({
       ...kit,
-      id: kitId,
+      id: `${kitId}-${selectedMasterSize || 'std'}`,
       kitId: kitId,
       name: `${kitName} (Full Bundle)`,
       price: kitPrice,
       image: kitImage,
       category: 'kits',
       bundleType: 'kit',
+      kitItems: bundleItems,
+      selectedSize: selectedMasterSize ? `Size ${selectedMasterSize}` : (bundleItems[0]?.size ? `Size ${bundleItems[0].size}` : 'Standard'),
+      variantName: sizeSummary || (selectedMasterSize ? `Kit Size ${selectedMasterSize}` : 'Standard Kit'),
+      kitSizeSummary: sizeSummary,
       isCustomized: false,
       isFullBundle: true
     }, 1);
@@ -217,11 +331,51 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
               </div>
             </div>
 
+            {/* Master Kit Size Selector */}
+            {kitAvailableSizes.length > 0 && (
+              <div className="p-3 bg-teal-50/50 rounded-xl border border-brand-teal/20 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-brand-teal flex items-center gap-1.5">
+                    <Sparkles size={13} className="text-brand-yellow" />
+                    <span>Select Kit Uniform Size:</span>
+                    {selectedMasterSize && (
+                      <span className="text-xs font-black bg-brand-teal text-white px-2 py-0.5 rounded-md">
+                        Size {selectedMasterSize}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[10px] font-semibold text-gray-500">
+                    Applies to all bundle items
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  {kitAvailableSizes.map((sz) => {
+                    const isSel = String(selectedMasterSize) === String(sz);
+                    return (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => handleSelectMasterSize(sz)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                          isSel
+                            ? 'bg-brand-teal text-white shadow-xs ring-2 ring-brand-teal/30 scale-105'
+                            : 'bg-white hover:bg-gray-100 text-gray-700 border border-gray-200'
+                        }`}
+                      >
+                        Size {sz}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2.5">
               {kitItems.map((item) => {
                 const isSelected = selectedIds.includes(item.id);
                 const itemQty = itemQuantities[item.id] || 1;
                 const itemLineTotal = item.price * itemQty;
+                const currentItemSize = kitItemSizes[item.id] || item.size || item.availableSizes?.[0] || '';
 
                 return (
                   <div
@@ -234,17 +388,47 @@ export default function KitDetailsModal({ isOpen, onClose, kit }) {
                   >
                     <div 
                       onClick={() => toggleItem(item.id)}
-                      className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+                      className="flex items-start sm:items-center gap-3 cursor-pointer flex-1 min-w-0"
                     >
-                      <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${isSelected ? 'bg-brand-teal border-brand-teal text-white' : 'border-gray-300 bg-white'}`}>
+                      <div className={`w-5 h-5 mt-0.5 sm:mt-0 rounded-md border flex items-center justify-center shrink-0 ${isSelected ? 'bg-brand-teal border-brand-teal text-white' : 'border-gray-300 bg-white'}`}>
                         <Check size={12} />
                       </div>
                       <img src={item.image} alt={item.name} className="w-10 h-10 rounded border border-gray-100 object-cover shrink-0" onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1588072432836-e10032774350?w=150&auto=format&fit=crop&q=80'; }} />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="text-xs sm:text-sm font-bold text-gray-800 truncate">{item.name}</p>
-                        <p className="text-[11px] text-gray-500 font-mono">
-                          Unit Price: ₹{item.price.toFixed(2)} {item.size ? `• Size: ${item.size}` : ''}
-                        </p>
+                        
+                        {/* Item Size Modifier */}
+                        {item.availableSizes && item.availableSizes.length > 0 ? (
+                          <div className="flex items-center gap-1.5 mt-1" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-[10px] font-bold text-gray-500 uppercase">Size:</span>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {item.availableSizes.map((sz) => {
+                                const isItemSzSel = String(currentItemSize) === String(sz);
+                                return (
+                                  <button
+                                    key={sz}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleItemSizeChange(item.id, sz);
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                      isItemSzSel
+                                        ? 'bg-brand-teal text-white font-black'
+                                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
+                                    }`}
+                                  >
+                                    {sz}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-gray-500 font-mono mt-0.5">
+                            Unit Price: ₹{item.price.toFixed(2)} {currentItemSize ? `• Size: ${currentItemSize}` : ''}
+                          </p>
+                        )}
                       </div>
                     </div>
 
