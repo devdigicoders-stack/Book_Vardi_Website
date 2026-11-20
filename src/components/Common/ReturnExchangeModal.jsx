@@ -103,21 +103,18 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     }
   }, [selectedItemId, activeItem?.size, activeItem?.quantity, isFabricItem, activeType]);
 
-  // Detect if paid online via Razorpay/prepaid
+  // Check if paid via Credit Card (Credit Card refunds MUST return to credit card per compliance)
   const rawPaymentMethod = String(safeOrder.paymentMethod || safeOrder.paymentMode || '').toLowerCase();
-  const isOnlinePayment = !rawPaymentMethod.includes('cod') && !rawPaymentMethod.includes('cash') && Boolean(
-    safeOrder.razorpayPaymentId || 
-    safeOrder.paymentDetails?.razorpayPaymentId || 
-    rawPaymentMethod.includes('online') || 
-    rawPaymentMethod.includes('upi') || 
-    rawPaymentMethod.includes('card') || 
-    rawPaymentMethod.includes('razorpay') ||
-    safeOrder.paymentId
+  const isCreditCardPayment = Boolean(
+    String(safeOrder.paymentInstrument || safeOrder.paymentDetails?.instrument || '').toUpperCase() === 'CREDIT_CARD' ||
+    rawPaymentMethod.includes('credit') ||
+    String(safeOrder.paymentDetails?.cardType || '').toLowerCase() === 'credit'
   );
 
   // Refund payout details state for return / partial refund
-  // If paid online via Razorpay, default to ORIGINAL source automated refund
-  const [payoutMode, setPayoutMode] = useState(() => isOnlinePayment ? 'ORIGINAL' : 'UPI'); // 'ORIGINAL' | 'UPI' | 'BANK'
+  // If paid via Credit Card, automatically routes to CREDIT_CARD
+  // For all other payment modes (UPI, Debit Card, Netbanking, COD), user provides UPI or Bank details
+  const [payoutMode, setPayoutMode] = useState(() => isCreditCardPayment ? 'CREDIT_CARD' : 'UPI'); // 'CREDIT_CARD' | 'UPI' | 'BANK'
   const [upiId, setUpiId] = useState('');
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
@@ -300,10 +297,10 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
     let refundDetailsPayload = null;
     const isPayoutRequired = activeType === 'return' || (activeType === 'exchange' && priceAdjustmentType === 'partial_refund');
     if (isPayoutRequired) {
-      if (payoutMode === 'ORIGINAL') {
+      if (isCreditCardPayment || payoutMode === 'CREDIT_CARD') {
         refundDetailsPayload = {
-          method: 'ORIGINAL_SOURCE',
-          note: 'Refund to original payment source (Razorpay Auto-Refund)',
+          method: 'CREDIT_CARD',
+          note: 'Refund to original Credit Card account (Automated via Razorpay)',
           isOnlineRefund: true
         };
       } else if (payoutMode === 'UPI') {
@@ -862,53 +859,46 @@ export default function ReturnExchangeModal({ isOpen, onClose, order, onSuccess 
                     : 'Enter your UPI ID or Bank account details where your refund will be transferred once the product return is received.'}
                 </p>
 
-                {/* Mode Selector */}
-                <div className={`grid ${isOnlinePayment ? 'grid-cols-3' : 'grid-cols-2'} gap-2 bg-gray-100 p-1 rounded-xl mb-3`}>
-                  {isOnlinePayment && (
-                    <button
-                      type="button"
-                      onClick={() => setPayoutMode('ORIGINAL')}
-                      className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                        payoutMode === 'ORIGINAL' ? 'bg-white text-emerald-800 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      <CreditCard size={13} />
-                      <span className="truncate">Original (Razorpay)</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setPayoutMode('UPI')}
-                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                      payoutMode === 'UPI' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <Sparkles size={13} />
-                    <span>UPI ID</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPayoutMode('BANK')}
-                    className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                      payoutMode === 'BANK' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <Building2 size={13} />
-                    <span>Bank Transfer</span>
-                  </button>
-                </div>
-
-                {payoutMode === 'ORIGINAL' ? (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2.5">
-                    <CheckCircle2 size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+                {/* Credit Card Direct Refund Notice or UPI / Bank Selector */}
+                {isCreditCardPayment ? (
+                  <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
+                    <CreditCard size={18} className="text-blue-700 shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
-                      <span className="font-extrabold block">Direct Refund via Razorpay</span>
-                      <p className="text-[11px] text-emerald-800 leading-relaxed">
-                        Refund of <strong>₹{(activeType === 'exchange' ? Math.abs(priceDifference) : originalPrice).toFixed(2)}</strong> will be credited directly to your original payment method (UPI / Card / Netbanking) via Razorpay automatically once the product return is received.
+                      <span className="font-extrabold block text-blue-950">Direct Refund to Credit Card</span>
+                      <p className="text-[11px] text-blue-800 leading-relaxed">
+                        This order was paid using a <strong>Credit Card</strong>. As per banking compliance, your refund of <strong>₹{(activeType === 'exchange' ? Math.abs(priceDifference) : originalPrice).toFixed(2)}</strong> will be credited directly back to your Credit Card account within 5-7 business days.
                       </p>
                     </div>
                   </div>
-                ) : payoutMode === 'UPI' ? (
+                ) : (
+                  <>
+                    {/* Mode Selector for UPI / Bank Account */}
+                    <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl mb-3">
+                      <button
+                        type="button"
+                        onClick={() => setPayoutMode('UPI')}
+                        className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                          payoutMode === 'UPI' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        <Sparkles size={13} />
+                        <span>UPI ID</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPayoutMode('BANK')}
+                        className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                          payoutMode === 'BANK' ? 'bg-white text-brand-teal shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        <Building2 size={13} />
+                        <span>Bank Transfer</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {isCreditCardPayment ? null : payoutMode === 'UPI' ? (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">Receiving UPI ID *</label>
                     <input

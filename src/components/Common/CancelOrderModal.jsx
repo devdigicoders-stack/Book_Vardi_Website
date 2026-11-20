@@ -9,6 +9,11 @@ export default function CancelOrderModal({ isOpen, onClose, order, onSuccess }) 
   const userPhone = order.customer?.phone || order.shippingAddress?.phone || '';
   const isCod = /cod|cash\s*on\s*delivery/i.test(String(order.paymentMethod || ''));
   const isPaid = (String(order.paymentStatus || '').toLowerCase() === 'paid') || (!isCod && order.paymentStatus !== 'pending' && order.paymentStatus !== 'unpaid');
+  const isCreditCard = Boolean(
+    String(order.paymentInstrument || order.paymentDetails?.instrument || '').toUpperCase() === 'CREDIT_CARD' ||
+    String(order.paymentMethod || '').toLowerCase().includes('credit') ||
+    String(order.paymentDetails?.cardType || '').toLowerCase() === 'credit'
+  );
 
   const [step, setStep] = useState(1); // Step 1: Reason, Step 2: Refund Details (if paid)
   const [selectedReason, setSelectedReason] = useState('Ordered by mistake');
@@ -72,7 +77,12 @@ export default function CancelOrderModal({ isOpen, onClose, order, onSuccess }) 
 
     let refundDetailsPayload = null;
     if (isPaid) {
-      if (refundMethod === 'UPI') {
+      if (isCreditCard) {
+        refundDetailsPayload = {
+          method: 'CREDIT_CARD',
+          note: 'Direct refund to original Credit Card account via Razorpay'
+        };
+      } else if (refundMethod === 'UPI') {
         if (!upiId.trim() || !upiId.includes('@')) {
           setLoading(false);
           setErrorMsg('Please enter a valid UPI ID (e.g., username@bank)');
@@ -217,99 +227,113 @@ export default function CancelOrderModal({ isOpen, onClose, order, onSuccess }) 
 
           {step === 2 && isPaid && (
             <div className="space-y-4">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-emerald-950">
-                <h4 className="font-extrabold text-xs text-emerald-900 flex items-center gap-2 mb-1">
-                  <CreditCard size={16} />
-                  Refund Receiving Account Details
-                </h4>
-                <p className="text-xs text-emerald-800">
-                  Please provide your preferred payout mode (UPI ID or Bank Account) where your refund of <strong>₹{order.total || order.totalAmount || 0}</strong> will be credited upon approval.
-                </p>
-              </div>
-
-              {/* Mode Selection Tabs */}
-              <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setRefundMethod('UPI')}
-                  className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                    refundMethod === 'UPI' ? 'bg-white text-red-600 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <CreditCard size={14} />
-                  <span>1. UPI ID</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRefundMethod('BANK')}
-                  className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                    refundMethod === 'BANK' ? 'bg-white text-red-600 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <Building2 size={14} />
-                  <span>2. Bank Transfer</span>
-                </button>
-              </div>
-
-              {refundMethod === 'UPI' ? (
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Receiving UPI ID *
-                  </label>
-                  <input
-                    type="text"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    placeholder="e.g. 9876543210@upi or username@okicici"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-900 font-mono focus:outline-none focus:border-red-500 focus:bg-white"
-                  />
-                  <p className="text-[11px] text-gray-500 mt-1">Double check your UPI ID to avoid payment delays.</p>
+              {isCreditCard ? (
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2.5">
+                  <CreditCard size={18} className="text-blue-700 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-extrabold block text-blue-950">Direct Refund to Credit Card</span>
+                    <p className="text-[11px] text-blue-800 leading-relaxed">
+                      This order was paid using a <strong>Credit Card</strong>. As per banking compliance, your refund of <strong>₹{order.total || order.totalAmount || 0}</strong> will be credited directly back to your Credit Card account within 5-7 business days.
+                    </p>
+                  </div>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Account Holder Name *</label>
-                    <input
-                      type="text"
-                      value={accountHolderName}
-                      onChange={(e) => setAccountHolderName(e.target.value)}
-                      placeholder="e.g. Rahul Sharma"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 focus:outline-none focus:border-red-500"
-                    />
+                <>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-emerald-950">
+                    <h4 className="font-extrabold text-xs text-emerald-900 flex items-center gap-2 mb-1">
+                      <CreditCard size={16} />
+                      Refund Receiving Account Details
+                    </h4>
+                    <p className="text-xs text-emerald-800">
+                      Please provide your preferred payout mode (UPI ID or Bank Account) where your refund of <strong>₹{order.total || order.totalAmount || 0}</strong> will be credited upon approval.
+                    </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+
+                  {/* Mode Selection Tabs */}
+                  <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setRefundMethod('UPI')}
+                      className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                        refundMethod === 'UPI' ? 'bg-white text-red-600 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      <CreditCard size={14} />
+                      <span>1. UPI ID</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRefundMethod('BANK')}
+                      className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                        refundMethod === 'BANK' ? 'bg-white text-red-600 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      <Building2 size={14} />
+                      <span>2. Bank Transfer</span>
+                    </button>
+                  </div>
+
+                  {refundMethod === 'UPI' ? (
                     <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Bank Name *</label>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Receiving UPI ID *
+                      </label>
                       <input
                         type="text"
-                        value={bankName}
-                        onChange={(e) => setBankName(e.target.value)}
-                        placeholder="e.g. HDFC Bank"
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 focus:outline-none focus:border-red-500"
+                        value={upiId}
+                        onChange={(e) => setUpiId(e.target.value)}
+                        placeholder="e.g. 9876543210@upi or username@okicici"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-900 font-mono focus:outline-none focus:border-red-500 focus:bg-white"
                       />
+                      <p className="text-[11px] text-gray-500 mt-1">Double check your UPI ID to avoid payment delays.</p>
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-gray-700 mb-1">IFSC Code *</label>
-                      <input
-                        type="text"
-                        value={ifscCode}
-                        onChange={(e) => setIfscCode(e.target.value)}
-                        placeholder="e.g. HDFC0001234"
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 font-mono uppercase focus:outline-none focus:border-red-500"
-                      />
+                  ) : (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Account Holder Name *</label>
+                        <input
+                          type="text"
+                          value={accountHolderName}
+                          onChange={(e) => setAccountHolderName(e.target.value)}
+                          placeholder="e.g. Rahul Sharma"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 focus:outline-none focus:border-red-500"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">Bank Name *</label>
+                          <input
+                            type="text"
+                            value={bankName}
+                            onChange={(e) => setBankName(e.target.value)}
+                            placeholder="e.g. HDFC Bank"
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 focus:outline-none focus:border-red-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1">IFSC Code *</label>
+                          <input
+                            type="text"
+                            value={ifscCode}
+                            onChange={(e) => setIfscCode(e.target.value)}
+                            placeholder="e.g. HDFC0001234"
+                            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 font-mono uppercase focus:outline-none focus:border-red-500"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Bank Account Number *</label>
+                        <input
+                          type="text"
+                          value={accountNumber}
+                          onChange={(e) => setAccountNumber(e.target.value)}
+                          placeholder="Enter account number"
+                          className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 font-mono focus:outline-none focus:border-red-500"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Bank Account Number *</label>
-                    <input
-                      type="text"
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value)}
-                      placeholder="Enter account number"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-900 font-mono focus:outline-none focus:border-red-500"
-                    />
-                  </div>
-                </div>
+                  )}
+                </>
               )}
             </div>
           )}
